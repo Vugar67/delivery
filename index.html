@@ -555,6 +555,33 @@ function subscribeRealtime() {
   }, 15000); // poll every 15s
 }
 
+
+// Auto-initialize on page load
+(async function initAuth() {
+  const stored = sessionStorage.getItem('sb_session');
+  if (stored) {
+    try {
+      const s = JSON.parse(stored);
+      // Verify token still valid
+      const res = await fetch(SUPABASE_URL + '/auth/v1/user', {
+        headers: { 'Authorization': 'Bearer ' + s.access_token, 'apikey': SUPABASE_ANON_KEY }
+      });
+      if (res.ok) {
+        const user = await res.json();
+        _authToken = s.access_token;
+        _refreshToken = s.refresh_token;
+        _currentSession = s;
+        _currentSession.user = user;
+        setTimeout(() => _authListeners.forEach(cb => cb('SIGNED_IN', { user })), 50);
+        return;
+      }
+    } catch(e) {}
+    sessionStorage.removeItem('sb_session');
+  }
+  // No session - show login
+  setTimeout(() => _authListeners.forEach(cb => cb('SIGNED_OUT', null)), 50);
+})();
+
 let currentUser=null, currentRole=null;
 let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[]};
 let products=[], orderItems={};
