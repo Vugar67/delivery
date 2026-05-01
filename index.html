@@ -1,4 +1,5 @@
-<!-- v5
+<!DOCTYPE html>
+<!-- v5 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -431,44 +432,50 @@ class Query {
   constructor(table) {
     this.table = table;
     this._filters = [];
-    this._select = '*';
     this._order = null;
     this._method = 'GET';
     this._body = null;
     this._single = false;
-    this._in = null;
     this._upsert = false;
+    this._selectCols = null;
   }
-  select(cols) { this._select = cols; return this; }
-  eq(col, val) { this._filters.push(col + '=eq.' + val); return this; }
-  in(col, vals) { this._filters.push(col + '=in.(' + vals.join(',') + ')'); return this; }
-  order(col, opts = {}) { this._order = col + '.' + (opts.ascending === false ? 'desc' : 'asc'); return this; }
+  select(cols) { this._selectCols = cols && cols !== 'undefined' ? cols : null; return this; }
+  eq(col, val) { if(col && val !== undefined) this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; }
+  in(col, vals) { if(col && vals && vals.length) this._filters.push(col + '=in.(' + vals.join(',') + ')'); return this; }
+  order(col, opts) { if(col) this._order = col + '.' + ((opts && opts.ascending === false) ? 'desc' : 'asc'); return this; }
   single() { this._single = true; return this; }
   update(body) { this._method = 'PATCH'; this._body = body; return this; }
   insert(body) { this._method = 'POST'; this._body = body; return this; }
   upsert(body) { this._method = 'POST'; this._body = body; this._upsert = true; return this; }
   delete() { this._method = 'DELETE'; return this; }
 
+  _clean(obj) {
+    if (!obj) return obj;
+    if (Array.isArray(obj)) return obj.map(o => this._clean(o));
+    return Object.fromEntries(Object.entries(obj).filter(([k,v]) => v !== undefined && k !== 'undefined'));
+  }
+
   async then(resolve, reject) {
     try {
-      let url = SUPABASE_URL + '/rest/v1/' + this.table + '?select=' + encodeURIComponent(this._select);
-      this._filters.forEach(f => url += '&' + f);
-      if (this._order) url += '&order=' + this._order;
+      const base = SUPABASE_URL + '/rest/v1/' + this.table;
+      const params = [];
+      if (this._selectCols && this._selectCols !== 'undefined') params.push('select=' + encodeURIComponent(this._selectCols));
+      this._filters.forEach(f => params.push(f));
+      if (this._order) params.push('order=' + this._order);
+      const url = base + (params.length ? '?' + params.join('&') : '');
 
-      const prefer = this._upsert ? 'resolution=merge-duplicates,return=representation' :
-                     (this._method !== 'GET' ? 'return=representation' : '');
       const hdrs = _headers();
-      if (prefer) hdrs['Prefer'] = prefer;
-      if (this._upsert) hdrs['Prefer'] = 'resolution=merge-duplicates,return=representation';
+      if (this._upsert) hdrs['Prefer'] = 'resolution=merge-duplicates';
+      // Don't add Prefer return for POST/PATCH to avoid column issues
 
       const opts = { method: this._method, headers: hdrs };
-      if (this._body) opts.body = JSON.stringify(this._body);
+      if (this._body) opts.body = JSON.stringify(this._clean(this._body));
 
       const res = await fetch(url, opts);
       const text = await res.text();
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
-      if (!res.ok) { resolve({ data: null, error: { message: (data && data.message) || text } }); return; }
+      if (!res.ok) { resolve({ data: null, error: { message: (data && (data.message || data.error || data.hint)) || text } }); return; }
       if (this._single && Array.isArray(data)) data = data[0] || null;
       resolve({ data, error: null });
     } catch(e) { resolve({ data: null, error: { message: e.message } }); }
@@ -847,16 +854,18 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={order_num:get('f-num')||genOrderNum(),order_date:get('f-date'),emirate:get('f-emirate'),city:get('f-city'),apt:get('f-apt'),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
+  const payload={order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:get('f-city'),apt:get('f-apt'),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
   }else{
     payload.created_by=currentUser.email;
-    const{data,error}=await sb.from('orders').insert(payload).select().single();
+    const{data,error}=await sb.from('orders').insert(payload);
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
-    orderId=data.id;
+    // Get the inserted order by order_num
+    const{data:newOrder}=await sb.from('orders').select('id').eq('order_num',payload.order_num).single();
+    orderId=newOrder?.id;
   }
   // save cart items
   await sb.from('order_items').delete().eq('order_id',orderId);
