@@ -103,6 +103,39 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .form-group textarea{resize:vertical;min-height:60px}
 .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
 
+
+/* SHOP INTERFACE */
+.shop-section{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.shop-toolbar{display:flex;flex-direction:column;gap:8px}
+.shop-search-wrap{position:relative}
+.shop-cats{display:flex;gap:6px;flex-wrap:wrap}
+.shop-cat-btn{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11px;font-family:var(--mono);cursor:pointer;color:var(--muted);transition:.15s;white-space:nowrap}
+.shop-cat-btn.active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700}
+.shop-cat-btn:hover:not(.active){color:var(--text);border-color:var(--muted)}
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:220px;overflow-y:auto}
+.shop-product-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;transition:.15s;position:relative}
+.shop-product-card:hover{border-color:var(--accent)}
+.shop-product-name{font-size:12px;font-weight:600;line-height:1.3}
+.shop-product-cat{font-size:10px;color:var(--muted);font-family:var(--mono)}
+.shop-product-price{font-size:13px;font-weight:700;color:var(--accent);font-family:var(--mono)}
+.shop-product-unit{font-size:10px;color:var(--muted)}
+.shop-add-btn{background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px;font-size:16px;font-weight:700;cursor:pointer;width:100%;transition:.15s;line-height:1}
+.shop-add-btn:hover{background:var(--accent2)}
+.shop-in-cart{position:absolute;top:6px;right:6px;background:var(--green);color:#000;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;font-family:var(--mono)}
+.shop-cart{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px}
+.shop-cart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.shop-cart-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.shop-cart-item:last-child{border-bottom:none}
+.shop-cart-item-name{flex:1;font-size:12px;line-height:1.3}
+.shop-cart-item-controls{display:flex;align-items:center;gap:4px}
+.shop-qty-btn{background:var(--surface2);border:1px solid var(--border);border-radius:4px;width:22px;height:22px;cursor:pointer;color:var(--text);font-size:14px;display:flex;align-items:center;justify-content:center;transition:.1s;line-height:1}
+.shop-qty-btn:hover{border-color:var(--accent);color:var(--accent)}
+.shop-qty-val{font-family:var(--mono);font-size:12px;min-width:24px;text-align:center}
+.shop-cart-item-price{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:70px;text-align:right}
+.shop-cart-item-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;transition:.1s}
+.shop-cart-item-del:hover{color:var(--red)}
+.shop-cart-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+
 /* CART */
 .cart-section{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:4px}
 .cart-search{display:flex;gap:8px;margin-bottom:10px}
@@ -306,17 +339,30 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group form-full">
         <label>Products / Items</label>
-        <div class="cart-section">
-          <div class="cart-search">
-            <input type="text" id="cart-search-input" placeholder="Search and add products..." oninput="searchProducts(this.value)" autocomplete="off">
+        <div class="shop-section">
+          <!-- Search & Category Filter -->
+          <div class="shop-toolbar">
+            <div class="shop-search-wrap">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">&#9906;</span>
+              <input type="text" id="shop-search" placeholder="Search products..." oninput="renderShopProducts()" autocomplete="off" style="width:100%;padding:8px 12px 8px 30px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            </div>
+            <div id="shop-cats" class="shop-cats"></div>
           </div>
-          <div class="product-suggestions" id="product-suggestions"></div>
-          <div class="cart-items" id="cart-items"></div>
-          <div class="cart-empty" id="cart-empty">No items added yet</div>
-          <div class="cart-total" id="cart-total" style="display:none">
-            <span class="cart-total-label">Total:</span>
-            <span class="cart-total-val" id="cart-total-val">0.00</span>
+          <!-- Product Grid -->
+          <div id="shop-grid" class="shop-grid"></div>
+          <!-- Cart -->
+          <div id="shop-cart" class="shop-cart" style="display:none">
+            <div class="shop-cart-head">
+              <span style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--accent)">CART</span>
+              <span id="shop-cart-count" style="font-size:11px;color:var(--muted);font-family:var(--mono)"></span>
+            </div>
+            <div id="shop-cart-items"></div>
+            <div class="shop-cart-total">
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">TOTAL</span>
+              <span id="shop-cart-total-val" style="font-size:18px;font-weight:700;color:var(--accent);font-family:var(--mono)">0.00 AED</span>
+            </div>
           </div>
+          <div id="shop-cart-empty" style="text-align:center;padding:10px;color:var(--muted);font-size:12px;font-family:var(--mono)">No items added yet</div>
         </div>
       </div>
       <div class="form-group"><label>Driver</label><select id="f-driver"></select></div>
@@ -971,48 +1017,107 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 }
 
 
-// CART
-function renderCart(){
-  const container=document.getElementById('cart-items');
-  const empty=document.getElementById('cart-empty');
-  const totalDiv=document.getElementById('cart-total');
-  const totalVal=document.getElementById('cart-total-val');
-  if(!cart.length){container.innerHTML='';empty.style.display='block';totalDiv.style.display='none';return;}
-  empty.style.display='none';totalDiv.style.display='flex';
-  container.innerHTML=cart.map((item,i)=>`
-    <div class="cart-item">
-      <div class="cart-item-name">${item.product.name}</div>
-      <div class="cart-item-unit">${item.product.unit}</div>
-      <input class="cart-item-qty" type="number" min="0.1" step="0.1" value="${item.qty}" onchange="updateCartQty(${i},this.value)">
-      <div class="cart-item-price">${(item.product.price*item.qty).toFixed(2)} AED</div>
-      <button class="cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
-    </div>`).join('');
-  const total=cart.reduce((s,item)=>s+item.product.price*item.qty,0);
-  totalVal.textContent=total.toFixed(2)+' AED';
+// SHOP CART
+let shopActiveCat = 'all';
+
+function renderShopCategories() {
+  const catsEl = document.getElementById('shop-cats');
+  if (!catsEl) return;
+  const cats = ['all', ...new Set(products.filter(p=>p.active!==false).map(p=>p.category).filter(Boolean))];
+  catsEl.innerHTML = cats.map(c => 
+    `<button class="shop-cat-btn ${shopActiveCat===c?'active':''}" onclick="setShopCat('${c}')">${c==='all'?'All':c}</button>`
+  ).join('');
 }
 
-function updateCartQty(i,val){cart[i].qty=parseFloat(val)||1;renderCart();}
-function removeFromCart(i){cart.splice(i,1);renderCart();}
-
-function searchProducts(q){
-  const sugg=document.getElementById('product-suggestions');
-  if(!q){sugg.style.display='none';return;}
-  const matches=products.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,8);
-  if(!matches.length){sugg.style.display='none';return;}
-  sugg.style.display='block';
-  sugg.innerHTML=matches.map(p=>`
-    <div class="product-suggestion-item" onclick="addToCart(${p.id})">
-      <span>${p.name} <span style="color:var(--muted);font-size:11px">${p.category||''}</span></span>
-      <span class="p-price">${p.price} AED/${p.unit}</span>
-    </div>`).join('');
+function setShopCat(cat) {
+  shopActiveCat = cat;
+  renderShopCategories();
+  renderShopProducts();
 }
 
-function addToCart(productId){
-  const p=products.find(x=>x.id===productId);if(!p)return;
-  const existing=cart.find(item=>item.product.id===productId);
-  if(existing){existing.qty+=1;}else{cart.push({product:p,qty:1});}
-  document.getElementById('cart-search-input').value='';
-  document.getElementById('product-suggestions').style.display='none';
+function renderShopProducts() {
+  const grid = document.getElementById('shop-grid');
+  if (!grid) return;
+  const q = (document.getElementById('shop-search')?.value || '').toLowerCase();
+  let filtered = products.filter(p => p.active !== false);
+  if (shopActiveCat !== 'all') filtered = filtered.filter(p => p.category === shopActiveCat);
+  if (q) filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+  
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center;grid-column:1/-1">No products found</div>';
+    return;
+  }
+  
+  grid.innerHTML = filtered.map(p => {
+    const inCart = cart.find(item => item.product.id === p.id);
+    return `<div class="shop-product-card">
+      ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
+      <div class="shop-product-name">${p.name}</div>
+      <div class="shop-product-cat">${p.category||''}</div>
+      <div>
+        <span class="shop-product-price">${parseFloat(p.price).toFixed(2)} AED</span>
+        <span class="shop-product-unit">/ ${p.unit}</span>
+      </div>
+      <button class="shop-add-btn" onclick="addToCart(${p.id})">+</button>
+    </div>`;
+  }).join('');
+}
+
+function renderCart() {
+  const cartEl = document.getElementById('shop-cart');
+  const emptyEl = document.getElementById('shop-cart-empty');
+  const itemsEl = document.getElementById('shop-cart-items');
+  const totalEl = document.getElementById('shop-cart-total-val');
+  const countEl = document.getElementById('shop-cart-count');
+  
+  if (!cart.length) {
+    if (cartEl) cartEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }
+  if (cartEl) cartEl.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+  
+  const total = cart.reduce((s, item) => s + item.product.price * item.qty, 0);
+  if (totalEl) totalEl.textContent = total.toFixed(2) + ' AED';
+  if (countEl) countEl.textContent = cart.length + ' item' + (cart.length > 1 ? 's' : '');
+  
+  if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
+    <div class="shop-cart-item">
+      <div class="shop-cart-item-name">${item.product.name}<br><span style="font-size:10px;color:var(--muted)">${item.product.unit}</span></div>
+      <div class="shop-cart-item-controls">
+        <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${item.qty-1})">−</button>
+        <span class="shop-qty-val">${item.qty}</span>
+        <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${item.qty+1})">+</button>
+      </div>
+      <div class="shop-cart-item-price">${(item.product.price*item.qty).toFixed(2)} AED</div>
+      <button class="shop-cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
+    </div>`).join('');
+  
+  // Update product grid to show in-cart badges
+  renderShopProducts();
+}
+
+function updateCartQty(i, val) {
+  const qty = parseFloat(val) || 0;
+  if (qty <= 0) { cart.splice(i, 1); }
+  else { cart[i].qty = qty; }
+  renderCart();
+}
+
+function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
+
+function addToCart(productId) {
+  const p = products.find(x => x.id === productId); if (!p) return;
+  const existing = cart.find(item => item.product.id === productId);
+  if (existing) { existing.qty += 1; } else { cart.push({product: p, qty: 1}); }
+  renderCart();
+}
+
+function initShop() {
+  shopActiveCat = 'all';
+  renderShopCategories();
+  renderShopProducts();
   renderCart();
 }
 
@@ -1042,6 +1147,7 @@ function openNewOrder(){
   document.getElementById('f-confirmed').value='No';
   renderCart();
   document.getElementById('f-district-custom').value='';
+  initShop();
   document.getElementById('order-modal').classList.add('open');
 }
 
@@ -1063,7 +1169,7 @@ async function editOrder(id){
     const p=products.find(x=>x.id===item.product_id)||{id:item.product_id,name:item.product_name,price:item.price,unit:item.unit};
     return{product:p,qty:parseFloat(item.quantity)};
   });
-  renderCart();
+  initShop();
   document.getElementById('order-modal').classList.add('open');
 }
 
@@ -1356,7 +1462,7 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveDirItem();});
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
-document.addEventListener('click',e=>{if(!e.target.closest('.cart-search'))document.getElementById('product-suggestions').style.display='none';});
+
 </script>
 </body>
 </html>
