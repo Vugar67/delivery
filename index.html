@@ -481,6 +481,24 @@ function _headers(extra = {}) {
   return h;
 }
 
+async function _refreshSession() {
+  if (!_refreshToken) return false;
+  try {
+    const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY},
+      body: JSON.stringify({refresh_token: _refreshToken})
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    _authToken = data.access_token;
+    _refreshToken = data.refresh_token;
+    _currentSession = data;
+    sessionStorage.setItem('sb_session', JSON.stringify(_currentSession));
+    return true;
+  } catch(e) { return false; }
+}
+
 async function _rest(method, path, body, params) {
   let url = SUPABASE_URL + '/rest/v1/' + path;
   if (params) {
@@ -548,7 +566,16 @@ class Query {
       const opts = { method: this._method, headers: hdrs };
       if (this._body) opts.body = JSON.stringify(this._clean(this._body));
 
-      const res = await fetch(url, opts);
+      let res = await fetch(url, opts);
+      // Auto-refresh if JWT expired
+      if (res.status === 401) {
+        const refreshed = await _refreshSession();
+        if (refreshed) {
+          opts.headers = _headers();
+          if (this._upsert) opts.headers['Prefer'] = 'resolution=merge-duplicates';
+          res = await fetch(url, opts);
+        }
+      }
       const text = await res.text();
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
@@ -639,6 +666,9 @@ function subscribeRealtime() {
   }, 15000); // poll every 15s
 }
 
+
+// Auto-refresh token every 50 minutes
+setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60 * 1000);
 
 // Auto-initialize on page load
 (async function initAuth() {
