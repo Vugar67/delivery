@@ -191,8 +191,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .user-email{font-size:11px;color:var(--muted);font-family:var(--mono)}
 
 /* order items preview in table */
-.items-preview{display:flex;flex-wrap:wrap;gap:3px}
-.item-chip{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:10px;font-family:var(--mono);color:var(--muted)}
+.items-preview{display:flex;flex-wrap:wrap;gap:3px;max-width:200px}
+.item-chip{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:10px;font-family:var(--mono);color:var(--muted);white-space:nowrap}
 
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(245,166,35,.3);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -820,7 +820,7 @@ function renderTable(){
   else{
     tbody.innerHTML=slice.map(o=>{
       const items=orderItems[o.id]||[];
-      const itemsHtml=items.length?`<div class="items-preview">${items.map(i=>`<span class="item-chip">${i.product_name} x${i.quantity}</span>`).join('')}</div>`:'<span style="color:var(--muted);font-size:11px">&mdash;</span>';
+      const itemsHtml=items.length?`<div class="items-preview" style="max-width:200px">${items.map(i=>`<span class="item-chip">${i.product_name} ×${i.quantity}</span>`).join('')}</div>`:'<span style="color:var(--muted);font-size:11px">&mdash;</span>';
       return`<tr>
         <td class="order-num">${o.order_num}</td>
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
