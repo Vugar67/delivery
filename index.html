@@ -466,7 +466,14 @@ class Query {
   select(cols) { this._selectCols = cols && cols !== 'undefined' ? cols : null; return this; }
   eq(col, val) { if(col && val !== undefined) this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; }
   in(col, vals) { if(col && vals && vals.length) this._filters.push(col + '=in.(' + vals.join(',') + ')'); return this; }
-  order(col, opts) { if(col) { const o = col + '.' + ((opts && opts.ascending === false) ? 'desc' : 'asc'); this._order = this._order ? this._order + ',' + o : o; } return this; }
+  order(col, opts) { 
+    if(col) { 
+      // Support comma-separated columns like 'sort_order,name'
+      if(col.includes(',')) { this._order = col; } 
+      else { const o = col + '.' + ((opts && opts.ascending === false) ? 'desc' : 'asc'); this._order = this._order ? this._order + ',' + o : o; }
+    } 
+    return this; 
+  }
   single() { this._single = true; return this; }
   update(body) { this._method = 'PATCH'; this._body = body; return this; }
   insert(body) { this._method = 'POST'; this._body = body; return this; }
@@ -801,7 +808,7 @@ function renderTable(){
 let locations = [];
 
 async function loadLocations() {
-  const {data} = await sb.from('locations').select('*').order('sort_order').order('name');
+  const {data} = await sb.from('locations').select('*').order('sort_order,name');
   locations = data || [];
 }
 
