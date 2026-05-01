@@ -814,7 +814,6 @@ function onEmirateChange() {
   const el = document.getElementById('f-emirate');
   const selected = el.options[el.selectedIndex];
   const emirateId = selected?.dataset?.lid;
-  const emirateName = selected?.value;
 
   const cityGroup = document.getElementById('f-city-group');
   const cityEl = document.getElementById('f-city');
@@ -828,26 +827,30 @@ function onEmirateChange() {
 
   if (!emirateId) { cityGroup.style.display='none'; return; }
 
-  // Check if this emirate has cities
   const cities = getLocs('city', parseInt(emirateId));
   if (cities.length > 0) {
     cityGroup.style.display = 'flex';
+    cityEl.innerHTML = '<option value="">— Select City —</option>';
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
       cityEl.appendChild(o);
     });
-    // No districts yet - wait for city selection
+    // Auto-select first city
+    if (cities[0]) {
+      cityEl.value = cities[0].name;
+      onCityChange();
+    }
   } else {
     cityGroup.style.display = 'none';
-    // Load districts directly under emirate
     const districts = getLocs('district', parseInt(emirateId));
-    distEl.innerHTML = '<option value="">— Select District —</option><option value="__custom">+ Custom...</option>';
+    distEl.innerHTML = '<option value="">— Select District —</option>';
     districts.forEach(d => {
       const o = new Option(d.name, d.name);
       o.dataset.lid = d.id;
-      distEl.insertBefore(o, distEl.lastElementChild);
+      distEl.appendChild(o);
     });
+    distEl.appendChild(new Option('+ Custom...', '__custom'));
   }
 }
 
