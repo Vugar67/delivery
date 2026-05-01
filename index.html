@@ -801,7 +801,7 @@ function renderTable(){
 let locations = [];
 
 async function loadLocations() {
-  const {data} = await sb.from('locations').select('*').order('name');
+  const {data} = await sb.from('locations').select('*').order('sort_order').order('name');
   locations = data || [];
 }
 
