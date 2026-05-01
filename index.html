@@ -253,6 +253,12 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
 
     <div id="view-directory" style="display:none">
+      <div style="margin-bottom:20px">
+        <div class="section-head">
+          <div class="section-title">Locations</div>
+        </div>
+        <div id="locations-tree" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:20px"></div>
+      </div>
       <div class="dir-grid" id="dir-grid"></div>
     </div>
 
@@ -276,8 +282,9 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div class="form-grid">
       <div class="form-group"><label>Order #</label><input id="f-num" readonly style="opacity:.6"></div>
       <div class="form-group"><label>Date</label><input id="f-date" type="date"></div>
-      <div class="form-group"><label>Emirate</label><select id="f-emirate"></select></div>
-      <div class="form-group"><label>City / District</label><input id="f-city" placeholder="e.g. Al Barsha"></div>
+      <div class="form-group"><label>Emirate</label><select id="f-emirate" onchange="onEmirateChange()"><option value="">— Select —</option></select></div>
+      <div class="form-group"><label>City / Area</label><select id="f-city" onchange="onCityChange()"><option value="">— Select Emirate first —</option></select></div>
+      <div class="form-group form-full"><label>District</label><select id="f-district"><option value="">— Select City first —</option></select></div>
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group form-full">
@@ -639,7 +646,7 @@ async function initApp(){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
-  await Promise.all([loadRefs(),loadOrders(),loadProducts()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations()]);
   renderFilters();renderTable();showView('orders');subscribeRealtime();
 }
 
@@ -674,7 +681,7 @@ async function loadProducts(){
 function showView(v){
   ['orders','products','directory','users'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
-  if(v==='directory')renderDirectory();
+  if(v==='directory'){renderDirectory();renderLocations();}
   if(v==='users')renderUsers();
   if(v==='products')renderProducts();
 }
@@ -770,6 +777,87 @@ function renderTable(){
   renderStats();
 }
 
+
+// LOCATIONS
+let locations = []; // all location records
+
+async function loadLocations() {
+  const {data} = await sb.from('locations').select('*').order('name');
+  locations = data || [];
+}
+
+function getByType(type, parentId=null) {
+  return locations.filter(l => l.type === type && 
+    (parentId === null ? l.parent_id === null : l.parent_id == parentId));
+}
+
+function onEmirateChange() {
+  const sel = document.getElementById('f-emirate');
+  const emirateId = sel.options[sel.selectedIndex]?.dataset?.id;
+  const cityEl = document.getElementById('f-city');
+  const distEl = document.getElementById('f-district');
+  cityEl.innerHTML = '<option value="">— Select City —</option>';
+  distEl.innerHTML = '<option value="">— Select City first —</option>';
+  if (!emirateId) return;
+  const cities = getByType('city', parseInt(emirateId));
+  cities.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.name; o.textContent = c.name; o.dataset.id = c.id;
+    cityEl.appendChild(o);
+  });
+}
+
+function onCityChange() {
+  const sel = document.getElementById('f-city');
+  const cityId = sel.options[sel.selectedIndex]?.dataset?.id;
+  const distEl = document.getElementById('f-district');
+  distEl.innerHTML = '<option value="">— No district —</option>';
+  if (!cityId) return;
+  const districts = getByType('district', parseInt(cityId));
+  districts.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.name; o.textContent = d.name; o.dataset.id = d.id;
+    distEl.appendChild(o);
+  });
+}
+
+function populateEmirateSelect(selectedEmirate) {
+  const el = document.getElementById('f-emirate');
+  el.innerHTML = '<option value="">— Select —</option>';
+  getByType('emirate').forEach(e => {
+    const o = document.createElement('option');
+    o.value = e.name; o.textContent = e.name; o.dataset.id = e.id;
+    if (e.name === selectedEmirate) o.selected = true;
+    el.appendChild(o);
+  });
+}
+
+function populateCitySelect(emirateName, selectedCity) {
+  const emirate = locations.find(l => l.type === 'emirate' && l.name === emirateName);
+  const el = document.getElementById('f-city');
+  el.innerHTML = '<option value="">— Select City —</option>';
+  if (!emirate) return;
+  getByType('city', emirate.id).forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.name; o.textContent = c.name; o.dataset.id = c.id;
+    if (c.name === selectedCity) o.selected = true;
+    el.appendChild(o);
+  });
+}
+
+function populateDistrictSelect(cityName, selectedDistrict) {
+  const city = locations.find(l => l.type === 'city' && l.name === cityName);
+  const el = document.getElementById('f-district');
+  el.innerHTML = '<option value="">— No district —</option>';
+  if (!city) return;
+  getByType('district', city.id).forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.name; o.textContent = d.name; o.dataset.id = d.id;
+    if (d.name === selectedDistrict) o.selected = true;
+    el.appendChild(o);
+  });
+}
+
 // CART
 function renderCart(){
   const container=document.getElementById('cart-items');
@@ -820,9 +908,12 @@ function openNewOrder(){
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
   populateFormRefs(null);
+  populateEmirateSelect('');
+  document.getElementById('f-city').innerHTML='<option value="">— Select Emirate first —</option>';
+  document.getElementById('f-district').innerHTML='<option value="">— Select City first —</option>';
   document.getElementById('f-num').value=genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  ['f-city','f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-confirmed').value='No';
   renderCart();
   document.getElementById('order-modal').classList.add('open');
@@ -835,7 +926,9 @@ async function editOrder(id){
   populateFormRefs(o);
   document.getElementById('f-num').value=o.order_num;
   document.getElementById('f-date').value=o.order_date||'';
-  document.getElementById('f-city').value=o.city||'';
+  populateEmirateSelect(o.emirate||'');
+  populateCitySelect(o.emirate||'', o.city||'');
+  populateDistrictSelect(o.city||'', o.apt||'');
   document.getElementById('f-apt').value=o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
@@ -854,7 +947,8 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:get('f-city'),apt:get('f-apt'),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
+  const districtVal = document.getElementById('f-district')?.value || '';
+  const payload={order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:get('f-city'),apt:districtVal||get('f-apt'),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
@@ -976,9 +1070,73 @@ function exportCSV(){
 }
 
 // DIRECTORY
+
+function renderLocations() {
+  const tree = document.getElementById('locations-tree');
+  if (!tree) return;
+  const emirates = getByType('emirate');
+  tree.innerHTML = emirates.map(em => {
+    const cities = getByType('city', em.id);
+    return `<div class="dir-card">
+      <div class="dir-card-head">
+        <div class="dir-card-title">&#127981; ${em.name}</div>
+        <button class="dir-add-btn" onclick="openLocAdd('city',${em.id},'${em.name}')" title="Add city">+</button>
+      </div>
+      ${cities.map(city => {
+        const districts = getByType('district', city.id);
+        return `<div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:var(--surface2);border-radius:6px;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:600">&#127968; ${city.name}</span>
+            <div style="display:flex;gap:4px">
+              <button class="dir-add-btn" onclick="openLocAdd('district',${city.id},'${city.name}')" title="Add district">+</button>
+              <button class="dir-item-del" onclick="deleteLoc(${city.id})">&#10005;</button>
+            </div>
+          </div>
+          ${districts.map(d => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px 3px 20px">
+              <span style="font-size:12px;color:var(--muted)">&#8627; ${d.name}</span>
+              <button class="dir-item-del" onclick="deleteLoc(${d.id})">&#10005;</button>
+            </div>`).join('')}
+        </div>`;
+      }).join('')}
+      <button style="width:100%;background:none;border:1px dashed var(--border);border-radius:6px;padding:6px;color:var(--muted);cursor:pointer;font-size:12px;margin-top:4px" onclick="openLocAdd('emirate',null,'')">+ Add Emirate</button>
+    </div>`;
+  }).join('') + `<div class="dir-card" style="border-style:dashed;cursor:pointer;display:flex;align-items:center;justify-content:center;min-height:100px" onclick="openLocAdd('emirate',null,'')">
+    <div style="text-align:center;color:var(--muted)"><div style="font-size:24px">+</div><div style="font-size:12px">Add Emirate</div></div>
+  </div>`;
+}
+
+let locAddType = null, locAddParentId = null;
+function openLocAdd(type, parentId, parentName) {
+  locAddType = type; locAddParentId = parentId;
+  const labels = {emirate:'Emirate', city:`City in ${parentName}`, district:`District in ${parentName}`};
+  document.getElementById('dir-modal-title').textContent = 'Add ' + labels[type];
+  document.getElementById('dir-input').value = '';
+  document.getElementById('dir-modal').classList.add('open');
+  setTimeout(() => document.getElementById('dir-input').focus(), 100);
+}
+
+async function saveLocItem() {
+  const v = document.getElementById('dir-input').value.trim();
+  if (!v) return;
+  const payload = {type: locAddType, name: v, parent_id: locAddParentId || null};
+  const {error} = await sb.from('locations').insert(payload);
+  if (error) { toast('Error: '+error.message, true); return; }
+  toast('Added: ' + v);
+  closeModal('dir-modal');
+  await loadLocations();
+  renderLocations();
+}
+async function deleteLoc(id) {
+  if (!confirm('Delete this location and all sub-locations?')) return;
+  await sb.from('locations').delete().eq('id', id);
+  toast('Deleted');
+  await loadLocations();
+  renderLocations();
+}
+
 function renderDirectory(){
   const cats=[
-    {key:'emirates',label:'Emirates'},
     {key:'drivers',label:'Drivers'},
     {key:'paymentStatus',label:'Payment Status'},
     {key:'deliveryStatus',label:'Delivery Status'},
@@ -992,6 +1150,7 @@ function renderDirectory(){
 }
 
 function openDirAdd(key,label){
+  locAddType=null;
   dirCategory=key;
   document.getElementById('dir-modal-title').textContent='Add to '+label;
   document.getElementById('dir-input').value='';
@@ -999,6 +1158,8 @@ function openDirAdd(key,label){
   setTimeout(()=>document.getElementById('dir-input').focus(),100);
 }
 async function saveDirItem(){
+  // If in location add mode, delegate
+  if(locAddType){await saveLocItem();return;}
   const v=document.getElementById('dir-input').value.trim();
   if(!v||!dirCategory)return;
   const{error}=await sb.from('refs').insert({category:dirCategory,value:v});
