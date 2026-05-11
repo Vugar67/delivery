@@ -1203,7 +1203,7 @@ function renderCart() {
   if (cartEl) cartEl.style.display = 'block';
   if (emptyEl) emptyEl.style.display = 'none';
   
-  const total = cart.reduce((s, item) => s + (item.customPrice !== undefined ? item.customPrice : item.product.price) * item.qty, 0);
+  const total = cart.reduce((s, item) => s + (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price)) * item.qty, 0);
   if (totalEl) totalEl.textContent = total.toFixed(2) + ' AED';
   if (countEl) countEl.textContent = cart.length + ' item' + (cart.length > 1 ? 's' : '');
   
@@ -1216,7 +1216,7 @@ function renderCart() {
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${item.qty+1})">+</button>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
-        <input type="number" min="0" step="1" value="${item.customPrice !== undefined ? item.customPrice : parseFloat(item.product.price)}" 
+        <input type="number" min="0" step="0.01" value="${item.customPrice !== undefined ? item.customPrice : parseFloat(item.product.price)}" 
           onchange="updateCartPrice(${i}, this.value)"
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;color:var(--accent);font-family:var(--mono);font-size:12px;outline:none;text-align:center">
         <span style="font-size:10px;color:var(--muted)">AED</span>
@@ -1237,7 +1237,7 @@ function updateCartQty(i, val) {
 }
 
 function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
-function updateCartPrice(i, val) { cart[i].customPrice = parseFloat(val) || 0; renderCart(); }
+function updateCartPrice(i, val) { cart[i].customPrice = parseFloat(parseFloat(val).toFixed(2)) || 0; renderCart(); }
 
 function addToCart(productId) {
   const p = products.find(x => x.id === productId); if (!p) return;
@@ -1339,6 +1339,7 @@ async function saveOrder(){
 
 async function deleteOrder(id){
   if(!confirm('Delete this order?'))return;
+  await sb.from('invoices').delete().eq('order_id',id);
   await sb.from('order_items').delete().eq('order_id',id);
   const{error}=await sb.from('orders').delete().eq('id',id);
   if(error){toast('Error: '+error.message,true);return;}
