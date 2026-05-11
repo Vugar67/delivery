@@ -802,12 +802,10 @@ let realtimeSub=null;
 
 function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';setTimeout(()=>t.classList.remove('show'),2400);}
 async function genOrderNum(){
-  const {data} = await sb.from('orders').select('order_num').order('created_at', {ascending:false}).single();
-  if (data && data.order_num) {
-    const num = parseInt(data.order_num.replace('ORD-','')) || 110099;
-    return 'ORD-' + (num + 1).toString();
-  }
-  return 'ORD-110100';
+  const {data} = await sb.from('orders').select('order_num').order('created_at', {ascending:false});
+  const nums = (data||[]).map(o => parseInt((o.order_num||'').replace('ORD-',''))).filter(n => n >= 110100);
+  const max = nums.length ? Math.max(...nums) : 110099;
+  return 'ORD-' + (max + 1).toString();
 }
 
 // AUTH
