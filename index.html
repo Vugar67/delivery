@@ -1707,7 +1707,9 @@ async function generateInvoice(seller) {
   ctxSeller = seller;
   const order = orders.find(o => o.id === ctxOrderId);
   if (!order) return;
-  const items = orderItems[ctxOrderId] || [];
+  // Always fetch fresh items from DB
+  const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', ctxOrderId);
+  const items = freshItems || orderItems[ctxOrderId] || [];
   
   // Get next invoice number
   await loadInvoiceCounter();
