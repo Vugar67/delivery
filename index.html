@@ -1798,18 +1798,18 @@ function renderInvoiceContent(order, items, seller, invNum) {
             <td></td>
             <td>${item.product_name}</td>
             <td style="text-align:center">${item.quantity}</td>
-            <td style="text-align:right">${parseFloat(item.price||0).toFixed(0)}</td>
-            <td style="text-align:right">${(parseFloat(item.price||0)*parseFloat(item.quantity||1)).toFixed(0)}</td>
+            <td style="text-align:right">${parseFloat(item.price||0).toFixed(2)}</td>
+            <td style="text-align:right">${(parseFloat(item.price||0)*parseFloat(item.quantity||1)).toFixed(2)}</td>
           </tr>`).join('')}
-          ${delivery > 0 ? `<tr><td></td><td>Delivery</td><td style="text-align:center">1</td><td style="text-align:right">${delivery.toFixed(0)}</td><td style="text-align:right">${delivery.toFixed(0)}</td></tr>` : ''}
+          ${delivery > 0 ? `<tr><td></td><td>Delivery</td><td style="text-align:center">1</td><td style="text-align:right">${delivery.toFixed(2)}</td><td style="text-align:right">${delivery.toFixed(2)}</td></tr>` : ''}
         </tbody>
       </table>
       <div class="invoice-totals">
         <table>
-          <tr><td>SUBTOTAL</td><td style="text-align:right">${subtotal.toFixed(0)}</td></tr>
-          <tr><td>DISCOUNT</td><td style="text-align:right">${discount > 0 ? discount.toFixed(0) : ''}</td></tr>
-          <tr><td>DELIVERY</td><td style="text-align:right">${delivery > 0 ? delivery.toFixed(0) : ''}</td></tr>
-          <tr class="total-row"><td>Balance Due</td><td style="text-align:right">${balanceDue.toFixed(0)}</td></tr>
+          <tr><td>SUBTOTAL</td><td style="text-align:right">${subtotal.toFixed(2)}</td></tr>
+          <tr><td>DISCOUNT</td><td style="text-align:right">${discount > 0 ? discount.toFixed(2) : ''}</td></tr>
+          <tr><td>DELIVERY</td><td style="text-align:right">${delivery > 0 ? delivery.toFixed(2) : ''}</td></tr>
+          <tr class="total-row"><td>Balance Due</td><td style="text-align:right">${balanceDue.toFixed(2)}</td></tr>
         </table>
       </div>
       <div style="clear:both"></div>
