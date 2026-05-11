@@ -61,7 +61,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .btn-danger{background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:var(--red)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:auto}
-.tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1100px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1500px}
 .tbl th{background:var(--surface2);color:var(--muted);font-weight:500;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
 .tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .tbl tr:last-child td{border-bottom:none}
@@ -292,7 +292,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <thead><tr>
             <th>Order #</th><th>Date</th><th>Emirate</th><th>City</th>
             <th>Villa/Apt</th><th>Client #</th><th>Items</th><th>Driver</th>
-            <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Notes</th><th></th>
+            <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th>Delivery</th><th>Subtotal</th><th>Discount</th><th>Total</th><th>Notes</th><th></th>
           </tr></thead>
           <tbody id="order-tbody"></tbody>
         </table>
@@ -957,6 +957,11 @@ function renderTable(){
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
         <td>${confBadge(o.confirmed)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${o.invoice_number||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px">${o.delivery_charge>0?o.delivery_charge.toFixed(2):'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px">${o.subtotal>0?o.subtotal.toFixed(2):'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${o.discount>0?('-'+o.discount.toFixed(2)):'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
         <td><div class="actions">
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
@@ -1732,6 +1737,14 @@ async function generateInvoice(seller) {
     delivery_charge: 0,
     discount: 0
   });
+  // Update order with invoice number and financial summary
+  const subtotal0 = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+  await sb.from('orders').update({
+    invoice_number: invNum,
+    subtotal: subtotal0,
+    total: subtotal0
+  }).eq('id', order.id);
+  await loadOrders(); renderTable();
 }
 
 function getSellerInfo(seller) {
@@ -1826,10 +1839,24 @@ function renderInvoiceContent(order, items, seller, invNum) {
     </div>`;
 }
 
-function updateInvoiceTotal() {
+async function updateInvoiceTotal() {
   const order = orders.find(o => o.id === ctxOrderId);
-  const items = orderItems[ctxOrderId] || [];
-  if (order) renderInvoiceContent(order, items, ctxSeller, invoiceCounter);
+  const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', ctxOrderId);
+  const items = freshItems || orderItems[ctxOrderId] || [];
+  if (!order) return;
+  const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
+  const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+  const subtotal = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+  const total = subtotal + delivery - discount;
+  // Save to order
+  await sb.from('orders').update({
+    delivery_charge: delivery,
+    discount: discount,
+    subtotal: subtotal,
+    total: total
+  }).eq('id', order.id);
+  await loadOrders(); renderTable();
+  renderInvoiceContent(order, items, ctxSeller, invoiceCounter);
 }
 
 function printInvoice() {
