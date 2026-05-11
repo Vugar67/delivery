@@ -801,7 +801,14 @@ let cart=[]; // [{product, qty}]
 let realtimeSub=null;
 
 function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';setTimeout(()=>t.classList.remove('show'),2400);}
-function genOrderNum(){return 'ORD-'+(Date.now()%100000).toString().padStart(5,'0');}
+async function genOrderNum(){
+  const {data} = await sb.from('orders').select('order_num').order('created_at', {ascending:false}).single();
+  if (data && data.order_num) {
+    const num = parseInt(data.order_num.replace('ORD-','')) || 110099;
+    return 'ORD-' + (num + 1).toString();
+  }
+  return 'ORD-110100';
+}
 
 // AUTH
 async function doLogin(){
@@ -1259,7 +1266,7 @@ function initShop() {
 }
 
 // ORDER CRUD
-function openNewOrder(){
+async function openNewOrder(){
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
   populateFormRefs(null);
@@ -1277,7 +1284,7 @@ function openNewOrder(){
   document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';
   // Load Dubai districts
   onEmirateChange();
-  document.getElementById('f-num').value=genOrderNum();
+  document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
   ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-district-custom').value='';
