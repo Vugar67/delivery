@@ -370,7 +370,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 
 <!-- INVOICE MODAL -->
 <div class="overlay" id="invoice-modal">
-  <div class="modal" style="max-width:800px;background:#fff;color:#000;padding:0">
+  <div class="modal" style="max-width:800px;background:#fff;color:#000;padding:0;overflow-y:auto;max-height:92vh">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #eee;background:#fff">
       <div style="font-size:15px;font-weight:700;color:#000">Invoice Preview</div>
       <div style="display:flex;gap:8px">
@@ -379,7 +379,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
     </div>
     <!-- Delivery charge input -->
-    <div style="padding:12px 24px;background:#f9f9f9;border-bottom:1px solid #eee;display:flex;gap:16px;align-items:center">
+    <div style="padding:12px 24px;background:#f9f9f9;border-bottom:1px solid #eee;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
         <label style="font-weight:600">Delivery Charge (AED):</label>
         <input type="number" id="inv-delivery" value="0" min="0" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
@@ -1216,7 +1216,7 @@ function renderCart() {
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${item.qty+1})">+</button>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
-        <input type="number" min="0" step="1" value="${item.customPrice !== undefined ? item.customPrice : item.product.price}" 
+        <input type="number" min="0" step="1" value="${item.customPrice !== undefined ? item.customPrice : parseFloat(item.product.price)}" 
           onchange="updateCartPrice(${i}, this.value)"
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;color:var(--accent);font-family:var(--mono);font-size:12px;outline:none;text-align:center">
         <span style="font-size:10px;color:var(--muted)">AED</span>
@@ -1299,7 +1299,11 @@ async function editOrder(id){
   const items=orderItems[id]||[];
   cart=items.map(item=>{
     const p=products.find(x=>x.id===item.product_id)||{id:item.product_id,name:item.product_name,price:item.price,unit:item.unit};
-    return{product:p,qty:parseFloat(item.quantity)};
+    const savedPrice = parseFloat(item.price);
+    const originalPrice = parseFloat(p.price);
+    // Keep custom price if it differs from product default
+    const customPrice = (savedPrice !== originalPrice) ? savedPrice : undefined;
+    return{product:p,qty:parseFloat(item.quantity),customPrice};
   });
   initShop();
   document.getElementById('order-modal').classList.add('open');
