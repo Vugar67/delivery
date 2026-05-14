@@ -381,12 +381,17 @@ select option{background:#1a1d27;color:#f0f2ff}
     <!-- Delivery charge input -->
     <div style="padding:12px 24px;background:#f9f9f9;border-bottom:1px solid #eee;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
-        <label style="font-weight:600">Delivery Charge (AED):</label>
-        <input type="number" id="inv-delivery" value="0" min="0" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <label style="font-weight:600">Delivery (AED):</label>
+        <input type="number" id="inv-delivery" value="0" min="0" step="0.01" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
       </div>
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
         <label style="font-weight:600">Discount (AED):</label>
-        <input type="number" id="inv-discount" value="0" min="0" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <input type="number" id="inv-discount" value="0" min="0" step="0.01" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
+        <label style="font-weight:600">Processing Fee (2.35%):</label>
+        <input type="checkbox" id="inv-proc-fee" onchange="updateInvoiceTotal()" style="width:16px;height:16px;cursor:pointer">
+        <span id="inv-proc-fee-val" style="font-family:monospace;color:#e67e22;font-size:12px"></span>
       </div>
     </div>
     <div id="invoice-content" style="padding:0"></div>
@@ -904,8 +909,9 @@ function populateFormRefs(o){
 // BADGES
 function payBadge(v){
   if(v==='Cash on Delivery')return`<span class="badge badge-cash">${v}</span>`;
-  if(v==='Pending via Link')return`<span class="badge badge-link">${v}</span>`;
-  if(v==='Already Paid')return`<span class="badge badge-paid">${v}</span>`;
+  if(v==='Paid via Link')return`<span class="badge badge-link">${v}</span>`;
+  if(v==='Pending')return`<span class="badge badge-pending">${v}</span>`;
+  if(v==='Crypto')return`<span class="badge" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3)">${v}</span>`;
   return`<span class="badge badge-pending">${v||'&mdash;'}</span>`;
 }
 function delBadge(v){
@@ -1725,8 +1731,11 @@ async function generateInvoice(seller) {
   await loadInvoiceCounter();
   const invNum = invoiceCounter;
   
-  document.getElementById('inv-delivery').value = 0;
-  document.getElementById('inv-discount').value = 0;
+  document.getElementById('inv-delivery').value = order.delivery_charge || 0;
+  document.getElementById('inv-discount').value = order.discount || 0;
+  // Auto-check processing fee for Paid via Link
+  const procFeeEl = document.getElementById('inv-proc-fee');
+  if (procFeeEl) procFeeEl.checked = order.payment_status === 'Paid via Link';
   
   renderInvoiceContent(order, items, seller, invNum);
   document.getElementById('invoice-modal').classList.add('open');
@@ -1744,10 +1753,11 @@ async function generateInvoice(seller) {
   });
   // Update order with invoice number and financial summary
   const subtotal0 = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+  const procFee0 = order.payment_status === 'Paid via Link' ? parseFloat((subtotal0 * 0.0235).toFixed(2)) : 0;
   await sb.from('orders').update({
     invoice_number: invNum,
     subtotal: subtotal0,
-    total: subtotal0
+    total: parseFloat((subtotal0 + procFee0).toFixed(2))
   }).eq('id', order.id);
   await loadOrders(); renderTable();
 }
@@ -1769,8 +1779,13 @@ function renderInvoiceContent(order, items, seller, invNum) {
   const si = getSellerInfo(seller);
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
   const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+  const procFeeChecked = document.getElementById('inv-proc-fee')?.checked || false;
   const subtotal = items.reduce((s, i) => s + parseFloat(i.price || 0) * parseFloat(i.quantity || 1), 0);
-  const balanceDue = subtotal + delivery - discount;
+  const procFee = procFeeChecked ? parseFloat(((subtotal + delivery - discount) * 0.0235).toFixed(2)) : 0;
+  const balanceDue = subtotal + delivery - discount + procFee;
+  // Update fee display
+  const feeEl = document.getElementById('inv-proc-fee-val');
+  if (feeEl) feeEl.textContent = procFee > 0 ? '+' + procFee.toFixed(2) + ' AED' : '';
   const today = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
   const orderDate = order.order_date ? new Date(order.order_date).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'}) : today;
   const billAddress = [order.emirate, order.city, order.apt].filter(Boolean).join(', ');
@@ -1822,6 +1837,7 @@ function renderInvoiceContent(order, items, seller, invNum) {
             <td style="text-align:right">${(parseFloat(item.price||0)*parseFloat(item.quantity||1)).toFixed(2)}</td>
           </tr>`).join('')}
           ${delivery > 0 ? `<tr><td></td><td>Delivery</td><td style="text-align:center">1</td><td style="text-align:right">${delivery.toFixed(2)}</td><td style="text-align:right">${delivery.toFixed(2)}</td></tr>` : ''}
+          ${procFee > 0 ? `<tr><td></td><td>Processing Fee (2.35%)</td><td style="text-align:center">1</td><td style="text-align:right">${procFee.toFixed(2)}</td><td style="text-align:right">${procFee.toFixed(2)}</td></tr>` : ''}
         </tbody>
       </table>
       <div class="invoice-totals">
@@ -1829,6 +1845,7 @@ function renderInvoiceContent(order, items, seller, invNum) {
           <tr><td>SUBTOTAL</td><td style="text-align:right">${subtotal.toFixed(2)}</td></tr>
           <tr><td>DISCOUNT</td><td style="text-align:right">${discount > 0 ? discount.toFixed(2) : ''}</td></tr>
           <tr><td>DELIVERY</td><td style="text-align:right">${delivery > 0 ? delivery.toFixed(2) : ''}</td></tr>
+          ${procFee > 0 ? `<tr><td>PROCESSING FEE</td><td style="text-align:right">${procFee.toFixed(2)}</td></tr>` : ''}
           <tr class="total-row"><td>Balance Due</td><td style="text-align:right">${balanceDue.toFixed(2)}</td></tr>
         </table>
       </div>
@@ -1851,14 +1868,16 @@ async function updateInvoiceTotal() {
   if (!order) return;
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
   const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+  const procFeeChecked = document.getElementById('inv-proc-fee')?.checked || false;
   const subtotal = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
-  const total = subtotal + delivery - discount;
+  const procFee = procFeeChecked ? parseFloat(((subtotal + delivery - discount) * 0.0235).toFixed(2)) : 0;
+  const total = subtotal + delivery - discount + procFee;
   // Save to order
   await sb.from('orders').update({
     delivery_charge: delivery,
     discount: discount,
     subtotal: subtotal,
-    total: total
+    total: parseFloat(total.toFixed(2))
   }).eq('id', order.id);
   await loadOrders(); renderTable();
   renderInvoiceContent(order, items, ctxSeller, invoiceCounter);
