@@ -1592,6 +1592,11 @@ async function saveOrder(){
   if(cart.length){
     const items=cart.map(item=>({order_id:orderId,product_id:item.product.id,product_name:item.product.name,unit:item.product.unit,price:item.customPrice!==undefined?item.customPrice:item.product.price,quantity:item.qty}));
     await sb.from('order_items').insert(items);
+    // Calculate and save subtotal/total
+    const subtotal=cart.reduce((s,item)=>s+(item.customPrice!==undefined?parseFloat(item.customPrice):parseFloat(item.product.price))*item.qty,0);
+    const deliveryCharge=parseFloat(document.getElementById('f-delivery-charge').value)||0;
+    const total=subtotal+deliveryCharge;
+    await sb.from('orders').update({subtotal:parseFloat(subtotal.toFixed(2)),delivery_charge:deliveryCharge,total:parseFloat(total.toFixed(2))}).eq('id',orderId);
   }
   btn.disabled=false;btn.textContent='Save Order';
   toast(editId?'Order updated':'Order created');
@@ -2228,10 +2233,10 @@ async function sendToDriver(orderId) {
   const items = waItems.map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
   const address = [o.emirate, o.city, o.apt].filter(Boolean).join(', ');
   const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
-  const totalAmount = (o.total||0) > 0 ? o.total : 
-    waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0) + (o.delivery_charge||0);
-  const codLine = isCOD ? `\n\n💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*\n   (Items + Delivery)` : '';
-  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n${o.delivery_charge>0?'🚗 *Delivery:* '+o.delivery_charge.toFixed(2)+' AED':''}\n${o.total>0?'💵 *Total:* '+o.total.toFixed(2)+' AED':''}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
+  const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+  const totalAmount = itemsSubtotal + (o.delivery_charge||0);
+  const codLine = isCOD ? `\n\n💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*\n   (Items: ${itemsSubtotal.toFixed(2)} + Delivery: ${(o.delivery_charge||0).toFixed(2)})` : '';
+  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n${o.delivery_charge>0?'🚗 *Delivery:* '+(o.delivery_charge||0).toFixed(2)+' AED':''}\n💵 *Total: ${totalAmount.toFixed(2)} AED*\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
