@@ -490,6 +490,16 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group form-full">
+        <label>Client Location</label>
+        <input id="f-location-raw" placeholder="Paste any text with Google Maps link..." oninput="extractLocationUrl(this.value)">
+        <div id="f-location-preview" style="display:none;align-items:center;gap:8px;margin-top:6px">
+          <span style="font-size:11px;color:var(--green);font-family:var(--mono)">📍 Location detected:</span>
+          <a id="f-location-link" href="#" target="_blank" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
+          <button onclick="clearLocation()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>
+        </div>
+        <input type="hidden" id="f-location-url">
+      </div>
+      <div class="form-group form-full">
         <label>Products / Items</label>
         <div class="shop-section">
           <!-- Search & Category Filter -->
