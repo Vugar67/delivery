@@ -491,7 +491,10 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group form-full">
         <label>Client Location</label>
-        <input id="f-location-raw" placeholder="Paste any text with Google Maps link..." oninput="extractLocationUrl(this.value)" onpaste="setTimeout(()=>extractLocationUrl(document.getElementById('f-location-raw').value),50)">
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <input id="f-location-raw" placeholder="Paste any text with Google Maps link..." style="flex:1" oninput="extractLocationUrl(this.value)" onpaste="setTimeout(()=>extractLocationUrl(document.getElementById('f-location-raw').value),50)">
+          <button id="loc-autofill-btn" onclick="triggerLocAutofill()" title="Auto-fill address from location" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:0 14px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:.15s" onmouseover="this.style.background='var(--accent2)'" onmouseout="this.style.background='var(--accent)'">📍 Fill</button>
+        </div>
         <div id="f-location-preview" style="display:none;align-items:center;gap:8px;margin-top:6px">
           <span style="font-size:11px;color:var(--green);font-family:var(--mono)">📍 Location detected:</span>
           <a id="f-location-link" href="#" target="_blank" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
@@ -1417,6 +1420,17 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
 // LOCATION URL EXTRACTION
 const GOOGLE_API_KEY = 'AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No';
+
+async function triggerLocAutofill() {
+  const raw = document.getElementById('f-location-raw').value.trim();
+  if (!raw) { toast('Paste a location text or Google Maps link first', true); return; }
+  const btn = document.getElementById('loc-autofill-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.3);border-top-color:#000"></span>';
+  await extractLocationUrl(raw);
+  btn.disabled = false;
+  btn.innerHTML = '📍 Fill';
+}
 
 async function extractLocationUrl(text) {
   if (!text) return;
