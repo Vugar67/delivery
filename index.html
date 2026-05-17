@@ -496,6 +496,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button onclick="clearClientMessage()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;font-family:var(--mono);padding:0">✕ clear</button>
         </label>
         <div id="client-msg-text" style="background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:12px;font-family:var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow-y:auto;line-height:1.6"></div>
+        <div id="client-msg-extracted" style="display:none;margin-top:6px;padding:7px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:var(--mono);color:var(--muted);line-height:1.8"></div>
         <input type="hidden" id="f-raw-message">
       </div>
 
@@ -1473,10 +1474,11 @@ function clearClientMessage() {
   const card = document.getElementById('client-msg-card');
   const display = document.getElementById('client-msg-text');
   const hidden = document.getElementById('f-raw-message');
+  const summary = document.getElementById('client-msg-extracted');
   if (card) card.style.display = 'none';
   if (display) display.textContent = '';
   if (hidden) hidden.value = '';
-  // also clear location field
+  if (summary) { summary.style.display = 'none'; summary.innerHTML = ''; }
   clearLocation();
 }
 
@@ -1494,21 +1496,20 @@ async function triggerLocAutofill() {
 
 function parseClientText(text) {
   const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
-  let filled = [];
+  const extracted = []; // {field, value} pairs for summary
 
-  // 1. Phone — UAE formats: +971 5X XXX XXXX or 05XXXXXXXX or 971XXXXXXXXX
+  // 1. Phone
   const phoneMatch = text.match(/(\+971[\s\-]?\d[\d\s\-]{6,12}|971\d{9}|05\d[\s\-]?\d{3}[\s\-]?\d{4})/);
   if (phoneMatch) {
     const phone = phoneMatch[1].replace(/\s+/g, ' ').trim();
     const clientEl = document.getElementById('f-client');
     if (clientEl && !clientEl.value) {
       clientEl.value = phone;
-      filled.push('📞 phone');
+      extracted.push({ field: 'Phone', value: phone });
     }
   }
 
-  // 2. Name — line that is NOT a URL, NOT a phone, NOT digits-only, NOT known keywords
-  //    heuristic: short (1-4 words), only letters/spaces/arabic
+  // 2. Name candidates
   const skipPatterns = [/https?:\/\//, /^\+?[\d\s\-]{7,}$/, /^(order|mg|ml|pen|box|pcs|tesa|tadawi|neo|label)/i];
   const urlPattern = /(https?:\/\/[^\s]+)/;
   const nameCandidates = lines.filter(l => {
@@ -1518,37 +1519,43 @@ function parseClientText(text) {
     return words.length >= 1 && words.length <= 4 && /^[a-zA-Z\u0600-\u06FF\s\-']+$/.test(l);
   });
 
-  // Pick the best candidate — prefer lines after "order" keywords or standalone names
-  const nameEl = document.getElementById('f-client-name') || null; // may not exist
-  // Store candidates in notes if client name field doesn't exist
-  // For now just pick first plausible name and put in villa/apt if apt empty, or annotate notes
-  if (nameCandidates.length > 0) {
-    const name = nameCandidates[0];
-    // Try to fill villa/apt as name if empty and short
-    const aptEl = document.getElementById('f-apt');
-    const notesEl = document.getElementById('f-notes');
-    // Put name into notes as hint if notes empty
-    if (notesEl && !notesEl.value) {
-      const productHint = extractProductHint(lines);
-      let noteParts = [];
-      if (name) noteParts.push('👤 ' + nameCandidates.join(', '));
-      if (productHint) noteParts.push('💊 ' + productHint);
+  // 3. Product hint
+  const productHint = extractProductHint(lines);
+
+  // 4. Villa/address hint — lines with "villa", "apt", "flat", "house", number + word
+  const addressHint = lines.find(l =>
+    /villa|apt|flat|house|building|tower|street|st\.|road|rd\./i.test(l) &&
+    !urlPattern.test(l)
+  );
+
+  // Fill notes
+  const notesEl = document.getElementById('f-notes');
+  if (notesEl && !notesEl.value) {
+    let noteParts = [];
+    if (nameCandidates.length) noteParts.push('Client: ' + nameCandidates.join(', '));
+    if (addressHint) noteParts.push('Address hint: ' + addressHint);
+    if (productHint) noteParts.push('Products: ' + productHint);
+    if (noteParts.length) {
       notesEl.value = noteParts.join(' | ');
-      if (noteParts.length) filled.push('📝 notes');
-    }
-  } else {
-    // Even with no name, extract product hint
-    const productHint = extractProductHint(lines);
-    if (productHint) {
-      const notesEl = document.getElementById('f-notes');
-      if (notesEl && !notesEl.value) {
-        notesEl.value = '💊 ' + productHint;
-        filled.push('📝 notes');
-      }
     }
   }
 
-  if (filled.length) toast('✅ Auto-filled: ' + filled.join(', '));
+  if (nameCandidates.length) extracted.push({ field: 'Name', value: nameCandidates.join(', ') });
+  if (addressHint) extracted.push({ field: 'Address', value: addressHint });
+  if (productHint) extracted.push({ field: 'Products', value: productHint });
+
+  // Show extracted summary under card
+  const summaryEl = document.getElementById('client-msg-extracted');
+  if (summaryEl) {
+    if (extracted.length) {
+      summaryEl.innerHTML = '⚡ Auto-extracted: ' + extracted.map(e =>
+        `<span style="color:var(--text);margin-left:8px"><span style="color:var(--muted)">${e.field}:</span> <b style="color:var(--accent);font-weight:600">${escHtml(e.value)}</b></span>`
+      ).join('<span style="color:var(--border);margin-left:8px">·</span>');
+      summaryEl.style.display = 'block';
+    } else {
+      summaryEl.style.display = 'none';
+    }
+  }
 }
 
 function extractProductHint(lines) {
