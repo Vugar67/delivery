@@ -1059,7 +1059,21 @@ function renderTable(){
         <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
         <td><div class="actions">
-          ${o.driver ? `<button class="act-btn" onclick="sendToDriver('${o.id}')" title="Send to Driver via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>` : ''}
+          ${o.driver ? (() => {
+            if (o.wa_sent_at) {
+              const sentDate = new Date(o.wa_sent_at);
+              const now = new Date();
+              const diffMs = now - sentDate;
+              const diffH = Math.floor(diffMs / 3600000);
+              const diffM = Math.floor(diffMs / 60000);
+              const timeAgo = diffH > 0 ? diffH+'h ago' : diffM > 0 ? diffM+'m ago' : 'just now';
+              return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
+                <button class="act-btn" onclick="sendToDriver('${o.id}')" title="Sent by ${o.wa_sent_by||'?'} — click to resend" style="color:#25d366;border-color:#25d366;background:rgba(37,211,102,.12)">✓ WA</button>
+                <span style="font-size:9px;color:#25d366;font-family:var(--mono)">${timeAgo}</span>
+              </div>`;
+            }
+            return `<button class="act-btn" onclick="sendToDriver('${o.id}')" title="Send to Driver via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>`;
+          })() : ''}
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
           <button class="act-btn del" onclick="deleteOrder('${o.id}')">&#10005;</button>
         </div></td>
@@ -2150,7 +2164,7 @@ async function cyclePriority(orderId, currentPriority) {
   renderTable();
 }
 
-function sendToDriver(orderId) {
+async function sendToDriver(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const driver = drivers.find(d => d.name === o.driver);
@@ -2160,6 +2174,14 @@ function sendToDriver(orderId) {
   const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}\n${o.total>0?'💵 *Total:* '+o.total.toFixed(2)+' AED':''}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
   window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
+  // Save sent timestamp
+  await sb.from('orders').update({
+    wa_sent_at: new Date().toISOString(),
+    wa_sent_by: currentUser.email,
+    wa_sent_count: (o.wa_sent_count||0) + 1
+  }).eq('id', orderId);
+  await loadOrders();
+  renderTable();
 }
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
