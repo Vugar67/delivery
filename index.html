@@ -230,6 +230,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .invoice-totals .total-row td{font-weight:700;background:#f5f5f5;font-size:14px}
 .invoice-remarks{font-size:10px;color:#666;margin-top:60px;clear:both;line-height:1.6;border-top:1px solid #ddd;padding-top:10px}
 
+
+/* TOOLTIP */
+.order-tooltip{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;z-index:300;min-width:280px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.5);pointer-events:none;display:none}
+.order-tooltip.show{display:block}
+.tooltip-title{font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono);margin-bottom:8px;letter-spacing:.06em}
+.tooltip-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+.tooltip-item:last-child{border-bottom:none}
+.tooltip-item-name{color:var(--text);flex:1;padding-right:8px}
+.tooltip-item-qty{color:var(--muted);font-family:var(--mono);font-size:11px;margin-right:8px}
+.tooltip-item-price{color:var(--accent);font-family:var(--mono);font-size:12px;font-weight:600}
+.tooltip-total{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--accent);font-weight:700;font-size:13px}
+.tooltip-total-val{color:var(--accent);font-family:var(--mono)}
+.tooltip-empty{color:var(--muted);font-size:12px;text-align:center;padding:8px 0}
+
 .toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--accent);border-radius:10px;padding:12px 18px;font-size:13px;color:var(--text);z-index:999;transform:translateY(60px);opacity:0;transition:.3s;pointer-events:none;font-family:var(--mono)}
 .toast.show{transform:translateY(0);opacity:1}
 .toast.err{border-color:var(--red)}
@@ -982,7 +996,7 @@ function renderTable(){
     tbody.innerHTML=slice.map(o=>{
       const items=orderItems[o.id]||[];
       const itemsHtml=items.length?`<div class="items-preview" style="max-width:200px">${items.map(i=>`<span class="item-chip">${i.product_name} ×${i.quantity}</span>`).join('')}</div>`:'<span style="color:var(--muted);font-size:11px">&mdash;</span>';
-      return`<tr oncontextmenu="openCtxMenu(event,'${o.id}')" style="cursor:context-menu">
+      return`<tr oncontextmenu="openCtxMenu(event,'${o.id}')" onmouseenter="showOrderTooltip(event,'${o.id}')" onmouseleave="hideOrderTooltip()" onmousemove="moveOrderTooltip(event)" style="cursor:context-menu">
         <td class="order-num">${o.order_num}</td>
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
@@ -2022,11 +2036,65 @@ function printInvoice() {
       .invoice-totals .total-row td{font-weight:700;background:#f5f5f5;font-size:14px}
       .invoice-remarks{font-size:10px;color:#666;margin-top:60px;clear:both;line-height:1.6;border-top:1px solid #ddd;padding-top:10px}
       @media print{body{margin:0}@page{margin:15mm}}
-    </style></head><body>${content}</body></html>`);
+    </style></head><body>${content}
+<div class="order-tooltip" id="order-tooltip"></div>
+</body></html>`);
   win.document.close();
   setTimeout(() => { win.focus(); win.print(); }, 400);
 }
 
+
+
+// TOOLTIP
+let tooltipTimer = null;
+
+function showOrderTooltip(e, orderId) {
+  clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(() => {
+    const items = orderItems[orderId] || [];
+    const o = orders.find(x => x.id === orderId);
+    const tooltip = document.getElementById('order-tooltip');
+    
+    let content = '<div class="tooltip-title">ORDER CONTENTS</div>';
+    if (!items.length) {
+      content += '<div class="tooltip-empty">No items</div>';
+    } else {
+      content += items.map(i => `
+        <div class="tooltip-item">
+          <span class="tooltip-item-name">${i.product_name}</span>
+          <span class="tooltip-item-qty">×${i.quantity}</span>
+          <span class="tooltip-item-price">${(parseFloat(i.price||0)*parseFloat(i.quantity||1)).toFixed(2)} AED</span>
+        </div>`).join('');
+      const subtotal = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+      content += `<div class="tooltip-total"><span>Total</span><span class="tooltip-total-val">${subtotal.toFixed(2)} AED</span></div>`;
+    }
+    if (o?.notes) content += `<div style="margin-top:8px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:6px">📝 ${o.notes}</div>`;
+    
+    tooltip.innerHTML = content;
+    
+    // Position tooltip
+    const x = Math.min(e.clientX + 12, window.innerWidth - 400);
+    const y = Math.min(e.clientY + 12, window.innerHeight - 200);
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+    tooltip.classList.add('show');
+  }, 400);
+}
+
+function hideOrderTooltip() {
+  clearTimeout(tooltipTimer);
+  document.getElementById('order-tooltip').classList.remove('show');
+}
+
+function moveOrderTooltip(e) {
+  const tooltip = document.getElementById('order-tooltip');
+  if (tooltip.classList.contains('show')) {
+    const x = Math.min(e.clientX + 12, window.innerWidth - 400);
+    const y = Math.min(e.clientY + 12, window.innerHeight - 200);
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  }
+}
 
 function sendToDriver(orderId) {
   const o = orders.find(x => x.id === orderId);
@@ -2046,5 +2114,7 @@ document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Ent
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
 
 </script>
+
+<div class="order-tooltip" id="order-tooltip"></div>
 </body>
 </html>
