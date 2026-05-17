@@ -1416,6 +1416,8 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
 
 // LOCATION URL EXTRACTION
+const GOOGLE_API_KEY = 'AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No';
+
 async function extractLocationUrl(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const matches = text.match(urlRegex);
@@ -1435,68 +1437,83 @@ async function extractLocationUrl(text) {
     const lat = parseFloat(coordMatch[1]);
     const lng = parseFloat(coordMatch[2]);
     await reverseGeocode(lat, lng);
+    return;
   }
+  
+  // For short links (maps.app.goo.gl) - use Places API to resolve
+  if (mapUrl.includes('goo.gl') || mapUrl.includes('maps.app')) {
+    await resolveShortLink(mapUrl);
+  }
+}
+
+async function resolveShortLink(shortUrl) {
+  try {
+    // Use Google Maps Geocoding with the URL directly won't work for short links
+    // Instead show toast to user
+    toast('📍 Short link detected — coordinates format preferred for auto-fill');
+  } catch(e) {}
 }
 
 async function reverseGeocode(lat, lng) {
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`);
+    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No&language=en`);
     const data = await res.json();
-    if (!data || !data.address) return;
+    if (!data.results || !data.results.length) return;
     
-    const addr = data.address;
-    // Extract relevant fields
-    const district = addr.suburb || addr.neighbourhood || addr.quarter || addr.residential || '';
-    const city = addr.city || addr.town || addr.village || '';
-    const state = addr.state || '';
+    const components = data.results[0].address_components;
     
-    // Map to UAE emirate
+    // Extract emirate (administrative_area_level_1)
+    const stateComp = components.find(c => c.types.includes('administrative_area_level_1'));
+    const localityComp = components.find(c => c.types.includes('locality'));
+    const sublocality = components.find(c => c.types.includes('sublocality') || c.types.includes('sublocality_level_1'));
+    const neighborhood = components.find(c => c.types.includes('neighborhood'));
+    const route = components.find(c => c.types.includes('route'));
+    
+    const stateName = stateComp?.long_name || '';
+    const districtName = sublocality?.long_name || neighborhood?.long_name || localityComp?.long_name || '';
+    
+    // Map to our emirate names
     const emirateMap = {
       'Dubai': 'Dubai', 'Dubayy': 'Dubai',
       'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi',
       'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah',
-      'Ajman': 'Ajman', 'Ajman Emirate': 'Ajman',
-      'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain',
-      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al Khaimah': 'Ras Al Khaimah',
+      'Ajman': 'Ajman',
+      'Umm al-Quwain': 'Umm Al Quwain',
+      'Ras al-Khaimah': 'Ras Al Khaimah',
       'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah'
     };
     
-    const emirateName = emirateMap[state] || emirateMap[city] || '';
+    const emirateName = emirateMap[stateName] || stateName;
     
-    // Fill emirate select
     if (emirateName) {
       const emirateEl = document.getElementById('f-emirate');
       if (emirateEl) {
         emirateEl.value = emirateName;
         onEmirateChange();
-        // Wait for districts to load then try to match
-        setTimeout(() => {
-          const distEl = document.getElementById('f-district');
-          if (distEl && district) {
-            // Try to find matching district
-            const opts = Array.from(distEl.options);
-            const match = opts.find(o => o.text.toLowerCase().includes(district.toLowerCase()) || district.toLowerCase().includes(o.text.toLowerCase()));
-            if (match) { distEl.value = match.value; }
-            else {
-              // Set custom district
-              distEl.value = '__custom';
-              const customEl = document.getElementById('f-district-custom');
-              if (customEl) customEl.value = district;
+        
+        // Try to match district
+        if (districtName) {
+          setTimeout(() => {
+            const distEl = document.getElementById('f-district');
+            if (distEl) {
+              const opts = Array.from(distEl.options);
+              const match = opts.find(o => 
+                o.text.toLowerCase().includes(districtName.toLowerCase()) || 
+                districtName.toLowerCase().includes(o.text.toLowerCase())
+              );
+              if (match && match.value) {
+                distEl.value = match.value;
+              } else {
+                distEl.value = '__custom';
+                const customEl = document.getElementById('f-district-custom');
+                if (customEl) customEl.value = districtName;
+              }
             }
-          }
-        }, 300);
+          }, 500);
+        }
+        
+        toast('📍 ' + emirateName + (districtName ? ' — ' + districtName : ''));
       }
-    }
-    
-    // Show what was detected
-    const preview = document.getElementById('f-location-preview');
-    const link = document.getElementById('f-location-link');
-    if (preview && link) {
-      const detected = [district, emirateName].filter(Boolean).join(', ');
-      link.title = detected ? '📍 Detected: ' + detected : '';
-      preview.style.display = 'flex';
-      // Show detection result
-      toast('📍 Location detected: ' + (detected || 'coordinates found'));
     }
   } catch(e) {
     console.log('Geocode error:', e);
