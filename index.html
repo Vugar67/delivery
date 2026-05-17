@@ -1467,82 +1467,66 @@ async function extractLocationUrl(text) {
 
 async function reverseGeocode(lat, lng) {
   try {
-    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No&language=en`);
+    // OpenStreetMap Nominatim — free, no API key required
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
     const data = await res.json();
 
-    // DEBUG — show API response status
-    if (data.status !== 'OK') {
-      toast('❌ Geocode API: ' + data.status + (data.error_message ? ' — ' + data.error_message : ''), true);
-      console.warn('Geocode API error:', data);
+    if (!data || data.error) {
+      toast('❌ Geocode: ' + (data?.error || 'no results for these coordinates'), true);
       return;
     }
 
-    if (!data.results || !data.results.length) {
-      toast('❌ Geocode: no results for ' + lat + ',' + lng, true);
-      return;
-    }
+    const addr = data.address || {};
+    console.log('Nominatim address:', addr);
 
-    // Try all results to find best address components
-    let stateName = '', districtName = '', cityName = '';
-    for (const result of data.results) {
-      const comps = result.address_components;
-      if (!stateName) {
-        const c = comps.find(c => c.types.includes('administrative_area_level_1'));
-        if (c) stateName = c.long_name;
-      }
-      if (!districtName) {
-        const sub = comps.find(c => c.types.includes('sublocality_level_1') || c.types.includes('sublocality'));
-        const nbr = comps.find(c => c.types.includes('neighborhood'));
-        const loc = comps.find(c => c.types.includes('locality'));
-        if (sub) districtName = sub.long_name;
-        else if (nbr) districtName = nbr.long_name;
-        else if (loc) districtName = loc.long_name;
-      }
-      if (stateName && districtName) break;
-    }
+    // state = emirate in UAE
+    const stateName    = addr.state || addr.county || '';
+    // district / area
+    const districtName = addr.suburb || addr.neighbourhood || addr.quarter
+                      || addr.city_district || addr.residential
+                      || addr.city || addr.town || addr.village || '';
 
-    console.log('Geocode result — state:', stateName, '| district:', districtName, '| raw:', data.results[0]?.formatted_address);
-
-    // Map to our emirate names
+    // Map Nominatim state names → our emirate names
     const emirateMap = {
       'Dubai': 'Dubai', 'Dubayy': 'Dubai',
       'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi',
       'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah',
       'Ajman': 'Ajman',
       'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain',
-      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al Khaimah': 'Ras Al Khaimah',
+      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al-Khaimah': 'Ras Al Khaimah',
       'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah'
     };
 
     const emirateName = emirateMap[stateName] || stateName;
     if (!emirateName) {
-      toast('❌ Could not detect emirate. State from API: "' + stateName + '"', true);
+      toast('❌ Could not detect emirate. Got: "' + stateName + '"', true);
       return;
     }
 
-    // Check if emirate exists in our locations list
+    // Check emirate is in our locations list
     const emirateInList = locations.find(l => l.type === 'emirate' && l.name === emirateName);
     if (!emirateInList) {
-      toast('⚠️ Emirate "' + emirateName + '" not in your locations list — add it in Directory first', true);
+      toast('⚠️ "' + emirateName + '" not in Directory — add it first', true);
       return;
     }
 
-    // Try to fuzzy-match district against our locations list
+    // Fuzzy-match district
     let matchedDistrict = '';
     if (districtName) {
       const dLow = districtName.toLowerCase();
       const allDistricts = locations.filter(l => l.type === 'district');
-      const exact = allDistricts.find(l => l.name.toLowerCase() === dLow);
+      const exact   = allDistricts.find(l => l.name.toLowerCase() === dLow);
       const partial = allDistricts.find(l =>
         l.name.toLowerCase().includes(dLow) || dLow.includes(l.name.toLowerCase())
       );
       matchedDistrict = exact?.name || partial?.name || districtName;
     }
 
-    // Use populateLocationSelects which correctly sets dataset.lid on options
-    populateLocationSelects(emirateName, cityName, matchedDistrict);
+    populateLocationSelects(emirateName, '', matchedDistrict);
 
-    // Update delivery charge for new emirate
     const rate = getDeliveryRate(emirateName);
     const dcEl = document.getElementById('f-delivery-charge');
     if (dcEl) dcEl.value = rate;
