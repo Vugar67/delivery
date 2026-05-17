@@ -1491,16 +1491,22 @@ async function reverseGeocode(lat, lng) {
 
     // Map Nominatim state names → our emirate names
     const emirateMap = {
-      'Dubai': 'Dubai', 'Dubayy': 'Dubai',
-      'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi',
-      'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah',
-      'Ajman': 'Ajman',
-      'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain',
-      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al-Khaimah': 'Ras Al Khaimah',
-      'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah'
+      'Dubai': 'Dubai', 'Dubayy': 'Dubai', 'Dubai Emirate': 'Dubai',
+      'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi', 'Abu Dhabi Emirate': 'Abu Dhabi',
+      'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah', 'Sharjah Emirate': 'Sharjah',
+      'Ajman': 'Ajman', 'Ajman Emirate': 'Ajman',
+      'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain', 'Umm al-Quwain Emirate': 'Umm Al Quwain',
+      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al-Khaimah': 'Ras Al Khaimah', 'Ras al-Khaimah Emirate': 'Ras Al Khaimah',
+      'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah', 'Fujairah Emirate': 'Fujairah'
     };
 
-    const emirateName = emirateMap[stateName] || stateName;
+    let emirateName = emirateMap[stateName];
+    if (!emirateName && stateName) {
+      // Fallback: check if any key is contained in stateName or vice versa
+      const sLow = stateName.toLowerCase();
+      const found = Object.entries(emirateMap).find(([k]) => sLow.includes(k.toLowerCase()) || k.toLowerCase().includes(sLow));
+      emirateName = found?.[1] || stateName;
+    }
     if (!emirateName) {
       toast('❌ Could not detect emirate. Got: "' + stateName + '"', true);
       return;
