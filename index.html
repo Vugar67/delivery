@@ -1416,28 +1416,100 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
 
 // LOCATION URL EXTRACTION
-function extractLocationUrl(text) {
+async function extractLocationUrl(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const matches = text.match(urlRegex);
   const mapUrl = matches ? matches.find(u => u.includes('maps') || u.includes('goo.gl') || u.includes('google')) : null;
   const preview = document.getElementById('f-location-preview');
   const link = document.getElementById('f-location-link');
   const hidden = document.getElementById('f-location-url');
-  if (mapUrl) {
-    hidden.value = mapUrl;
-    link.href = mapUrl;
-    link.textContent = mapUrl.length > 50 ? mapUrl.slice(0,50)+'...' : mapUrl;
-    preview.style.display = 'flex';
-  } else {
-    hidden.value = '';
-    preview.style.display = 'none';
+  if (!mapUrl) { if(hidden)hidden.value=''; if(preview)preview.style.display='none'; return; }
+  
+  if(hidden) hidden.value = mapUrl;
+  if(link) { link.href = mapUrl; link.textContent = mapUrl.length > 50 ? mapUrl.slice(0,50)+'...' : mapUrl; }
+  if(preview) preview.style.display = 'flex';
+
+  // Try to extract coordinates from maps.google.com/?q=LAT,LNG format
+  const coordMatch = mapUrl.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lng = parseFloat(coordMatch[2]);
+    await reverseGeocode(lat, lng);
+  }
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`);
+    const data = await res.json();
+    if (!data || !data.address) return;
+    
+    const addr = data.address;
+    // Extract relevant fields
+    const district = addr.suburb || addr.neighbourhood || addr.quarter || addr.residential || '';
+    const city = addr.city || addr.town || addr.village || '';
+    const state = addr.state || '';
+    
+    // Map to UAE emirate
+    const emirateMap = {
+      'Dubai': 'Dubai', 'Dubayy': 'Dubai',
+      'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi',
+      'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah',
+      'Ajman': 'Ajman', 'Ajman Emirate': 'Ajman',
+      'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain',
+      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al Khaimah': 'Ras Al Khaimah',
+      'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah'
+    };
+    
+    const emirateName = emirateMap[state] || emirateMap[city] || '';
+    
+    // Fill emirate select
+    if (emirateName) {
+      const emirateEl = document.getElementById('f-emirate');
+      if (emirateEl) {
+        emirateEl.value = emirateName;
+        onEmirateChange();
+        // Wait for districts to load then try to match
+        setTimeout(() => {
+          const distEl = document.getElementById('f-district');
+          if (distEl && district) {
+            // Try to find matching district
+            const opts = Array.from(distEl.options);
+            const match = opts.find(o => o.text.toLowerCase().includes(district.toLowerCase()) || district.toLowerCase().includes(o.text.toLowerCase()));
+            if (match) { distEl.value = match.value; }
+            else {
+              // Set custom district
+              distEl.value = '__custom';
+              const customEl = document.getElementById('f-district-custom');
+              if (customEl) customEl.value = district;
+            }
+          }
+        }, 300);
+      }
+    }
+    
+    // Show what was detected
+    const preview = document.getElementById('f-location-preview');
+    const link = document.getElementById('f-location-link');
+    if (preview && link) {
+      const detected = [district, emirateName].filter(Boolean).join(', ');
+      link.title = detected ? '📍 Detected: ' + detected : '';
+      preview.style.display = 'flex';
+      // Show detection result
+      toast('📍 Location detected: ' + (detected || 'coordinates found'));
+    }
+  } catch(e) {
+    console.log('Geocode error:', e);
   }
 }
 
 function clearLocation() {
-  document.getElementById('f-location-raw').value = '';
-  document.getElementById('f-location-url').value = '';
-  document.getElementById('f-location-preview').style.display = 'none';
+  const raw = document.getElementById('f-location-raw');
+  const url = document.getElementById('f-location-url');
+  const preview = document.getElementById('f-location-preview');
+  if(raw) raw.value = '';
+  if(url) url.value = '';
+  if(preview) preview.style.display = 'none';
 }
 
 // SHOP CART
