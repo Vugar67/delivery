@@ -1469,7 +1469,18 @@ async function reverseGeocode(lat, lng) {
   try {
     const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No&language=en`);
     const data = await res.json();
-    if (!data.results || !data.results.length) return;
+
+    // DEBUG — show API response status
+    if (data.status !== 'OK') {
+      toast('❌ Geocode API: ' + data.status + (data.error_message ? ' — ' + data.error_message : ''), true);
+      console.warn('Geocode API error:', data);
+      return;
+    }
+
+    if (!data.results || !data.results.length) {
+      toast('❌ Geocode: no results for ' + lat + ',' + lng, true);
+      return;
+    }
 
     // Try all results to find best address components
     let stateName = '', districtName = '', cityName = '';
@@ -1490,6 +1501,8 @@ async function reverseGeocode(lat, lng) {
       if (stateName && districtName) break;
     }
 
+    console.log('Geocode result — state:', stateName, '| district:', districtName, '| raw:', data.results[0]?.formatted_address);
+
     // Map to our emirate names
     const emirateMap = {
       'Dubai': 'Dubai', 'Dubayy': 'Dubai',
@@ -1502,13 +1515,22 @@ async function reverseGeocode(lat, lng) {
     };
 
     const emirateName = emirateMap[stateName] || stateName;
-    if (!emirateName) return;
+    if (!emirateName) {
+      toast('❌ Could not detect emirate. State from API: "' + stateName + '"', true);
+      return;
+    }
+
+    // Check if emirate exists in our locations list
+    const emirateInList = locations.find(l => l.type === 'emirate' && l.name === emirateName);
+    if (!emirateInList) {
+      toast('⚠️ Emirate "' + emirateName + '" not in your locations list — add it in Directory first', true);
+      return;
+    }
 
     // Try to fuzzy-match district against our locations list
     let matchedDistrict = '';
     if (districtName) {
       const dLow = districtName.toLowerCase();
-      // Search across all district locations
       const allDistricts = locations.filter(l => l.type === 'district');
       const exact = allDistricts.find(l => l.name.toLowerCase() === dLow);
       const partial = allDistricts.find(l =>
@@ -1523,11 +1545,12 @@ async function reverseGeocode(lat, lng) {
     // Update delivery charge for new emirate
     const rate = getDeliveryRate(emirateName);
     const dcEl = document.getElementById('f-delivery-charge');
-    if (dcEl && emirateName) dcEl.value = rate;
+    if (dcEl) dcEl.value = rate;
 
     toast('📍 ' + emirateName + (matchedDistrict ? ' — ' + matchedDistrict : ''));
   } catch(e) {
-    console.log('Geocode error:', e);
+    toast('❌ Geocode error: ' + e.message, true);
+    console.error('Geocode error:', e);
   }
 }
 
