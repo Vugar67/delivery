@@ -2223,11 +2223,13 @@ async function sendToDriver(orderId) {
   if (!o) return;
   const driver = drivers.find(d => d.name === o.driver);
   if (!driver || !driver.phone) { toast('Driver has no phone number', true); return; }
-  const items = (orderItems[orderId] || []).map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price).toFixed(2)} AED`).join('\n');
+  const {data: freshWaItems} = await sb.from('order_items').select('*').eq('order_id', orderId);
+  const waItems = freshWaItems || orderItems[orderId] || [];
+  const items = waItems.map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
   const address = [o.emirate, o.city, o.apt].filter(Boolean).join(', ');
-  const isCOD = o.payment_status === 'Cash on Delivery';
+  const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
   const totalAmount = (o.total||0) > 0 ? o.total : 
-    (orderItems[orderId]||[]).reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0) + (o.delivery_charge||0);
+    waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0) + (o.delivery_charge||0);
   const codLine = isCOD ? `\n\n💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*\n   (Items + Delivery)` : '';
   const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n${o.delivery_charge>0?'🚗 *Delivery:* '+o.delivery_charge.toFixed(2)+' AED':''}\n${o.total>0?'💵 *Total:* '+o.total.toFixed(2)+' AED':''}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
