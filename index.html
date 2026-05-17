@@ -232,6 +232,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 
 
 /* TOOLTIP */
+
+/* PRIORITY */
+.priority-dot{width:14px;height:14px;border-radius:50%;display:inline-block;flex-shrink:0;box-shadow:0 0 6px currentColor}
+.priority-1{color:#f87171;background:#f87171}
+.priority-2{color:#f97316;background:#f97316}
+.priority-3{color:#4ade80;background:#4ade80}
+.priority-cell{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;padding:4px}
+.priority-flag{font-size:13px}
+
 .order-tooltip{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;z-index:300;min-width:280px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.5);pointer-events:none;display:none}
 .order-tooltip.show{display:block}
 .tooltip-title{font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono);margin-bottom:8px;letter-spacing:.06em}
@@ -304,7 +313,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr>
-            <th>Order #</th><th>Date</th><th>Emirate</th><th>City</th>
+            <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Date</th><th>Emirate</th><th>City</th>
             <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
             <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th>Delivery AED</th><th>Subtotal</th><th>Discount</th><th>Total</th><th>Notes</th><th></th>
           </tr></thead>
@@ -498,6 +507,13 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Payment Status</label><select id="f-payment"></select></div>
       <div class="form-group"><label>Delivery Status</label><select id="f-delivery"></select></div>
       <div class="form-group"><label>Confirmed</label><select id="f-confirmed"><option value="No">No</option><option value="Yes">Yes</option></select></div>
+      <div class="form-group"><label>Priority</label>
+        <select id="f-priority">
+          <option value="3">🟢 Level 3 — Normal</option>
+          <option value="2">🟠 Level 2 — High</option>
+          <option value="1">🚨 Level 1 — Urgent</option>
+        </select>
+      </div>
       <div class="form-group form-full"><label>Notes</label><input id="f-notes" placeholder="Any additional notes..."></div>
     </div>
     <div class="modal-foot">
@@ -973,7 +989,7 @@ function getFiltered(){
     if(dr&&o.driver!==dr)return false;
     if(q){const hay=[o.order_num,o.client_number,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
-  });
+  }).sort((a,b) => (a.priority||3) - (b.priority||3));
 }
 
 function renderStats(){
@@ -1423,6 +1439,7 @@ async function openNewOrder(){
   ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-district-custom').value='';
   document.getElementById('f-confirmed').value='No';
+  document.getElementById('f-priority').value='3';
   renderCart();
   document.getElementById('f-district-custom').value='';
   initShop();
@@ -1440,6 +1457,7 @@ async function editOrder(id){
   document.getElementById('f-apt').value=o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
+  document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-notes').value=o.notes||'';
   // load cart from existing items
   const items=orderItems[id]||[];
@@ -1459,7 +1477,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
@@ -2093,6 +2111,14 @@ function moveOrderTooltip(e) {
     tooltip.style.left = x + 'px';
     tooltip.style.top = y + 'px';
   }
+}
+
+
+async function cyclePriority(orderId, currentPriority) {
+  const next = currentPriority === 1 ? 3 : currentPriority - 1;
+  await sb.from('orders').update({priority: next}).eq('id', orderId);
+  await loadOrders();
+  renderTable();
 }
 
 function sendToDriver(orderId) {
