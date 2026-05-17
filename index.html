@@ -2173,7 +2173,12 @@ async function sendToDriver(orderId) {
   const address = [o.emirate, o.city, o.apt].filter(Boolean).join(', ');
   const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}\n${o.total>0?'💵 *Total:* '+o.total.toFixed(2)+' AED':''}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
-  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
+  // Try desktop app first, fallback to web
+  const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
+  const webUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg);
+  window.location.href = waUrl;
+  // Fallback to web after 2s if app doesn't open
+  setTimeout(() => { window.open(webUrl, '_blank'); }, 2000);
   // Save sent timestamp
   await sb.from('orders').update({
     wa_sent_at: new Date().toISOString(),
