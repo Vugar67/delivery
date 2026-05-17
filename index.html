@@ -1436,9 +1436,37 @@ function showClientMessage(text) {
   const display = document.getElementById('client-msg-text');
   const hidden = document.getElementById('f-raw-message');
   if (!card || !display || !hidden) return;
-  display.textContent = text;
   hidden.value = text;
+
+  // Highlight lines by type
+  const lines = text.split(/\n/);
+  display.innerHTML = lines.map(line => {
+    const t = line.trim();
+    if (!t) return '<span style="display:block;height:6px"></span>';
+    // URL / map link
+    if (/https?:\/\//.test(t)) {
+      return `<span style="display:block;color:var(--blue);opacity:.9">🔗 ${escHtml(t)}</span>`;
+    }
+    // Phone
+    if (/(\+971[\s\-]?\d[\d\s\-]{6,}|05\d[\s\-]?\d{3}[\s\-]?\d{4})/.test(t)) {
+      return `<span style="display:block;color:var(--green)">📞 ${escHtml(t)}</span>`;
+    }
+    // Product hint (mg/ml/pen/box etc)
+    if (/\d+\s*(mg|ml|mcg|iu|pcs|box|pen|tab|amp)/i.test(t)) {
+      return `<span style="display:block;color:var(--accent)">💊 ${escHtml(t)}</span>`;
+    }
+    // Name candidate (short, letters only)
+    if (/^[a-zA-Z\u0600-\u06FF\s\-']{2,30}$/.test(t) && t.split(' ').length <= 4) {
+      return `<span style="display:block;color:var(--text);opacity:.85">👤 ${escHtml(t)}</span>`;
+    }
+    return `<span style="display:block;color:var(--muted)">${escHtml(t)}</span>`;
+  }).join('');
+
   card.style.display = '';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function clearClientMessage() {
@@ -1459,8 +1487,78 @@ async function triggerLocAutofill() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.3);border-top-color:#000"></span>';
   await extractLocationUrl(raw);
+  parseClientText(raw);
   btn.disabled = false;
   btn.innerHTML = '📍 Fill';
+}
+
+function parseClientText(text) {
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+  let filled = [];
+
+  // 1. Phone — UAE formats: +971 5X XXX XXXX or 05XXXXXXXX or 971XXXXXXXXX
+  const phoneMatch = text.match(/(\+971[\s\-]?\d[\d\s\-]{6,12}|971\d{9}|05\d[\s\-]?\d{3}[\s\-]?\d{4})/);
+  if (phoneMatch) {
+    const phone = phoneMatch[1].replace(/\s+/g, ' ').trim();
+    const clientEl = document.getElementById('f-client');
+    if (clientEl && !clientEl.value) {
+      clientEl.value = phone;
+      filled.push('📞 phone');
+    }
+  }
+
+  // 2. Name — line that is NOT a URL, NOT a phone, NOT digits-only, NOT known keywords
+  //    heuristic: short (1-4 words), only letters/spaces/arabic
+  const skipPatterns = [/https?:\/\//, /^\+?[\d\s\-]{7,}$/, /^(order|mg|ml|pen|box|pcs|tesa|tadawi|neo|label)/i];
+  const urlPattern = /(https?:\/\/[^\s]+)/;
+  const nameCandidates = lines.filter(l => {
+    if (urlPattern.test(l)) return false;
+    if (skipPatterns.some(p => p.test(l))) return false;
+    const words = l.split(/\s+/);
+    return words.length >= 1 && words.length <= 4 && /^[a-zA-Z\u0600-\u06FF\s\-']+$/.test(l);
+  });
+
+  // Pick the best candidate — prefer lines after "order" keywords or standalone names
+  const nameEl = document.getElementById('f-client-name') || null; // may not exist
+  // Store candidates in notes if client name field doesn't exist
+  // For now just pick first plausible name and put in villa/apt if apt empty, or annotate notes
+  if (nameCandidates.length > 0) {
+    const name = nameCandidates[0];
+    // Try to fill villa/apt as name if empty and short
+    const aptEl = document.getElementById('f-apt');
+    const notesEl = document.getElementById('f-notes');
+    // Put name into notes as hint if notes empty
+    if (notesEl && !notesEl.value) {
+      const productHint = extractProductHint(lines);
+      let noteParts = [];
+      if (name) noteParts.push('👤 ' + nameCandidates.join(', '));
+      if (productHint) noteParts.push('💊 ' + productHint);
+      notesEl.value = noteParts.join(' | ');
+      if (noteParts.length) filled.push('📝 notes');
+    }
+  } else {
+    // Even with no name, extract product hint
+    const productHint = extractProductHint(lines);
+    if (productHint) {
+      const notesEl = document.getElementById('f-notes');
+      if (notesEl && !notesEl.value) {
+        notesEl.value = '💊 ' + productHint;
+        filled.push('📝 notes');
+      }
+    }
+  }
+
+  if (filled.length) toast('✅ Auto-filled: ' + filled.join(', '));
+}
+
+function extractProductHint(lines) {
+  // Lines that look like product names: contain mg/ml/pen/box/pcs or match product names
+  const productLines = lines.filter(l => {
+    if (/(https?:\/\/|\+?\d[\d\s\-]{6,})/.test(l)) return false;
+    return /\d+\s*(mg|ml|mcg|iu|pcs|box|pen|tab|amp)/i.test(l) || 
+           products.some(p => l.toLowerCase().includes(p.name.toLowerCase().split(' ')[0]));
+  });
+  return productLines.join(', ');
 }
 
 async function extractLocationUrl(text) {
