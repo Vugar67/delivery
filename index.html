@@ -1590,16 +1590,22 @@ async function editOrder(id){
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
   document.getElementById('f-notes').value=o.notes||'';
-  document.getElementById('f-location-url').value=o.location_url||'';
-  document.getElementById('f-location-raw').value=o.location_url||'';
-  document.getElementById('f-wa-show-items').checked=o.wa_show_items!==false;
-  if(o.location_url){
-    const link=document.getElementById('f-location-link');
-    link.href=o.location_url;
-    link.textContent=o.location_url.length>50?o.location_url.slice(0,50)+'...':o.location_url;
-    document.getElementById('f-location-preview').style.display='flex';
-  } else {
-    document.getElementById('f-location-preview').style.display='none';
+  const locUrlEl=document.getElementById('f-location-url');
+  const locRawEl=document.getElementById('f-location-raw');
+  const locPreview=document.getElementById('f-location-preview');
+  const locLink=document.getElementById('f-location-link');
+  const waShowItems=document.getElementById('f-wa-show-items');
+  if(locUrlEl) locUrlEl.value=o.location_url||'';
+  if(locRawEl) locRawEl.value=o.location_url||'';
+  if(waShowItems) waShowItems.checked=o.wa_show_items===true;
+  if(locPreview && locLink){
+    if(o.location_url){
+      locLink.href=o.location_url;
+      locLink.textContent=o.location_url.length>50?o.location_url.slice(0,50)+'...':o.location_url;
+      locPreview.style.display='flex';
+    } else {
+      locPreview.style.display='none';
+    }
   }
   // load cart from existing items
   const items=orderItems[id]||[];
