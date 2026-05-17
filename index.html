@@ -325,6 +325,11 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
         <div id="locations-tree" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
       </div>
+      <div class="section-head" style="margin-bottom:14px">
+        <div class="section-title">&#128664; Drivers</div>
+        <button class="btn btn-primary btn-sm" onclick="openNewDriver()">+ Add Driver</button>
+      </div>
+      <div id="drivers-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px"></div>
       <div class="section-head" style="margin-bottom:14px"><div class="section-title">&#128218; Reference Lists</div></div>
       <div class="dir-grid" id="dir-grid"></div>
     </div>
@@ -339,6 +344,25 @@ select option{background:#1a1d27;color:#f0f2ff}
   </div>
 </div>
 
+
+
+<!-- DRIVER MODAL -->
+<div class="overlay" id="driver-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head">
+      <div class="modal-title" id="driver-modal-title">Add Driver</div>
+      <button class="close-btn" onclick="closeModal('driver-modal')">&#10005;</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-group"><label>Full Name</label><input id="d-name" placeholder="e.g. Ahmed Al Rashid"></div>
+      <div class="form-group"><label>Phone Number</label><input id="d-phone" placeholder="+971 5x xxx xxxx" type="tel"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('driver-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-driver-btn" onclick="saveDriver()">Save</button>
+    </div>
+  </div>
+</div>
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctx-menu">
@@ -850,7 +874,7 @@ async function initApp(){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers()]);
   renderFilters();renderTable();showView('orders');subscribeRealtime();
 }
 
@@ -885,7 +909,7 @@ async function loadProducts(){
 function showView(v){
   ['orders','products','directory','users'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
-  if(v==='directory'){renderDirectory();renderLocations();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();}
   if(v==='users')renderUsers();
   if(v==='products')renderProducts();
 }
@@ -895,15 +919,17 @@ function renderFilters(){
   const cur={em:fe.value,dl:fd.value,dr:fdr.value};
   fe.innerHTML='<option value="">All Emirates</option>'+refs.emirates.map(r=>`<option value="${r.value}" ${cur.em===r.value?'selected':''}>${r.value}</option>`).join('');
   fd.innerHTML='<option value="">All Statuses</option>'+refs.deliveryStatus.map(r=>`<option value="${r.value}" ${cur.dl===r.value?'selected':''}>${r.value}</option>`).join('');
-  fdr.innerHTML='<option value="">All Drivers</option>'+refs.drivers.map(r=>`<option value="${r.value}" ${cur.dr===r.value?'selected':''}>${r.value}</option>`).join('');
+  fdr.innerHTML='<option value="">All Drivers</option>'+drivers.map(d=>`<option value="${d.name}" ${cur.dr===d.name?'selected':''}>${d.name}</option>`).join('');
 }
 
 function populateFormRefs(o){
   const sel=(id,arr,val)=>{document.getElementById(id).innerHTML=arr.map(r=>`<option value="${r.value}" ${val===r.value?'selected':''}>${r.value}</option>`).join('');};
-  sel('f-emirate',refs.emirates,o?.emirate||refs.emirates[0]?.value||'');
-  sel('f-driver',refs.drivers,o?.driver||'');
   sel('f-payment',refs.paymentStatus,o?.payment_status||refs.paymentStatus[0]?.value||'');
   sel('f-delivery',refs.deliveryStatus,o?.delivery_status||'In Progress');
+  // Populate drivers from drivers table
+  const driverEl = document.getElementById('f-driver');
+  driverEl.innerHTML = '<option value="">— Select Driver —</option>' + 
+    drivers.map(d=>`<option value="${d.name}" ${o?.driver===d.name?'selected':''}>${d.name}${d.phone?' ('+d.phone+')':''}</option>`).join('');
 }
 
 // BADGES
@@ -975,6 +1001,7 @@ function renderTable(){
         <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
         <td><div class="actions">
+          ${o.driver ? `<button class="act-btn" onclick="sendToDriver('${o.id}')" title="Send to Driver via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>` : ''}
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
           <button class="act-btn del" onclick="deleteOrder('${o.id}')">&#10005;</button>
         </div></td>
@@ -988,10 +1015,100 @@ function renderTable(){
 }
 
 
+
+// ============================================================
+// DRIVERS
+// ============================================================
+let editDriverId = null;
+
+function renderDriversGrid() {
+  const grid = document.getElementById('drivers-grid');
+  if (!grid) return;
+  if (!drivers.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">No drivers yet.</div>';
+    return;
+  }
+  grid.innerHTML = drivers.map(d => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:var(--accent);flex-shrink:0">
+          ${d.name.slice(0,1).toUpperCase()}
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600">${d.name}</div>
+          ${d.phone ? `<div style="font-size:12px;color:var(--blue);font-family:var(--mono)">${d.phone}</div>` : '<div style="font-size:11px;color:var(--muted)">No phone</div>'}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${d.phone ? `<a href="https://wa.me/${d.phone.replace(/[^0-9]/g,'')}" target="_blank" style="background:rgba(37,211,102,.15);border:1px solid rgba(37,211,102,.3);border-radius:6px;padding:4px 8px;font-size:11px;color:#25d366;text-decoration:none;font-family:var(--mono)">WA</a>` : ''}
+        <button class="act-btn" onclick="openEditDriver(${d.id})">Edit</button>
+        <button class="act-btn del" onclick="deleteDriver(${d.id})">&#10005;</button>
+      </div>
+    </div>`).join('');
+}
+
+function openNewDriver() {
+  editDriverId = null;
+  document.getElementById('driver-modal-title').textContent = 'Add Driver';
+  document.getElementById('d-name').value = '';
+  document.getElementById('d-phone').value = '';
+  document.getElementById('driver-modal').classList.add('open');
+  setTimeout(() => document.getElementById('d-name').focus(), 100);
+}
+
+function openEditDriver(id) {
+  const d = drivers.find(x => x.id === id);
+  if (!d) return;
+  editDriverId = id;
+  document.getElementById('driver-modal-title').textContent = 'Edit Driver';
+  document.getElementById('d-name').value = d.name;
+  document.getElementById('d-phone').value = d.phone || '';
+  document.getElementById('driver-modal').classList.add('open');
+}
+
+async function saveDriver() {
+  const name = document.getElementById('d-name').value.trim();
+  const phone = document.getElementById('d-phone').value.trim();
+  if (!name) { toast('Name required', true); return; }
+  const btn = document.getElementById('save-driver-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  const payload = {name, phone: phone || null};
+  let error;
+  if (editDriverId) {
+    ({error} = await sb.from('drivers').update(payload).eq('id', editDriverId));
+  } else {
+    ({error} = await sb.from('drivers').insert(payload));
+  }
+  btn.disabled = false; btn.textContent = 'Save';
+  if (error) { toast('Error: ' + error.message, true); return; }
+  toast(editDriverId ? 'Driver updated' : 'Driver added');
+  closeModal('driver-modal');
+  await loadDrivers();
+  renderDriversGrid();
+  renderFilters();
+  populateFormRefs(null);
+}
+
+async function deleteDriver(id) {
+  if (!confirm('Delete this driver?')) return;
+  await sb.from('drivers').update({active: false}).eq('id', id);
+  toast('Driver removed');
+  await loadDrivers();
+  renderDriversGrid();
+  renderFilters();
+}
+
 // ============================================================
 // LOCATIONS - Emirate → (City) → District cascading
 // ============================================================
 let locations = [];
+
+let drivers = [];
+
+async function loadDrivers() {
+  const {data} = await sb.from('drivers').select('*').eq('active', true).order('name');
+  drivers = data || [];
+}
 
 async function loadLocations() {
   const {data} = await sb.from('locations').select('*').order('sort_order,name');
@@ -1908,6 +2025,19 @@ function printInvoice() {
     </style></head><body>${content}</body></html>`);
   win.document.close();
   setTimeout(() => { win.focus(); win.print(); }, 400);
+}
+
+
+function sendToDriver(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  const driver = drivers.find(d => d.name === o.driver);
+  if (!driver || !driver.phone) { toast('Driver has no phone number', true); return; }
+  const items = (orderItems[orderId] || []).map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price).toFixed(2)} AED`).join('\n');
+  const address = [o.emirate, o.city, o.apt].filter(Boolean).join(', ');
+  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}\n\n📦 *Items:*\n${items}\n\n💰 *Payment:* ${o.payment_status||'—'}\n${o.total>0?'💵 *Total:* '+o.total.toFixed(2)+' AED':''}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
+  const phone = driver.phone.replace(/[^0-9]/g, '');
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
 }
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
