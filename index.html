@@ -305,8 +305,8 @@ select option{background:#1a1d27;color:#f0f2ff}
         <table class="tbl">
           <thead><tr>
             <th>Order #</th><th>Date</th><th>Emirate</th><th>City</th>
-            <th>Villa/Apt</th><th>Client #</th><th>Items</th><th>Driver</th>
-            <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th>Delivery</th><th>Subtotal</th><th>Discount</th><th>Total</th><th>Notes</th><th></th>
+            <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
+            <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th>Delivery AED</th><th>Subtotal</th><th>Discount</th><th>Total</th><th>Notes</th><th></th>
           </tr></thead>
           <tbody id="order-tbody"></tbody>
         </table>
@@ -1003,7 +1003,6 @@ function renderTable(){
         <td>${o.city||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px">${o.apt||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'}</td>
-        <td>${itemsHtml}</td>
         <td>${o.driver||'&mdash;'}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
