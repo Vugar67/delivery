@@ -307,6 +307,16 @@ select option{background:#1a1d27;color:#f0f2ff}
         <select class="filter-sel" id="filter-emirate" onchange="renderTable()"><option value="">All Emirates</option></select>
         <select class="filter-sel" id="filter-delivery" onchange="renderTable()"><option value="">All Statuses</option></select>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
+        <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
+          <option value="priority">🔴 By Priority</option>
+          <option value="date_desc">📅 Newest First</option>
+          <option value="date_asc">📅 Oldest First</option>
+          <option value="delivery">🚚 By Delivery Status</option>
+          <option value="driver">👤 By Driver</option>
+          <option value="emirate">📍 By Emirate</option>
+          <option value="total_desc">💰 Highest Total</option>
+          <option value="total_asc">💰 Lowest Total</option>
+        </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn btn-ghost" onclick="exportCSV()">&#8595; CSV</button>
       </div>
@@ -983,13 +993,29 @@ function getFiltered(){
   const em=document.getElementById('filter-emirate').value;
   const dl=document.getElementById('filter-delivery').value;
   const dr=document.getElementById('filter-driver').value;
-  return orders.filter(o=>{
+  const sortVal=document.getElementById('sort-select')?.value||'priority';
+  const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
     if(dl&&o.delivery_status!==dl)return false;
     if(dr&&o.driver!==dr)return false;
     if(q){const hay=[o.order_num,o.client_number,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
-  }).sort((a,b) => (a.priority||3) - (b.priority||3));
+  });
+  const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
+  filtered.sort((a,b)=>{
+    switch(sortVal){
+      case 'priority': return (a.priority||3)-(b.priority||3);
+      case 'date_desc': return new Date(b.created_at||0)-new Date(a.created_at||0);
+      case 'date_asc': return new Date(a.created_at||0)-new Date(b.created_at||0);
+      case 'delivery': return (dOrd[a.delivery_status]??9)-(dOrd[b.delivery_status]??9);
+      case 'driver': return (a.driver||'').localeCompare(b.driver||'');
+      case 'emirate': return (a.emirate||'').localeCompare(b.emirate||'');
+      case 'total_desc': return (b.total||0)-(a.total||0);
+      case 'total_asc': return (a.total||0)-(b.total||0);
+      default: return (a.priority||3)-(b.priority||3);
+    }
+  });
+  return filtered;
 }
 
 function renderStats(){
