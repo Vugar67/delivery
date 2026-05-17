@@ -1563,9 +1563,10 @@ async function openNewOrder(){
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  ['f-apt','f-client','f-notes','f-location-raw','f-location-url'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('f-location-preview').style.display='none';
-  document.getElementById('f-wa-show-items').checked=false;
+  ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-location-raw','f-location-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
+  const ws=document.getElementById('f-wa-show-items');if(ws)ws.checked=false;
   document.getElementById('f-district-custom').value='';
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
