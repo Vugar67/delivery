@@ -491,7 +491,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group form-full">
         <label>Client Location</label>
-        <input id="f-location-raw" placeholder="Paste any text with Google Maps link..." oninput="extractLocationUrl(this.value)">
+        <input id="f-location-raw" placeholder="Paste any text with Google Maps link..." oninput="extractLocationUrl(this.value)" onpaste="setTimeout(()=>extractLocationUrl(document.getElementById('f-location-raw').value),50)">
         <div id="f-location-preview" style="display:none;align-items:center;gap:8px;margin-top:6px">
           <span style="font-size:11px;color:var(--green);font-family:var(--mono)">📍 Location detected:</span>
           <a id="f-location-link" href="#" target="_blank" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
@@ -1419,6 +1419,7 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 const GOOGLE_API_KEY = 'AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No';
 
 async function extractLocationUrl(text) {
+  if (!text) return;
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const matches = text.match(urlRegex);
   const mapUrl = matches ? matches.find(u => u.includes('maps') || u.includes('goo.gl') || u.includes('google')) : null;
@@ -1431,27 +1432,23 @@ async function extractLocationUrl(text) {
   if(link) { link.href = mapUrl; link.textContent = mapUrl.length > 50 ? mapUrl.slice(0,50)+'...' : mapUrl; }
   if(preview) preview.style.display = 'flex';
 
-  // Try to extract coordinates from maps.google.com/?q=LAT,LNG format
-  const coordMatch = mapUrl.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-  if (coordMatch) {
-    const lat = parseFloat(coordMatch[1]);
-    const lng = parseFloat(coordMatch[2]);
-    await reverseGeocode(lat, lng);
-    return;
-  }
-  
-  // For short links (maps.app.goo.gl) - use Places API to resolve
-  if (mapUrl.includes('goo.gl') || mapUrl.includes('maps.app')) {
-    await resolveShortLink(mapUrl);
-  }
-}
+  // Format 1: ?q=LAT,LNG or &q=LAT,LNG
+  const qMatch = mapUrl.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (qMatch) { await reverseGeocode(parseFloat(qMatch[1]), parseFloat(qMatch[2])); return; }
 
-async function resolveShortLink(shortUrl) {
-  try {
-    // Use Google Maps Geocoding with the URL directly won't work for short links
-    // Instead show toast to user
+  // Format 2: @LAT,LNG (standard Google Maps URL)
+  const atMatch = mapUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (atMatch) { await reverseGeocode(parseFloat(atMatch[1]), parseFloat(atMatch[2])); return; }
+
+  // Format 3: /place/.../LAT,LNG or ll=LAT,LNG
+  const llMatch = mapUrl.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (llMatch) { await reverseGeocode(parseFloat(llMatch[1]), parseFloat(llMatch[2])); return; }
+
+  // Format 4: maps.google.com?q=PLACE_NAME (no coords) — show preview only
+  // Format 5: short link (maps.app.goo.gl)
+  if (mapUrl.includes('goo.gl') || mapUrl.includes('maps.app')) {
     toast('📍 Short link detected — coordinates format preferred for auto-fill');
-  } catch(e) {}
+  }
 }
 
 async function reverseGeocode(lat, lng) {
@@ -1459,62 +1456,62 @@ async function reverseGeocode(lat, lng) {
     const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No&language=en`);
     const data = await res.json();
     if (!data.results || !data.results.length) return;
-    
-    const components = data.results[0].address_components;
-    
-    // Extract emirate (administrative_area_level_1)
-    const stateComp = components.find(c => c.types.includes('administrative_area_level_1'));
-    const localityComp = components.find(c => c.types.includes('locality'));
-    const sublocality = components.find(c => c.types.includes('sublocality') || c.types.includes('sublocality_level_1'));
-    const neighborhood = components.find(c => c.types.includes('neighborhood'));
-    const route = components.find(c => c.types.includes('route'));
-    
-    const stateName = stateComp?.long_name || '';
-    const districtName = sublocality?.long_name || neighborhood?.long_name || localityComp?.long_name || '';
-    
+
+    // Try all results to find best address components
+    let stateName = '', districtName = '', cityName = '';
+    for (const result of data.results) {
+      const comps = result.address_components;
+      if (!stateName) {
+        const c = comps.find(c => c.types.includes('administrative_area_level_1'));
+        if (c) stateName = c.long_name;
+      }
+      if (!districtName) {
+        const sub = comps.find(c => c.types.includes('sublocality_level_1') || c.types.includes('sublocality'));
+        const nbr = comps.find(c => c.types.includes('neighborhood'));
+        const loc = comps.find(c => c.types.includes('locality'));
+        if (sub) districtName = sub.long_name;
+        else if (nbr) districtName = nbr.long_name;
+        else if (loc) districtName = loc.long_name;
+      }
+      if (stateName && districtName) break;
+    }
+
     // Map to our emirate names
     const emirateMap = {
       'Dubai': 'Dubai', 'Dubayy': 'Dubai',
       'Abu Dhabi': 'Abu Dhabi', 'Abu Zaby': 'Abu Dhabi',
       'Sharjah': 'Sharjah', 'Ash Shariqah': 'Sharjah',
       'Ajman': 'Ajman',
-      'Umm al-Quwain': 'Umm Al Quwain',
-      'Ras al-Khaimah': 'Ras Al Khaimah',
+      'Umm al-Quwain': 'Umm Al Quwain', 'Umm Al Quwain': 'Umm Al Quwain',
+      'Ras al-Khaimah': 'Ras Al Khaimah', 'Ras Al Khaimah': 'Ras Al Khaimah',
       'Fujairah': 'Fujairah', 'Al Fujayrah': 'Fujairah'
     };
-    
+
     const emirateName = emirateMap[stateName] || stateName;
-    
-    if (emirateName) {
-      const emirateEl = document.getElementById('f-emirate');
-      if (emirateEl) {
-        emirateEl.value = emirateName;
-        onEmirateChange();
-        
-        // Try to match district
-        if (districtName) {
-          setTimeout(() => {
-            const distEl = document.getElementById('f-district');
-            if (distEl) {
-              const opts = Array.from(distEl.options);
-              const match = opts.find(o => 
-                o.text.toLowerCase().includes(districtName.toLowerCase()) || 
-                districtName.toLowerCase().includes(o.text.toLowerCase())
-              );
-              if (match && match.value) {
-                distEl.value = match.value;
-              } else {
-                distEl.value = '__custom';
-                const customEl = document.getElementById('f-district-custom');
-                if (customEl) customEl.value = districtName;
-              }
-            }
-          }, 500);
-        }
-        
-        toast('📍 ' + emirateName + (districtName ? ' — ' + districtName : ''));
-      }
+    if (!emirateName) return;
+
+    // Try to fuzzy-match district against our locations list
+    let matchedDistrict = '';
+    if (districtName) {
+      const dLow = districtName.toLowerCase();
+      // Search across all district locations
+      const allDistricts = locations.filter(l => l.type === 'district');
+      const exact = allDistricts.find(l => l.name.toLowerCase() === dLow);
+      const partial = allDistricts.find(l =>
+        l.name.toLowerCase().includes(dLow) || dLow.includes(l.name.toLowerCase())
+      );
+      matchedDistrict = exact?.name || partial?.name || districtName;
     }
+
+    // Use populateLocationSelects which correctly sets dataset.lid on options
+    populateLocationSelects(emirateName, cityName, matchedDistrict);
+
+    // Update delivery charge for new emirate
+    const rate = getDeliveryRate(emirateName);
+    const dcEl = document.getElementById('f-delivery-charge');
+    if (dcEl && emirateName) dcEl.value = rate;
+
+    toast('📍 ' + emirateName + (matchedDistrict ? ' — ' + matchedDistrict : ''));
   } catch(e) {
     console.log('Geocode error:', e);
   }
