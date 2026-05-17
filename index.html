@@ -489,6 +489,16 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
+      <!-- CLIENT MESSAGE CARD — shown when operator pastes client text -->
+      <div id="client-msg-card" class="form-group form-full" style="display:none">
+        <label style="display:flex;align-items:center;justify-content:space-between">
+          <span>💬 CLIENT MESSAGE</span>
+          <button onclick="clearClientMessage()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;font-family:var(--mono);padding:0">✕ clear</button>
+        </label>
+        <div id="client-msg-text" style="background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:12px;font-family:var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow-y:auto;line-height:1.6"></div>
+        <input type="hidden" id="f-raw-message">
+      </div>
+
       <div class="form-group form-full">
         <label>Client Location</label>
         <div style="display:flex;gap:8px;align-items:stretch">
@@ -1421,6 +1431,27 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 // LOCATION URL EXTRACTION
 const GOOGLE_API_KEY = 'AIzaSyBogz8XoU3SFbSpSW1GkJfuXygBfP-y1No';
 
+function showClientMessage(text) {
+  const card = document.getElementById('client-msg-card');
+  const display = document.getElementById('client-msg-text');
+  const hidden = document.getElementById('f-raw-message');
+  if (!card || !display || !hidden) return;
+  display.textContent = text;
+  hidden.value = text;
+  card.style.display = '';
+}
+
+function clearClientMessage() {
+  const card = document.getElementById('client-msg-card');
+  const display = document.getElementById('client-msg-text');
+  const hidden = document.getElementById('f-raw-message');
+  if (card) card.style.display = 'none';
+  if (display) display.textContent = '';
+  if (hidden) hidden.value = '';
+  // also clear location field
+  clearLocation();
+}
+
 async function triggerLocAutofill() {
   const raw = document.getElementById('f-location-raw').value.trim();
   if (!raw) { toast('Paste a location text or Google Maps link first', true); return; }
@@ -1434,6 +1465,10 @@ async function triggerLocAutofill() {
 
 async function extractLocationUrl(text) {
   if (!text) return;
+
+  // Show client message card with full pasted text
+  showClientMessage(text);
+
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const matches = text.match(urlRegex);
   const mapUrl = matches ? matches.find(u => u.includes('maps') || u.includes('goo.gl') || u.includes('google')) : null;
@@ -1687,8 +1722,10 @@ async function openNewOrder(){
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
   ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
-  ['f-location-raw','f-location-url'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-location-raw','f-location-url','f-raw-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
+  const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
+  const cmd=document.getElementById('client-msg-text');if(cmd)cmd.textContent='';
   const ws=document.getElementById('f-wa-show-items');if(ws)ws.checked=false;
   document.getElementById('f-district-custom').value='';
   document.getElementById('f-confirmed').value='No';
@@ -1722,6 +1759,12 @@ async function editOrder(id){
   if(locUrlEl) locUrlEl.value=o.location_url||'';
   if(locRawEl) locRawEl.value=o.location_url||'';
   if(waShowItems) waShowItems.checked=o.wa_show_items===true;
+  // Show saved client message if exists
+  if (o.raw_message) {
+    showClientMessage(o.raw_message);
+  } else {
+    const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
+  }
   if(locPreview && locLink){
     if(o.location_url){
       locLink.href=o.location_url;
@@ -1749,7 +1792,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
