@@ -1258,7 +1258,7 @@ function renderTable(){
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.city||'&mdash;'}</td>
-        <td style="font-family:var(--mono);font-size:12px">${o.apt||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${o.location_url}" target="_blank" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
         <td>${payBadge(o.payment_status)}</td>
