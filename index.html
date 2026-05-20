@@ -2384,9 +2384,18 @@ async function saveUser(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   const{data:su,error:se}=await sb.auth.signUp({email,password:pass,options:{data:{name,role,staff_role:staffRole}}});
   if(se){toast('Error: '+se.message,true);btn.disabled=false;btn.textContent='Create User';return;}
-  if(su?.user){await sb.from('profiles').upsert({id:su.user.id,email,name,role,staff_role:staffRole});}
+  if(su?.user){
+    await sb.from('profiles').upsert({id:su.user.id,email,name,role,staff_role:staffRole});
+  } else {
+    // signUp returned no user — email may need confirmation or already exists
+    toast('Check Supabase: user may need email confirmation', true);
+    btn.disabled=false;btn.textContent='Create User';return;
+  }
   btn.disabled=false;btn.textContent='Create User';
-  toast('User created');closeModal('user-modal');renderUsers();
+  toast('User created: '+email);
+  closeModal('user-modal');
+  await new Promise(r=>setTimeout(r,500));
+  await renderUsers();
 }
 
 
@@ -2809,6 +2818,7 @@ function onDispatchCheck(chk) {
 
   if (chk.checked) {
     const coords = extractCoordsFromUrl(order?.location_url);
+    console.log('Dispatch check:', order?.order_num, '| location_url:', order?.location_url, '| coords:', coords);
     dispatchSelected.push({ id, order, coords });
     if (row) row.style.background = 'rgba(255,200,0,.08)';
     document.getElementById('dispatch-map-placeholder').style.display = 'none';
