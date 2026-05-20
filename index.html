@@ -1120,7 +1120,7 @@ function getFiltered(){
     if(dl&&o.delivery_status!==dl)return false;
     if(dr&&o.driver!==dr)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
-    if(dispatchMode){const today=new Date().toISOString().slice(0,10);if(o.order_date!==today)return false;}
+    if(dispatchMode){if(o.driver)return false;}
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
@@ -2792,10 +2792,10 @@ function initDispatchMap() {
   if (!window.L) {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
     document.head.appendChild(css);
     const js = document.createElement('script');
-    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
     js.onload = () => createLeafletMap();
     document.head.appendChild(js);
   } else {
