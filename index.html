@@ -2827,17 +2827,49 @@ function onDispatchCheck(chk) {
 }
 
 async function geocodeOrderAddress(id, order, num) {
+  // First try to resolve short link
+  if (order.location_url && (order.location_url.includes('goo.gl') || order.location_url.includes('maps.app'))) {
+    try {
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(order.location_url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(order.location_url)}`,
+      ];
+      for (const proxy of proxies) {
+        try {
+          const r = await fetch(proxy);
+          if (!r.ok) continue;
+          const html = await r.text();
+          const patterns = [
+            /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+            /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+            /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+            /center=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          ];
+          for (const pat of patterns) {
+            const m = html.match(pat);
+            if (m) {
+              const coords = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+              const sel = dispatchSelected.find(s => s.id === id);
+              if (sel) sel.coords = coords;
+              if (dispatchMap && window.L) addDispatchMarker(id, order, coords, num);
+              return;
+            }
+          }
+        } catch(e) { continue; }
+      }
+    } catch(e) {}
+  }
+
+  // Fallback: geocode by address
   const parts = [order.apt, order.city, order.emirate, 'UAE'].filter(Boolean);
   if (parts.length < 2) return;
-  const query = parts.join(', ');
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parts.join(', '))}&format=json&limit=1`, {
       headers: { 'Accept-Language': 'en' }
     });
     const data = await res.json();
     if (data?.length) {
       const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      // Update stored coords
       const sel = dispatchSelected.find(s => s.id === id);
       if (sel) sel.coords = coords;
       if (dispatchMap && window.L) addDispatchMarker(id, order, coords, num);
