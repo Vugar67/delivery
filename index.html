@@ -318,11 +318,61 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="total_asc">💰 Lowest Total</option>
         </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
+        <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
         <button class="btn btn-ghost" onclick="exportCSV()">&#8595; CSV</button>
       </div>
+      <!-- DISPATCH MODE PANEL -->
+      <div id="dispatch-panel" style="display:none;margin-bottom:16px">
+        <div style="background:var(--surface);border:1px solid var(--accent2);border-radius:12px;overflow:hidden">
+          <!-- Header -->
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:rgba(255,200,0,.06)">
+            <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent2)">🚀 DISPATCH MODE</span>
+            <span id="dispatch-counter" style="font-family:var(--mono);font-size:12px;color:var(--muted)">Select orders below</span>
+            <div style="flex:1"></div>
+            <!-- Driver select -->
+            <div style="position:relative">
+              <input id="dispatch-driver-search" placeholder="Search driver..." oninput="filterDispatchDrivers()" onfocus="filterDispatchDrivers()" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:12px;color:var(--text);width:180px">
+              <div id="dispatch-driver-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;z-index:200;max-height:240px;overflow-y:auto;margin-top:2px;min-width:220px">
+                <div id="dispatch-driver-list"></div>
+                <!-- Quick add new driver -->
+                <div id="dispatch-new-driver-toggle" onclick="toggleDispatchNewDriver()" style="padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--accent);border-top:1px solid var(--border);display:flex;align-items:center;gap:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+                  <span style="font-size:14px">+</span> New Driver
+                </div>
+                <div id="dispatch-new-driver-form" style="display:none;padding:10px 12px;border-top:1px solid var(--border);background:var(--bg)">
+                  <input id="dispatch-new-drv-name" placeholder="Name *" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:6px;box-sizing:border-box">
+                  <input id="dispatch-new-drv-phone" placeholder="Phone" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:8px;box-sizing:border-box">
+                  <button onclick="saveDispatchNewDriver()" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:5px;padding:6px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">Save Driver</button>
+                </div>
+              </div>
+            </div>
+            <span id="dispatch-driver-label" style="font-family:var(--mono);font-size:12px;color:var(--accent);min-width:120px"></span>
+            <button id="dispatch-send-btn" onclick="dispatchSend()" disabled style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 20px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;opacity:.4">▶ SEND</button>
+            <button onclick="toggleDispatchMode()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">✕ Exit</button>
+          </div>
+          <!-- Map -->
+          <div id="dispatch-map" style="height:280px;background:var(--bg);position:relative">
+            <div id="dispatch-map-inner" style="width:100%;height:100%"></div>
+            <div id="dispatch-map-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;pointer-events:none">
+              📍 Select orders to see them on the map
+            </div>
+          </div>
+          <!-- Send progress -->
+          <div id="dispatch-progress" style="display:none;padding:10px 16px;border-top:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">Sending:</span>
+              <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                <div id="dispatch-progress-bar" style="height:100%;background:var(--green);border-radius:3px;transition:width .3s;width:0%"></div>
+              </div>
+              <span id="dispatch-progress-label" style="font-family:var(--mono);font-size:12px;color:var(--green);min-width:60px;text-align:right"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr>
+            <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
             <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Client Name</th><th>Date</th><th>Emirate</th><th>City</th>
             <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
             <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th>Delivery AED</th><th>Subtotal</th><th>Discount</th><th>Total</th><th>Notes</th><th></th>
@@ -1042,6 +1092,7 @@ function getFiltered(){
     if(dl&&o.delivery_status!==dl)return false;
     if(dr&&o.driver!==dr)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(dispatchMode){const today=new Date().toISOString().slice(0,10);if(o.order_date!==today)return false;}
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
@@ -1081,7 +1132,13 @@ function renderTable(){
     tbody.innerHTML=slice.map(o=>{
       const items=orderItems[o.id]||[];
       const itemsHtml=items.length?`<div class="items-preview" style="max-width:200px">${items.map(i=>`<span class="item-chip">${i.product_name} ×${i.quantity}</span>`).join('')}</div>`:'<span style="color:var(--muted);font-size:11px">&mdash;</span>';
-      return`<tr oncontextmenu="openCtxMenu(event,'${o.id}')" onmouseenter="showOrderTooltip(event,'${o.id}')" onmouseleave="hideOrderTooltip()" onmousemove="moveOrderTooltip(event)" style="cursor:context-menu">
+      // In dispatch mode: dim rows that already have driver+wa_sent
+      const dispatched = o.driver && o.wa_sent;
+      const rowStyle = dispatchMode && dispatched ? 'opacity:.45;' : '';
+      return`<tr id="drow-${o.id}" oncontextmenu="openCtxMenu(event,'${o.id}')" onmouseenter="showOrderTooltip(event,'${o.id}')" onmouseleave="hideOrderTooltip()" onmousemove="moveOrderTooltip(event)" style="cursor:context-menu;${rowStyle}">
+        <td id="dispatch-td-${o.id}" style="${dispatchMode?'':'display:none;'}text-align:center;padding:4px">
+          <input type="checkbox" class="dispatch-chk" data-id="${o.id}" ${dispatchSelected.find(s=>s.id===o.id)?'checked':''} onchange="onDispatchCheck(this)" style="cursor:pointer;width:16px;height:16px">
+        </td>
         <td style="text-align:center;padding:8px 4px">
           <div onclick="cyclePriority('${o.id}',${o.priority||3})" title="Priority ${o.priority||3} — click to change" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};box-shadow:0 0 8px ${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'}"></div>
         </td>
@@ -2635,7 +2692,258 @@ document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
 
-</script>
+// ─── DISPATCH MODE ───────────────────────────────────────────────
+let dispatchMode = false;
+let dispatchSelected = []; // [{id, order, lat, lng}] in selection order
+let dispatchDriverName = '';
+let dispatchMap = null;
+let dispatchMarkers = [];
+
+function extractCoordsFromUrl(url) {
+  if (!url) return null;
+  const q = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (q) return { lat: parseFloat(q[1]), lng: parseFloat(q[2]) };
+  const at = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (at) return { lat: parseFloat(at[1]), lng: parseFloat(at[2]) };
+  return null;
+}
+
+function toggleDispatchMode() {
+  dispatchMode = !dispatchMode;
+  dispatchSelected = [];
+  dispatchDriverName = '';
+
+  const panel = document.getElementById('dispatch-panel');
+  const th = document.getElementById('dispatch-th');
+  const btn = document.getElementById('dispatch-btn');
+
+  if (dispatchMode) {
+    panel.style.display = '';
+    th.style.display = '';
+    btn.style.background = 'var(--red)';
+    btn.style.color = '#fff';
+    btn.textContent = '✕ Exit Dispatch';
+    // Show all dispatch td cells
+    document.querySelectorAll('[id^="dispatch-td-"]').forEach(td => td.style.display = '');
+    initDispatchMap();
+    updateDispatchCounter();
+    populateDispatchDrivers();
+  } else {
+    panel.style.display = 'none';
+    th.style.display = 'none';
+    btn.style.background = 'var(--accent2)';
+    btn.style.color = '#000';
+    btn.textContent = '🚀 Dispatch';
+    document.querySelectorAll('[id^="dispatch-td-"]').forEach(td => td.style.display = 'none');
+    document.querySelectorAll('.dispatch-chk').forEach(c => c.checked = false);
+    document.querySelectorAll('[id^="drow-"]').forEach(r => r.style.background = '');
+    document.getElementById('dispatch-progress').style.display = 'none';
+  }
+}
+
+function initDispatchMap() {
+  const container = document.getElementById('dispatch-map-inner');
+  if (dispatchMap) { dispatchMap.invalidateSize(); return; }
+
+  // Load Leaflet if not loaded
+  if (!window.L) {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.onload = () => createLeafletMap();
+    document.head.appendChild(js);
+  } else {
+    createLeafletMap();
+  }
+}
+
+function createLeafletMap() {
+  const container = document.getElementById('dispatch-map-inner');
+  dispatchMap = L.map(container, { zoomControl: true }).setView([25.2048, 55.2708], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OSM', maxZoom: 19
+  }).addTo(dispatchMap);
+}
+
+function onDispatchCheck(chk) {
+  const id = chk.dataset.id;
+  const order = orders.find(o => o.id === id);
+  const row = document.getElementById('drow-' + id);
+
+  if (chk.checked) {
+    const coords = extractCoordsFromUrl(order?.location_url);
+    dispatchSelected.push({ id, order, coords });
+    if (row) row.style.background = 'rgba(255,200,0,.08)';
+    if (coords && dispatchMap && window.L) addDispatchMarker(id, order, coords, dispatchSelected.length);
+    document.getElementById('dispatch-map-placeholder').style.display = 'none';
+  } else {
+    dispatchSelected = dispatchSelected.filter(s => s.id !== id);
+    if (row) row.style.background = '';
+    removeDispatchMarker(id);
+    if (dispatchSelected.length === 0)
+      document.getElementById('dispatch-map-placeholder').style.display = '';
+  }
+  updateDispatchCounter();
+}
+
+function addDispatchMarker(id, order, coords, num) {
+  if (!dispatchMap || !window.L) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:var(--accent);color:#000;font-family:monospace;font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">${num}. ${order?.order_num||id}</div>`,
+    iconAnchor: [0, 0]
+  });
+  const marker = L.marker([coords.lat, coords.lng], { icon }).addTo(dispatchMap)
+    .bindPopup(`<b>${order?.order_num}</b><br>${order?.emirate||''} ${order?.city||''}<br>${order?.client_number||''}`);
+  dispatchMarkers.push({ id, marker });
+
+  // Fit map to all markers
+  const latlngs = dispatchMarkers.map(m => m.marker.getLatLng());
+  if (latlngs.length === 1) dispatchMap.setView(latlngs[0], 13);
+  else dispatchMap.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30] });
+}
+
+function removeDispatchMarker(id) {
+  const idx = dispatchMarkers.findIndex(m => m.id === id);
+  if (idx === -1) return;
+  dispatchMarkers[idx].marker.remove();
+  dispatchMarkers.splice(idx, 1);
+  // Renumber remaining markers
+  dispatchMarkers.forEach((m, i) => {
+    const sel = dispatchSelected[i];
+    if (sel) {
+      m.marker.setIcon(L.divIcon({
+        className: '',
+        html: `<div style="background:var(--accent);color:#000;font-family:monospace;font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">${i+1}. ${sel.order?.order_num||sel.id}</div>`,
+        iconAnchor: [0, 0]
+      }));
+    }
+  });
+}
+
+function updateDispatchCounter() {
+  const n = dispatchSelected.length;
+  const counter = document.getElementById('dispatch-counter');
+  const sendBtn = document.getElementById('dispatch-send-btn');
+  counter.textContent = n === 0 ? 'Select orders below' : `${n} order${n>1?'s':''} selected`;
+  const canSend = n > 0 && dispatchDriverName;
+  sendBtn.disabled = !canSend;
+  sendBtn.style.opacity = canSend ? '1' : '.4';
+  sendBtn.style.cursor = canSend ? 'pointer' : 'default';
+}
+
+function populateDispatchDrivers() {
+  renderDispatchDriverList('');
+}
+
+function renderDispatchDriverList(q) {
+  const list = document.getElementById('dispatch-driver-list');
+  if (!list) return;
+  const filtered = q ? drivers.filter(d => d.name.toLowerCase().includes(q)) : drivers;
+  list.innerHTML = filtered.length
+    ? filtered.map(d =>
+        `<div onclick="selectDispatchDriver('${d.name.replace(/'/g,"\\'")}');event.stopPropagation()" style="padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${d.name}${d.phone?`<span style="color:var(--muted);font-size:10px;margin-left:6px">${d.phone}</span>`:''}</div>`
+      ).join('')
+    : `<div style="padding:8px 12px;color:var(--muted);font-family:var(--mono);font-size:12px">No drivers found</div>`;
+}
+
+function filterDispatchDrivers() {
+  const q = document.getElementById('dispatch-driver-search').value.toLowerCase();
+  const dd = document.getElementById('dispatch-driver-dropdown');
+  dd.style.display = '';
+  renderDispatchDriverList(q);
+}
+
+function toggleDispatchNewDriver() {
+  const form = document.getElementById('dispatch-new-driver-form');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (form.style.display !== 'none') document.getElementById('dispatch-new-drv-name').focus();
+}
+
+async function saveDispatchNewDriver() {
+  const name = document.getElementById('dispatch-new-drv-name').value.trim();
+  const phone = document.getElementById('dispatch-new-drv-phone').value.trim();
+  if (!name) { toast('Name required', true); return; }
+  const { error } = await sb.from('drivers').insert({ name, phone: phone || null });
+  if (error) { toast('Error: ' + error.message, true); return; }
+  toast('✅ Driver added: ' + name);
+  await loadDrivers();
+  renderFilters();
+  // Clear form and refresh list
+  document.getElementById('dispatch-new-drv-name').value = '';
+  document.getElementById('dispatch-new-drv-phone').value = '';
+  document.getElementById('dispatch-new-driver-form').style.display = 'none';
+  renderDispatchDriverList('');
+  selectDispatchDriver(name);
+}
+
+function selectDispatchDriver(name) {
+  dispatchDriverName = name;
+  document.getElementById('dispatch-driver-search').value = name;
+  document.getElementById('dispatch-driver-dropdown').style.display = 'none';
+  document.getElementById('dispatch-driver-label').textContent = '✓ ' + name;
+  updateDispatchCounter();
+}
+
+function dispatchSelectAll(checked) {
+  document.querySelectorAll('.dispatch-chk').forEach(chk => {
+    if (chk.checked !== checked) { chk.checked = checked; onDispatchCheck(chk); }
+  });
+}
+
+async function dispatchSend() {
+  if (!dispatchSelected.length || !dispatchDriverName) return;
+  const total = dispatchSelected.length;
+  const progress = document.getElementById('dispatch-progress');
+  const bar = document.getElementById('dispatch-progress-bar');
+  const label = document.getElementById('dispatch-progress-label');
+  const sendBtn = document.getElementById('dispatch-send-btn');
+
+  progress.style.display = '';
+  sendBtn.disabled = true;
+
+  for (let i = 0; i < total; i++) {
+    const { id, order } = dispatchSelected[i];
+    label.textContent = `${i+1} / ${total}`;
+    bar.style.width = ((i / total) * 100) + '%';
+
+    // Assign driver to order in DB + mark wa_sent
+    await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, updated_by: currentUser.email }).eq('id', id);
+
+    // Update local orders array so row dims immediately
+    const localOrder = orders.find(o => o.id === id);
+    if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
+
+    // Send WA message
+    sendWhatsApp(id);
+
+    // Wait between messages
+    if (i < total - 1) await new Promise(r => setTimeout(r, 1200));
+  }
+
+  bar.style.width = '100%';
+  label.textContent = `✓ ${total} / ${total}`;
+  label.style.color = 'var(--green)';
+  toast(`✅ Dispatched ${total} order${total>1?'s':''} to ${dispatchDriverName}`);
+
+  // Refresh table
+  await loadOrders();
+  sendBtn.disabled = false;
+  sendBtn.textContent = '✓ Done';
+}
+
+// Close driver dropdown on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#dispatch-driver-search') && !e.target.closest('#dispatch-driver-dropdown')) {
+    const dd = document.getElementById('dispatch-driver-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+});
+
+
 
 <div class="order-tooltip" id="order-tooltip"></div>
 </body>
