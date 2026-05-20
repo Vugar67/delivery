@@ -265,6 +265,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:15px;font-weight:700}
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -2785,22 +2787,8 @@ function toggleDispatchMode() {
 }
 
 function initDispatchMap() {
-  const container = document.getElementById('dispatch-map-inner');
   if (dispatchMap) { dispatchMap.invalidateSize(); return; }
-
-  // Load Leaflet if not loaded
-  if (!window.L) {
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(css);
-    const js = document.createElement('script');
-    js.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
-    js.onload = () => createLeafletMap();
-    document.head.appendChild(js);
-  } else {
-    createLeafletMap();
-  }
+  createLeafletMap();
 }
 
 function createLeafletMap() {
