@@ -548,10 +548,9 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group" id="f-city-group">
         <label>City</label>
-        <select id="f-city" onchange="onCityChange()" style="display:none">
+        <select id="f-city" onchange="onCityChange()">
           <option value="">— Select City —</option>
         </select>
-        <input id="f-city-text" placeholder="City / Area" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;width:100%;box-sizing:border-box">
       </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Client Name</label><input id="f-client-name" placeholder="e.g. Latifa"></div>
@@ -1452,46 +1451,33 @@ function onEmirateChange() {
 
   const cityGroup = document.getElementById('f-city-group');
   const cityEl = document.getElementById('f-city');
-  const cityText = document.getElementById('f-city-text');
   const distEl = document.getElementById('f-district');
   const distCustom = document.getElementById('f-district-custom');
 
-  // Reset
   cityEl.innerHTML = '<option value="">— Select City —</option>';
-  cityEl.style.display = 'none';
-  if (cityText) cityText.value = '';
   distEl.innerHTML = '<option value="">— Select District —</option>';
   if (distCustom) distCustom.value = '';
 
-  if (!emirateId) { return; }
+  if (!emirateId) { cityGroup.style.display = 'none'; return; }
 
   const cities = getLocs('city', parseInt(emirateId));
   if (cities.length === 1) {
-    // Auto-fill single city into text field
-    if (cityText) cityText.value = cities[0].name;
-    cityEl.style.display = 'none';
-    // Load districts for this city
-    const districts = getLocs('district', parseInt(cities[0].id));
-    distEl.innerHTML = '<option value="">— Select District —</option>';
-    districts.forEach(d => {
-      const o = new Option(d.name, d.name);
-      o.dataset.lid = d.id;
-      distEl.appendChild(o);
-    });
-    distEl.appendChild(new Option('+ Custom...', '__custom'));
+    cityGroup.style.display = '';
+    const o = new Option(cities[0].name, cities[0].name);
+    o.dataset.lid = cities[0].id;
+    o.selected = true;
+    cityEl.appendChild(o);
+    onCityChange();
   } else if (cities.length > 1) {
-    // Show select for multiple cities
-    cityEl.style.display = '';
-    cityEl.innerHTML = '<option value="">— Select City —</option>';
+    cityGroup.style.display = '';
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
       cityEl.appendChild(o);
     });
   } else {
-    // No cities — load districts directly from emirate
+    cityGroup.style.display = 'none';
     const districts = getLocs('district', parseInt(emirateId));
-    distEl.innerHTML = '<option value="">— Select District —</option>';
     districts.forEach(d => {
       const o = new Option(d.name, d.name);
       o.dataset.lid = d.id;
@@ -1566,38 +1552,21 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
   const cityGroup = document.getElementById('f-city-group');
   const cityEl = document.getElementById('f-city');
-  const cityText = document.getElementById('f-city-text');
+  
   const distEl = document.getElementById('f-district');
   const distCustom = document.getElementById('f-district-custom');
 
   const cities = getLocs('city', emirate.id);
-  if (cities.length === 1) {
-    // Auto-fill single city
-    cityEl.style.display = 'none';
-    if (cityText) cityText.value = cityName || cities[0].name;
-    const city = locations.find(l => l.type === 'city' && l.parent_id === emirate.id);
-    if (city) {
-      distEl.innerHTML = '<option value="">— Select District —</option>';
-      getLocs('district', city.id).forEach(d => {
-        const o = new Option(d.name, d.name);
-        o.dataset.lid = d.id;
-        if (d.name === districtName) o.selected = true;
-        distEl.appendChild(o);
-      });
-      distEl.appendChild(new Option('+ Custom...', '__custom'));
-    }
-  } else if (cities.length > 1) {
-    cityEl.style.display = '';
+  if (cities.length >= 1) {
+    cityGroup.style.display = '';
     cityEl.innerHTML = '<option value="">— Select City —</option>';
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
-      if (c.name === cityName) o.selected = true;
+      if (c.name === cityName || cities.length === 1) o.selected = true;
       cityEl.appendChild(o);
     });
-    if (cityText) cityText.value = '';
-    // Load districts for selected city
-    const city = locations.find(l => l.type === 'city' && l.name === cityName && l.parent_id === emirate.id);
+    const city = locations.find(l => l.type === 'city' && (l.name === cityName || cities.length === 1) && l.parent_id === emirate.id);
     if (city) {
       distEl.innerHTML = '<option value="">— Select District —</option>';
       getLocs('district', city.id).forEach(d => {
@@ -1609,9 +1578,7 @@ function populateLocationSelects(emirateName, cityName, districtName) {
       distEl.appendChild(new Option('+ Custom...', '__custom'));
     }
   } else {
-    // No cities — text field free input, load districts from emirate
-    cityEl.style.display = 'none';
-    if (cityText) cityText.value = cityName || '';
+    cityGroup.style.display = 'none';
     const districts = getLocs('district', emirate.id);
     distEl.innerHTML = '<option value="">— Select District —</option>';
     districts.forEach(d => {
@@ -2113,10 +2080,8 @@ async function openNewOrder(){
   });
   // Default to Dubai
   emirateEl.value = 'Dubai';
-  document.getElementById('f-city-group').style.display = '';
+  document.getElementById('f-city-group').style.display = 'none';
   document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';
-  document.getElementById('f-city').style.display = 'none';
-  const ct = document.getElementById('f-city-text'); if(ct) ct.value = '';
   // Load Dubai districts
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
@@ -2147,8 +2112,8 @@ async function editOrder(id){
   document.getElementById('f-num').value=o.order_num;
   document.getElementById('f-date').value=o.order_date||'';
   populateLocationSelects(o.emirate||'', o.city||'', o.apt||'');
-  const cityText = document.getElementById('f-city-text');
-  if (cityText) cityText.value = o.city||'';
+  
+  
   document.getElementById('f-apt').value=o.villa||o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
@@ -2200,7 +2165,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:(document.getElementById('f-city-text')?.value||document.getElementById('f-city')?.value||''),apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
