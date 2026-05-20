@@ -308,7 +308,19 @@ select option{background:#1a1d27;color:#f0f2ff}
           <input type="text" id="search-input" placeholder="Search order#, client, city..." oninput="renderTable()">
         </div>
         <select class="filter-sel" id="filter-emirate" onchange="renderTable()"><option value="">All Emirates</option></select>
-        <select class="filter-sel" id="filter-delivery" onchange="renderTable()"><option value="">All Statuses</option></select>
+        <div style="position:relative" id="filter-delivery-wrap">
+          <button id="filter-delivery-btn" onclick="toggleDeliveryFilter()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-family:var(--font);font-size:13px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px">
+            <span id="filter-delivery-label">All Statuses</span>
+            <span style="color:var(--muted);font-size:10px">▼</span>
+          </button>
+          <div id="filter-delivery-dropdown" style="display:none;position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:200;min-width:200px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+            <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+              <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">DELIVERY STATUS</span>
+              <button onclick="clearDeliveryFilter()" style="background:none;border:none;color:var(--accent);font-family:var(--mono);font-size:11px;cursor:pointer">Clear</button>
+            </div>
+            <div id="filter-delivery-list" style="padding:6px 0;max-height:220px;overflow-y:auto"></div>
+          </div>
+        </div>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
           <option value="date_desc">📅 Newest First</option>
@@ -1078,11 +1090,55 @@ function showView(v){
 }
 
 function renderFilters(){
-  const fe=document.getElementById('filter-emirate'),fd=document.getElementById('filter-delivery'),fdr=document.getElementById('filter-driver');
-  const cur={em:fe.value,dl:fd.value,dr:fdr.value};
+  const fe=document.getElementById('filter-emirate'),fdr=document.getElementById('filter-driver');
+  const cur={em:fe.value,dr:fdr.value};
   fe.innerHTML='<option value="">All Emirates</option>'+refs.emirates.map(r=>`<option value="${r.value}" ${cur.em===r.value?'selected':''}>${r.value}</option>`).join('');
-  fd.innerHTML='<option value="">All Statuses</option>'+refs.deliveryStatus.map(r=>`<option value="${r.value}" ${cur.dl===r.value?'selected':''}>${r.value}</option>`).join('');
   fdr.innerHTML='<option value="">All Drivers</option>'+drivers.map(d=>`<option value="${d.name}" ${cur.dr===d.name?'selected':''}>${d.name}</option>`).join('');
+  // Populate delivery multi-select
+  const list = document.getElementById('filter-delivery-list');
+  if (list) {
+    list.innerHTML = refs.deliveryStatus.map(r => `
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        <input type="checkbox" value="${r.value}" onchange="onDeliveryFilterChange()" style="cursor:pointer;accent-color:var(--accent);width:14px;height:14px">
+        <span>${r.value}</span>
+      </label>`).join('');
+  }
+}
+
+let selectedDeliveryStatuses = new Set();
+
+function toggleDeliveryFilter() {
+  const dd = document.getElementById('filter-delivery-dropdown');
+  dd.style.display = dd.style.display === 'none' ? '' : 'none';
+}
+
+function onDeliveryFilterChange() {
+  selectedDeliveryStatuses = new Set(
+    [...document.querySelectorAll('#filter-delivery-list input:checked')].map(c => c.value)
+  );
+  updateDeliveryFilterLabel();
+  renderTable();
+}
+
+function updateDeliveryFilterLabel() {
+  const label = document.getElementById('filter-delivery-label');
+  if (!selectedDeliveryStatuses.size) {
+    label.textContent = 'All Statuses';
+    label.style.color = '';
+  } else if (selectedDeliveryStatuses.size === 1) {
+    label.textContent = [...selectedDeliveryStatuses][0];
+    label.style.color = 'var(--accent)';
+  } else {
+    label.textContent = selectedDeliveryStatuses.size + ' statuses';
+    label.style.color = 'var(--accent)';
+  }
+}
+
+function clearDeliveryFilter() {
+  selectedDeliveryStatuses = new Set();
+  document.querySelectorAll('#filter-delivery-list input').forEach(c => c.checked = false);
+  updateDeliveryFilterLabel();
+  renderTable();
 }
 
 function populateFormRefs(o){
@@ -1114,15 +1170,14 @@ function confBadge(v){return v==='Yes'?`<span class="badge badge-yes">Yes</span>
 function getFiltered(){
   const q=(document.getElementById('search-input').value||'').toLowerCase();
   const em=document.getElementById('filter-emirate').value;
-  const dl=document.getElementById('filter-delivery').value;
   const dr=document.getElementById('filter-driver').value;
   const sortVal=document.getElementById('sort-select')?.value||'priority';
   const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
-    if(dl&&o.delivery_status!==dl)return false;
+    if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
-    if(dispatchMode){if(o.driver)return false;}
+    // dispatch mode: show all orders, dimming handled in row render
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
@@ -1588,7 +1643,7 @@ function parseClientText(text) {
   const extracted = []; // {field, value} pairs for summary
 
   // 1. Phone
-  const phoneMatch = text.match(/(\+971[\s\-]?\d[\d\s\-]{6,12}|971\d{9}|05\d[\s\-]?\d{3}[\s\-]?\d{4})/);
+  const phoneMatch = text.match(/(\+971[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|971[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|05\d[\s\-]?\d{3}[\s\-]?\d{4})(?!\d)/);
   if (phoneMatch) {
     const phone = phoneMatch[1].replace(/\s+/g, ' ').trim();
     const clientEl = document.getElementById('f-client');
@@ -1942,11 +1997,12 @@ function initShop() {
 
 // ORDER CRUD
 async function openNewOrder(){
+  if(currentRole==='dispatcher') return;
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
   // Hide driver field for dispatcher
   const dg=document.getElementById('f-driver-group');
-  if(dg) dg.style.display=window._dispatcherMode?'none':'';
+  if(dg) dg.style.display=(currentRole==='admin')?'':'none';
   populateFormRefs(null);
   // Populate emirate select with Dubai as default
   const emirateEl = document.getElementById('f-emirate');
@@ -1985,7 +2041,7 @@ async function editOrder(id){
   editId=id;
   document.getElementById('modal-title').textContent='Edit Order';
   const dg=document.getElementById('f-driver-group');
-  if(dg) dg.style.display=window._dispatcherMode?'none':'';
+  if(dg) dg.style.display=(currentRole==='admin')?'':'none';
   populateFormRefs(o);
   document.getElementById('f-num').value=o.order_num;
   document.getElementById('f-date').value=o.order_date||'';
@@ -3030,6 +3086,10 @@ async function dispatchSend() {
 document.addEventListener('click', e => {
   if (!e.target.closest('#dispatch-driver-search') && !e.target.closest('#dispatch-driver-dropdown')) {
     const dd = document.getElementById('dispatch-driver-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+  if (!e.target.closest('#filter-delivery-wrap')) {
+    const dd = document.getElementById('filter-delivery-dropdown');
     if (dd) dd.style.display = 'none';
   }
 });
