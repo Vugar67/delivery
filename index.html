@@ -1026,6 +1026,7 @@ async function initApp(){
     window._dispatcherMode = true;
     toggleDispatchMode();
   }
+}
 
 async function loadRefs(){
   const{data}=await sb.from('refs').select('*');
@@ -2965,7 +2966,7 @@ document.addEventListener('click', e => {
   }
 });
 
-
+</script>
 
 <div class="order-tooltip" id="order-tooltip"></div>
 </body>
