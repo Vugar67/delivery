@@ -986,7 +986,18 @@ async function doLogin(){
 async function doLogout(){if(realtimeSub)sb.removeChannel(realtimeSub);await sb.auth.signOut();}
 
 sb.auth.onAuthStateChange(async(event,session)=>{
-  if(session?.user){currentUser=session.user;await loadProfile();await initApp();}
+  if(session?.user){
+    currentUser=session.user;
+    try {
+      await loadProfile();
+      await initApp();
+    } catch(e) {
+      console.error('initApp error:', e);
+      document.getElementById('loading').style.display='none';
+      document.getElementById('login-screen').style.display='flex';
+      document.querySelector('.login-box').innerHTML += `<div style="color:var(--red);font-family:var(--mono);font-size:11px;margin-top:12px">Init error: ${e.message}</div>`;
+    }
+  }
   else{currentUser=null;currentRole=null;document.getElementById('loading').style.display='none';document.getElementById('login-screen').style.display='flex';document.getElementById('app-screen').style.display='none';}
 });
 
@@ -2800,8 +2811,13 @@ function onDispatchCheck(chk) {
     const coords = extractCoordsFromUrl(order?.location_url);
     dispatchSelected.push({ id, order, coords });
     if (row) row.style.background = 'rgba(255,200,0,.08)';
-    if (coords && dispatchMap && window.L) addDispatchMarker(id, order, coords, dispatchSelected.length);
     document.getElementById('dispatch-map-placeholder').style.display = 'none';
+    // Try coords first, fallback to geocode by address
+    if (coords && dispatchMap && window.L) {
+      addDispatchMarker(id, order, coords, dispatchSelected.length);
+    } else {
+      geocodeOrderAddress(id, order, dispatchSelected.length);
+    }
   } else {
     dispatchSelected = dispatchSelected.filter(s => s.id !== id);
     if (row) row.style.background = '';
@@ -2810,6 +2826,25 @@ function onDispatchCheck(chk) {
       document.getElementById('dispatch-map-placeholder').style.display = '';
   }
   updateDispatchCounter();
+}
+
+async function geocodeOrderAddress(id, order, num) {
+  const parts = [order.apt, order.city, order.emirate, 'UAE'].filter(Boolean);
+  if (parts.length < 2) return;
+  const query = parts.join(', ');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, {
+      headers: { 'Accept-Language': 'en' }
+    });
+    const data = await res.json();
+    if (data?.length) {
+      const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      // Update stored coords
+      const sel = dispatchSelected.find(s => s.id === id);
+      if (sel) sel.coords = coords;
+      if (dispatchMap && window.L) addDispatchMarker(id, order, coords, num);
+    }
+  } catch(e) {}
 }
 
 function addDispatchMarker(id, order, coords, num) {
