@@ -1604,21 +1604,29 @@ async function extractLocationUrl(text) {
     try {
       const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(mapUrl)}`);
       const proxyData = await proxyRes.json();
-      // allorigins returns the final URL in status.url after redirects
       const finalUrl = proxyData?.status?.url || '';
-      console.log('Resolved short link to:', finalUrl);
+      const html = proxyData?.contents || '';
+      console.log('Resolved URL:', finalUrl);
+      console.log('HTML snippet:', html.slice(0, 500));
 
-      // Try to extract coords from resolved URL
-      const qM = finalUrl.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-      if (qM) { await reverseGeocode(parseFloat(qM[1]), parseFloat(qM[2])); return; }
-      const atM = finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-      if (atM) { await reverseGeocode(parseFloat(atM[1]), parseFloat(atM[2])); return; }
-      const llM = finalUrl.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-      if (llM) { await reverseGeocode(parseFloat(llM[1]), parseFloat(llM[2])); return; }
+      // Try coords from resolved URL first
+      for (const src of [finalUrl, html]) {
+        const qM = src.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (qM) { await reverseGeocode(parseFloat(qM[1]), parseFloat(qM[2])); return; }
+        const atM = src.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (atM) { await reverseGeocode(parseFloat(atM[1]), parseFloat(atM[2])); return; }
+        const llM = src.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (llM) { await reverseGeocode(parseFloat(llM[1]), parseFloat(llM[2])); return; }
+        // Format: center=LAT,LNG or !3dLAT!4dLNG
+        const cM = src.match(/center=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (cM) { await reverseGeocode(parseFloat(cM[1]), parseFloat(cM[2])); return; }
+        const dM = src.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+        if (dM) { await reverseGeocode(parseFloat(dM[1]), parseFloat(dM[2])); return; }
+      }
 
-      toast('⚠️ Could not extract coords from short link — paste full Google Maps URL', true);
+      toast('⚠️ Got: ' + (finalUrl.slice(0,80) || 'no URL') + ' — check console', true);
     } catch(e) {
-      toast('⚠️ Could not resolve short link — paste full Google Maps URL', true);
+      toast('⚠️ Could not resolve short link: ' + e.message, true);
     }
   }
 }
