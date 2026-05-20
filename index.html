@@ -2087,12 +2087,12 @@ async function openNewOrder(){
   const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
   const cmd=document.getElementById('client-msg-text');if(cmd)cmd.textContent='';
   const ws=document.getElementById('f-wa-show-items');if(ws)ws.checked=false;
-  document.getElementById('f-district-custom').value='';
+  // district-custom removed
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='50';
   renderCart();
-  document.getElementById('f-district-custom').value='';
+  // district-custom removed
   initShop();
   document.getElementById('order-modal').classList.add('open');
 }
