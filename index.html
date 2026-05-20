@@ -539,7 +539,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="">— Select Emirate —</option>
         </select>
       </div>
-      <div class="form-group" id="f-city-group" style="display:none">
+      <div class="form-group" id="f-city-group">
         <label>City</label>
         <select id="f-city" onchange="onCityChange()">
           <option value="">— Select City —</option>
@@ -1457,11 +1457,11 @@ function onEmirateChange() {
   distEl.innerHTML = '<option value="">— Select District —</option>';
   if (distCustom) distCustom.value = '';
 
-  if (!emirateId) { cityGroup.style.display = 'none'; return; }
+  if (!emirateId) {  return; }
 
   const cities = getLocs('city', parseInt(emirateId));
   if (cities.length >= 1) {
-    cityGroup.style.display = '';
+    
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
@@ -1472,7 +1472,7 @@ function onEmirateChange() {
       onCityChange();
     }
   } else {
-    cityGroup.style.display = 'none';
+    
     const districts = getLocs('district', parseInt(emirateId));
     districts.forEach(d => {
       const o = new Option(d.name, d.name);
@@ -1554,7 +1554,7 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
   const cities = getLocs('city', emirate.id);
   if (cities.length >= 1) {
-    cityGroup.style.display = '';
+    
     cityEl.innerHTML = '<option value="">— Select City —</option>';
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
@@ -1574,7 +1574,7 @@ function populateLocationSelects(emirateName, cityName, districtName) {
       distEl.appendChild(new Option('+ Custom...', '__custom'));
     }
   } else {
-    cityGroup.style.display = 'none';
+    
     const districts = getLocs('district', emirate.id);
     distEl.innerHTML = '<option value="">— Select District —</option>';
     districts.forEach(d => {
@@ -2076,7 +2076,7 @@ async function openNewOrder(){
   });
   // Default to Dubai
   emirateEl.value = 'Dubai';
-  document.getElementById('f-city-group').style.display = 'none';
+  
   document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';// Load Dubai districts
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
