@@ -1461,18 +1461,14 @@ function onEmirateChange() {
 
   const cities = getLocs('city', parseInt(emirateId));
   if (cities.length >= 1) {
-    
-    cities.forEach(c => {
+    cities.forEach((c, i) => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
+      if (cities.length === 1) o.selected = true;
       cityEl.appendChild(o);
     });
-    if (cities.length === 1) {
-      cityEl.value = cities[0].name;
-      onCityChange();
-    }
+    if (cities.length === 1) onCityChange();
   } else {
-    
     const districts = getLocs('district', parseInt(emirateId));
     districts.forEach(d => {
       const o = new Option(d.name, d.name);
