@@ -2113,7 +2113,7 @@ async function editOrder(id){
   document.getElementById('f-num').value=o.order_num;
   document.getElementById('f-date').value=o.order_date||'';
   populateLocationSelects(o.emirate||'', o.city||'', o.apt||'');
-  document.getElementById('f-apt').value=o.apt||'';
+  document.getElementById('f-apt').value=o.villa||o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
@@ -2164,7 +2164,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
@@ -2833,7 +2833,7 @@ async function sendToDriver(orderId) {
   const {data: freshWaItems} = await sb.from('order_items').select('*').eq('order_id', orderId);
   const waItems = freshWaItems || orderItems[orderId] || [];
   const items = waItems.map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
-  const address = [o.emirate, o.city, o.apt].filter(Boolean).join(', ');
+  const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
   const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
   const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
   const totalAmount = itemsSubtotal + (o.delivery_charge||0);
