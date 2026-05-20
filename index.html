@@ -488,6 +488,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <input id="f-district-custom" placeholder="Or type custom district..." style="margin-top:6px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;width:100%" oninput="onCustomDistrict(this.value)">
       </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
+      <div class="form-group"><label>Client Name</label><input id="f-client-name" placeholder="e.g. Latifa"></div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <!-- CLIENT MESSAGE CARD — shown when operator pastes client text -->
       <div id="client-msg-card" class="form-group form-full" style="display:none">
@@ -1040,7 +1041,7 @@ function getFiltered(){
     if(em&&o.emirate!==em)return false;
     if(dl&&o.delivery_status!==dl)return false;
     if(dr&&o.driver!==dr)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
@@ -1089,7 +1090,7 @@ function renderTable(){
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.city||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px">${o.apt||'&mdash;'}</td>
-        <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${o.location_url}" target="_blank" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
+        <td class="client-cell">${o.client_name?`<span style="color:var(--text);font-size:11px">${o.client_name}</span> `:''}${o.client_number||'&mdash;'} ${o.location_url?`<a href="${o.location_url}" target="_blank" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
@@ -1540,7 +1541,13 @@ function parseClientText(text) {
     }
   }
 
-  if (nameCandidates.length) extracted.push({ field: 'Name', value: nameCandidates.join(', ') });
+  if (nameCandidates.length) {
+    const nameEl = document.getElementById('f-client-name');
+    if (nameEl && !nameEl.value) {
+      nameEl.value = nameCandidates[0];
+      extracted.push({ field: 'Name', value: nameCandidates[0] });
+    }
+  }
   if (addressHint) extracted.push({ field: 'Address', value: addressHint });
   if (productHint) extracted.push({ field: 'Products', value: productHint });
 
@@ -1598,35 +1605,49 @@ async function extractLocationUrl(text) {
   const llMatch = mapUrl.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
   if (llMatch) { await reverseGeocode(parseFloat(llMatch[1]), parseFloat(llMatch[2])); return; }
 
-  // Format 4: short link (maps.app.goo.gl) — resolve via proxy to get real URL with coords
+  // Format 4: short link (maps.app.goo.gl) — resolve via CORS proxy
   if (mapUrl.includes('goo.gl') || mapUrl.includes('maps.app')) {
     toast('🔗 Resolving short link...');
     try {
-      const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(mapUrl)}`);
-      const proxyData = await proxyRes.json();
-      const finalUrl = proxyData?.status?.url || '';
-      const html = proxyData?.contents || '';
-      console.log('Resolved URL:', finalUrl);
-      console.log('HTML snippet:', html.slice(0, 500));
-
-      // Try coords from resolved URL first
-      for (const src of [finalUrl, html]) {
-        const qM = src.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (qM) { await reverseGeocode(parseFloat(qM[1]), parseFloat(qM[2])); return; }
-        const atM = src.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (atM) { await reverseGeocode(parseFloat(atM[1]), parseFloat(atM[2])); return; }
-        const llM = src.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (llM) { await reverseGeocode(parseFloat(llM[1]), parseFloat(llM[2])); return; }
-        // Format: center=LAT,LNG or !3dLAT!4dLNG
-        const cM = src.match(/center=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (cM) { await reverseGeocode(parseFloat(cM[1]), parseFloat(cM[2])); return; }
-        const dM = src.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
-        if (dM) { await reverseGeocode(parseFloat(dM[1]), parseFloat(dM[2])); return; }
+      // Try multiple proxies
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(mapUrl)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(mapUrl)}`,
+      ];
+      let html = '';
+      for (const proxy of proxies) {
+        try {
+          const r = await fetch(proxy);
+          if (r.ok) { html = await r.text(); break; }
+        } catch(e) { continue; }
       }
 
-      toast('⚠️ Got: ' + (finalUrl.slice(0,80) || 'no URL') + ' — check console', true);
+      console.log('Short link HTML snippet:', html.slice(0, 800));
+
+      if (html) {
+        // Try all coord patterns in the HTML
+        const patterns = [
+          /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+          /center=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /"(-?\d{1,3}\.\d{4,}),(-?\d{1,3}\.\d{4,})"/,
+        ];
+        for (const pat of patterns) {
+          const m = html.match(pat);
+          if (m) {
+            console.log('Found coords via pattern', pat, ':', m[1], m[2]);
+            await reverseGeocode(parseFloat(m[1]), parseFloat(m[2]));
+            return;
+          }
+        }
+        toast('⚠️ Short link resolved but no coords found — paste full Google Maps URL', true);
+      } else {
+        toast('⚠️ Could not resolve short link — paste full Google Maps URL instead', true);
+      }
     } catch(e) {
-      toast('⚠️ Could not resolve short link: ' + e.message, true);
+      toast('⚠️ Short link error: ' + e.message, true);
     }
   }
 }
@@ -1852,7 +1873,7 @@ async function openNewOrder(){
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  ['f-apt','f-client','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-apt','f-client','f-client-name','f-notes'].forEach(id=>document.getElementById(id).value='');
   ['f-location-raw','f-location-url','f-raw-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
   const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
@@ -1878,6 +1899,7 @@ async function editOrder(id){
   populateLocationSelects(o.emirate||'', o.city||'', o.apt||'');
   document.getElementById('f-apt').value=o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
+  const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
@@ -1923,7 +1945,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
@@ -2588,7 +2610,8 @@ async function sendToDriver(orderId) {
   const showItems = o.wa_show_items === true;
   const itemsSection = showItems && items ? `\n\n📦 *Items:*\n${items}` : '';
   const locationSection = o.location_url ? `\n\n🗺 *Location:* ${o.location_url}` : '';
-  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n📞 *Client:* ${o.client_number||'—'}${locationSection}${itemsSection}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n💵 *Total: ${totalAmount.toFixed(2)} AED*\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
+  const clientLine = [o.client_name, o.client_number].filter(Boolean).join(' — ');
+  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n👤 *Client:* ${clientLine||'—'}${locationSection}${itemsSection}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n💵 *Total: ${totalAmount.toFixed(2)} AED*\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
