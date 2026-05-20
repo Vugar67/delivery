@@ -1598,10 +1598,28 @@ async function extractLocationUrl(text) {
   const llMatch = mapUrl.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
   if (llMatch) { await reverseGeocode(parseFloat(llMatch[1]), parseFloat(llMatch[2])); return; }
 
-  // Format 4: maps.google.com?q=PLACE_NAME (no coords) — show preview only
-  // Format 5: short link (maps.app.goo.gl)
+  // Format 4: short link (maps.app.goo.gl) — resolve via proxy to get real URL with coords
   if (mapUrl.includes('goo.gl') || mapUrl.includes('maps.app')) {
-    toast('📍 Short link detected — coordinates format preferred for auto-fill');
+    toast('🔗 Resolving short link...');
+    try {
+      const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(mapUrl)}`);
+      const proxyData = await proxyRes.json();
+      // allorigins returns the final URL in status.url after redirects
+      const finalUrl = proxyData?.status?.url || '';
+      console.log('Resolved short link to:', finalUrl);
+
+      // Try to extract coords from resolved URL
+      const qM = finalUrl.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (qM) { await reverseGeocode(parseFloat(qM[1]), parseFloat(qM[2])); return; }
+      const atM = finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (atM) { await reverseGeocode(parseFloat(atM[1]), parseFloat(atM[2])); return; }
+      const llM = finalUrl.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (llM) { await reverseGeocode(parseFloat(llM[1]), parseFloat(llM[2])); return; }
+
+      toast('⚠️ Could not extract coords from short link — paste full Google Maps URL', true);
+    } catch(e) {
+      toast('⚠️ Could not resolve short link — paste full Google Maps URL', true);
+    }
   }
 }
 
