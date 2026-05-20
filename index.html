@@ -1941,7 +1941,7 @@ function renderShopProducts() {
   }
   
   grid.innerHTML = filtered.map(p => {
-    const inCart = cart.find(item => item.product.id === p.id);
+    const inCart = cart.find(item => !item.is_custom && item.product && item.product.id === p.id);
     return `<div class="shop-product-card">
       ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
