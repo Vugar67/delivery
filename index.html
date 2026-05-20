@@ -1459,17 +1459,15 @@ function onEmirateChange() {
 
   if (!emirateId) {  return; }
 
-  const cities = getLocs('city', parseInt(emirateId));
-  if (cities.length >= 1) {
-    cities.forEach((c, i) => {
-      const o = new Option(c.name, c.name);
-      o.dataset.lid = c.id;
-      if (cities.length === 1) o.selected = true;
-      cityEl.appendChild(o);
-    });
-    if (cities.length === 1) onCityChange();
-  } else {
-    const districts = getLocs('district', parseInt(emirateId));
+  // Always auto-fill city with emirate name
+  cityEl.innerHTML = '';
+  const co = new Option(emirateName, emirateName);
+  co.selected = true;
+  cityEl.appendChild(co);
+
+  // Load districts directly from emirate
+  const districts = getLocs('district', parseInt(emirateId));
+  if (districts.length) {
     districts.forEach(d => {
       const o = new Option(d.name, d.name);
       o.dataset.lid = d.id;
