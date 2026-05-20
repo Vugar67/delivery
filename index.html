@@ -2827,6 +2827,7 @@ function onDispatchCheck(chk) {
 }
 
 async function geocodeOrderAddress(id, order, num) {
+  console.log('geocodeOrderAddress:', order.order_num, '| url:', order.location_url, '| emirate:', order.emirate, '| city:', order.city, '| apt:', order.apt);
   // First try to resolve short link
   if (order.location_url && (order.location_url.includes('goo.gl') || order.location_url.includes('maps.app'))) {
     try {
@@ -2848,6 +2849,7 @@ async function geocodeOrderAddress(id, order, num) {
           for (const pat of patterns) {
             const m = html.match(pat);
             if (m) {
+              console.log('Short link resolved coords:', m[1], m[2]);
               const coords = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
               const sel = dispatchSelected.find(s => s.id === id);
               if (sel) sel.coords = coords;
@@ -2862,7 +2864,8 @@ async function geocodeOrderAddress(id, order, num) {
 
   // Fallback: geocode by address
   const parts = [order.apt, order.city, order.emirate, 'UAE'].filter(Boolean);
-  if (parts.length < 2) return;
+  console.log('Address fallback parts:', parts);
+  if (parts.length < 2) { console.log('Not enough address parts, skipping'); return; }
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parts.join(', '))}&format=json&limit=1`, {
       headers: { 'Accept-Language': 'en' }
