@@ -633,7 +633,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group" style="position:relative">
         <label>Seller</label>
         <div style="position:relative">
-          <input id="f-seller-name" placeholder="— Select Seller —" autocomplete="off" readonly onclick="filterSellerDropdown('')" onblur="setTimeout(()=>hideSellerSuggest(),200)" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
+        <input id="f-seller-name" placeholder="— Select Seller —" autocomplete="off" readonly onclick="filterSellerDropdown('')" onblur="setTimeout(()=>hideSellerSuggest(),500)" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
           <span onclick="filterSellerDropdown('')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none">▼</span>
         </div>
         <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
