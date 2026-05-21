@@ -482,9 +482,21 @@ select option{background:#1a1d27;color:#f0f2ff}
         <select id="cl-category"><option value="">— Select —</option></select>
       </div>
       <div class="form-group"><label>Phone</label><input id="cl-phone" placeholder="+971 5x xxx xxxx"></div>
-      <div class="form-group"><label>Emirate</label><input id="cl-emirate" placeholder="e.g. Dubai"></div>
-      <div class="form-group"><label>City</label><input id="cl-city" placeholder="e.g. Dubai"></div>
-      <div class="form-group"><label>District / Area</label><input id="cl-district" placeholder="e.g. JBR"></div>
+      <div class="form-group"><label>Emirate</label>
+        <select id="cl-emirate" onchange="onClientEmirateChange()">
+          <option value="">— Select Emirate —</option>
+        </select>
+      </div>
+      <div class="form-group"><label>City</label>
+        <select id="cl-city" onchange="onClientCityChange()">
+          <option value="">— Select City —</option>
+        </select>
+      </div>
+      <div class="form-group"><label>District / Area</label>
+        <select id="cl-district">
+          <option value="">— Select District —</option>
+        </select>
+      </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="cl-villa" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Location URL</label><input id="cl-location" placeholder="Google Maps link"></div>
       <div class="form-group form-full"><label>Notes</label><input id="cl-notes" placeholder="Any additional info..."></div>
@@ -2958,21 +2970,84 @@ function renderClients() {
     </tr>`).join('');
 }
 
+function populateClientEmirateSelect(selectedEmirate='') {
+  const el = document.getElementById('cl-emirate');
+  el.innerHTML = '<option value="">— Select Emirate —</option>';
+  getLocs('emirate').forEach(e => {
+    const o = new Option(e.name, e.name);
+    o.dataset.lid = e.id;
+    if (e.name === selectedEmirate) o.selected = true;
+    el.appendChild(o);
+  });
+  onClientEmirateChange(selectedEmirate);
+}
+
+function onClientEmirateChange(preselectCity='', preselectDistrict='') {
+  const emirateEl = document.getElementById('cl-emirate');
+  const cityEl = document.getElementById('cl-city');
+  const distEl = document.getElementById('cl-district');
+  const selectedOpt = emirateEl.options[emirateEl.selectedIndex];
+  const emirateId = selectedOpt?.dataset?.lid;
+  const emirateName = emirateEl.value;
+
+  cityEl.innerHTML = '<option value="">— Select City —</option>';
+  distEl.innerHTML = '<option value="">— Select District —</option>';
+
+  if (!emirateId) return;
+
+  const cities = getLocs('city', parseInt(emirateId));
+  if (cities.length >= 1) {
+    cities.forEach(c => {
+      const o = new Option(c.name, c.name);
+      o.dataset.lid = c.id;
+      if (c.name === preselectCity || cities.length === 1) o.selected = true;
+      cityEl.appendChild(o);
+    });
+    onClientCityChange(preselectDistrict);
+  } else {
+    // Auto-fill city with emirate name
+    const o = new Option(emirateName, emirateName);
+    o.selected = true;
+    cityEl.appendChild(o);
+    const districts = getLocs('district', parseInt(emirateId));
+    districts.forEach(d => {
+      const o = new Option(d.name, d.name);
+      o.dataset.lid = d.id;
+      if (d.name === preselectDistrict) o.selected = true;
+      distEl.appendChild(o);
+    });
+  }
+}
+
+function onClientCityChange(preselectDistrict='') {
+  const cityEl = document.getElementById('cl-city');
+  const distEl = document.getElementById('cl-district');
+  const selectedOpt = cityEl.options[cityEl.selectedIndex];
+  const cityId = selectedOpt?.dataset?.lid;
+
+  distEl.innerHTML = '<option value="">— Select District —</option>';
+  if (!cityId) return;
+
+  getLocs('district', parseInt(cityId)).forEach(d => {
+    const o = new Option(d.name, d.name);
+    o.dataset.lid = d.id;
+    if (d.name === preselectDistrict) o.selected = true;
+    distEl.appendChild(o);
+  });
+}
+
 function openNewClient() {
   editClientId = null;
   document.getElementById('client-modal-title').textContent = 'Add Client';
-  ['cl-name','cl-phone','cl-emirate','cl-city','cl-district','cl-villa','cl-location','cl-notes'].forEach(id => {
+  ['cl-name','cl-phone','cl-villa','cl-location','cl-notes'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  document.getElementById('cl-category').value = '';
-  // Populate category select
+  // Populate category
   const catSel = document.getElementById('cl-category');
   catSel.innerHTML = '<option value="">— Select —</option>' +
     (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
-  // Populate client-cat-filter too
-  const catFilter = document.getElementById('client-cat-filter');
-  if (catFilter) catFilter.innerHTML = '<option value="">All Categories</option>' +
-    (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
+  // Populate emirate cascade
+  populateClientEmirateSelect();
   document.getElementById('client-modal').classList.add('open');
 }
 
@@ -2987,12 +3062,12 @@ function editClient(id) {
   document.getElementById('cl-name').value = c.name||'';
   document.getElementById('cl-phone').value = c.phone||'';
   document.getElementById('cl-category').value = c.category||'';
-  document.getElementById('cl-emirate').value = c.emirate||'';
-  document.getElementById('cl-city').value = c.city||'';
-  document.getElementById('cl-district').value = c.district||'';
   document.getElementById('cl-villa').value = c.villa||'';
   document.getElementById('cl-location').value = c.location_url||'';
   document.getElementById('cl-notes').value = c.notes||'';
+  populateClientEmirateSelect(c.emirate||'');
+  // After emirate loads, set city and district
+  setTimeout(() => onClientEmirateChange(c.city||'', c.district||''), 50);
   document.getElementById('client-modal').classList.add('open');
 }
 
@@ -3006,9 +3081,9 @@ async function saveClient() {
     name,
     phone: document.getElementById('cl-phone').value.trim() || null,
     category: document.getElementById('cl-category').value || null,
-    emirate: document.getElementById('cl-emirate').value.trim() || null,
-    city: document.getElementById('cl-city').value.trim() || null,
-    district: document.getElementById('cl-district').value.trim() || null,
+    emirate: document.getElementById('cl-emirate').value || null,
+    city: document.getElementById('cl-city').value || null,
+    district: document.getElementById('cl-district').value || null,
     villa: document.getElementById('cl-villa').value.trim() || null,
     location_url: document.getElementById('cl-location').value.trim() || null,
     notes: document.getElementById('cl-notes').value.trim() || null,
