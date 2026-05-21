@@ -3203,9 +3203,10 @@ async function saveClient() {
   const trn = document.getElementById('cl-trn').value.trim();
   if (trn && !/^\d{15}$/.test(trn)) {
     toast('TRN must be exactly 15 digits', true);
-    btn.disabled = false; btn.textContent = 'Save Client';
     return;
   }
+  const btn = document.getElementById('save-client-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
 
   const payload = {
     name,
@@ -3232,7 +3233,7 @@ async function saveClient() {
   btn.disabled = false; btn.textContent = 'Save Client';
   if (error) { toast('Error: ' + error.message, true); return; }
   toast(editClientId ? '✅ Client updated' : '✅ Client added');
-  closeModal('client-modal');
+  document.getElementById('client-modal').classList.remove('open');
   await loadClients();
   renderClients();
 }
