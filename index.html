@@ -483,6 +483,16 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Category</label>
         <select id="cl-category"><option value="">— Select —</option></select>
       </div>
+      <div class="form-group form-full" style="display:flex;gap:24px;align-items:center;padding:4px 0">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cl-is-client" checked style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)">
+          Client
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cl-is-seller" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent2)">
+          Seller
+        </label>
+      </div>
       <div class="form-group"><label>Phone</label><input id="cl-phone" placeholder="+971 5x xxx xxxx"></div>
       <div class="form-group"><label>Emirate</label>
         <select id="cl-emirate" onchange="onClientEmirateChange()">
@@ -616,8 +626,13 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group" style="position:relative">
         <label>Client Name</label>
-        <input id="f-client-name" placeholder="e.g. Latifa" autocomplete="off" oninput="onClientNameInput(this.value)" onblur="setTimeout(()=>hideClientSuggest(),200)">
+        <input id="f-client-name" placeholder="e.g. Latifa" autocomplete="off" oninput="onClientNameInput(this.value,'client')" onblur="setTimeout(()=>hideClientSuggest(),200)">
         <div id="client-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+      </div>
+      <div class="form-group" style="position:relative">
+        <label>Seller</label>
+        <input id="f-seller-name" placeholder="e.g. Ahmed" autocomplete="off" oninput="onClientNameInput(this.value,'seller')" onblur="setTimeout(()=>hideSellerSuggest(),200)">
+        <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
       </div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <!-- CLIENT MESSAGE CARD — shown when operator pastes client text -->
@@ -2110,17 +2125,19 @@ function addCustomItem() {
   toast('✅ ' + name + ' added');
 }
 
-function onClientNameInput(val) {
-  const suggest = document.getElementById('client-suggest');
+function onClientNameInput(val, type='client') {
+  const suggestId = type === 'seller' ? 'seller-suggest' : 'client-suggest';
+  const suggest = document.getElementById(suggestId);
   if (!val || val.length < 2) { suggest.style.display = 'none'; return; }
   const q = val.toLowerCase();
-  const matches = clients.filter(c =>
-    c.name.toLowerCase().includes(q) ||
-    (c.phone && c.phone.includes(q))
-  ).slice(0, 8);
+  const matches = clients.filter(c => {
+    if (type === 'seller' && !c.is_seller) return false;
+    if (type === 'client' && !c.is_client) return false;
+    return c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q));
+  }).slice(0, 8);
   if (!matches.length) { suggest.style.display = 'none'; return; }
   suggest.innerHTML = matches.map(c => `
-    <div onclick="applyClientSuggest('${c.id}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+    <div onclick="applyClientSuggest('${c.id}','${type}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
       <div style="font-size:13px;font-weight:600">${c.name} ${c.category?`<span style="font-size:10px;color:var(--accent);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 6px;border-radius:8px">${c.category}</span>`:''}</div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[c.phone, c.emirate, c.district].filter(Boolean).join(' · ')}</div>
     </div>`).join('');
@@ -2132,13 +2149,23 @@ function hideClientSuggest() {
   if (el) el.style.display = 'none';
 }
 
-function applyClientSuggest(clientId) {
+function hideSellerSuggest() {
+  const el = document.getElementById('seller-suggest');
+  if (el) el.style.display = 'none';
+}
+
+function applyClientSuggest(clientId, type='client') {
   const c = clients.find(x => x.id === clientId);
   if (!c) return;
-  // Fill name and phone
+  if (type === 'seller') {
+    document.getElementById('f-seller-name').value = c.name || '';
+    hideSellerSuggest();
+    toast('✅ Seller: ' + c.name);
+    return;
+  }
+  // Client — fill all fields
   document.getElementById('f-client-name').value = c.name || '';
   if (c.phone) document.getElementById('f-client').value = c.phone;
-  // Fill location
   if (c.location_url) {
     document.getElementById('f-location-url').value = c.location_url;
     document.getElementById('f-location-raw').value = c.location_url;
@@ -2147,7 +2174,6 @@ function applyClientSuggest(clientId) {
     if (lp) lp.style.display = 'flex';
     if (ll) { ll.href = c.location_url; ll.textContent = c.location_url.slice(0,50)+'...'; }
   }
-  // Fill address via cascade
   if (c.emirate) populateLocationSelects(c.emirate, c.city||'', c.district||'');
   if (c.villa) document.getElementById('f-apt').value = c.villa;
   hideClientSuggest();
@@ -2192,7 +2218,7 @@ async function openNewOrder(){
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  ['f-apt','f-client','f-client-name','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-apt','f-client','f-client-name','f-seller-name','f-notes'].forEach(id=>document.getElementById(id).value='');
   ['f-location-raw','f-location-url','f-raw-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
   const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
@@ -2223,6 +2249,7 @@ async function editOrder(id){
   document.getElementById('f-apt').value=o.villa||o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
+  const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
@@ -2271,7 +2298,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
@@ -3005,7 +3032,7 @@ function renderClients() {
 
   tbody.innerHTML = filtered.map(c => `
     <tr>
-      <td style="font-weight:600">${c.name}</td>
+      <td style="font-weight:600">${c.name} ${c.is_seller?'<span style="font-size:10px;background:rgba(96,165,250,.2);color:var(--blue);padding:1px 6px;border-radius:8px;font-family:var(--mono)">seller</span>':''}</td>
       <td><span style="font-size:11px;background:rgba(255,200,0,.15);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--mono)">${c.category||'—'}</span></td>
       <td style="font-family:var(--mono);font-size:12px">${c.phone||'—'}</td>
       <td style="font-size:12px">${c.emirate||'—'}</td>
@@ -3093,6 +3120,8 @@ function openNewClient() {
   ['cl-name','cl-phone','cl-villa','cl-location','cl-notes'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  document.getElementById('cl-is-client').checked = true;
+  document.getElementById('cl-is-seller').checked = false;
   // Populate category
   const catSel = document.getElementById('cl-category');
   catSel.innerHTML = '<option value="">— Select —</option>' +
@@ -3116,8 +3145,9 @@ function editClient(id) {
   document.getElementById('cl-villa').value = c.villa||'';
   document.getElementById('cl-location').value = c.location_url||'';
   document.getElementById('cl-notes').value = c.notes||'';
+  document.getElementById('cl-is-client').checked = c.is_client !== false;
+  document.getElementById('cl-is-seller').checked = !!c.is_seller;
   populateClientEmirateSelect(c.emirate||'');
-  // After emirate loads, set city and district
   setTimeout(() => onClientEmirateChange(c.city||'', c.district||''), 50);
   document.getElementById('client-modal').classList.add('open');
 }
@@ -3138,6 +3168,8 @@ async function saveClient() {
     villa: document.getElementById('cl-villa').value.trim() || null,
     location_url: document.getElementById('cl-location').value.trim() || null,
     notes: document.getElementById('cl-notes').value.trim() || null,
+    is_client: document.getElementById('cl-is-client').checked,
+    is_seller: document.getElementById('cl-is-seller').checked,
     updated_at: new Date().toISOString()
   };
 
