@@ -631,8 +631,10 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group" style="position:relative">
         <label>Seller</label>
-        <input id="f-seller-name" placeholder="e.g. Ahmed" autocomplete="off" oninput="onClientNameInput(this.value,'seller')" onblur="setTimeout(()=>hideSellerSuggest(),200)">
-        <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+        <input id="f-seller-name" placeholder="Search seller..." autocomplete="off" oninput="filterSellerDropdown(this.value)" onfocus="filterSellerDropdown(this.value)" onblur="setTimeout(()=>hideSellerSuggest(),200)" style="width:100%">
+        <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <div id="seller-suggest-list"></div>
+        </div>
       </div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
       <!-- CLIENT MESSAGE CARD — shown when operator pastes client text -->
@@ -2144,6 +2146,29 @@ function onClientNameInput(val, type='client') {
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[c.phone, c.emirate, c.district].filter(Boolean).join(' · ')}</div>
     </div>`).join('');
   suggest.style.display = '';
+}
+
+function filterSellerDropdown(q) {
+  const dd = document.getElementById('seller-suggest');
+  const list = document.getElementById('seller-suggest-list');
+  const sellers = clients.filter(c => c.is_seller);
+  const filtered = q
+    ? sellers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()))
+    : sellers;
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  list.innerHTML = filtered.map(c => `
+    <div onclick="selectSeller('${c.id}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div style="font-size:13px;font-weight:600">${c.name}</div>
+      ${c.category?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${c.category}</div>`:''}
+    </div>`).join('');
+  dd.style.display = '';
+}
+
+function selectSeller(clientId) {
+  const c = clients.find(x => x.id === clientId);
+  if (!c) return;
+  document.getElementById('f-seller-name').value = c.name;
+  hideSellerSuggest();
 }
 
 function hideClientSuggest() {
