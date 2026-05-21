@@ -1074,8 +1074,9 @@ setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60
 })();
 
 let currentUser=null, currentRole=null;
-let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[]};
+let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[]};
 let products=[], orderItems={};
+let clients=[], editClientId=null;
 let editId=null, editProductId=null;
 let currentPage=1;
 const PAGE_SIZE=15;
@@ -3000,10 +3001,6 @@ document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
 
-
-// ─── CLIENTS ─────────────────────────────────────────────────────
-let clients = [];
-let editClientId = null;
 
 async function loadClients() {
   const { data } = await sb.from('clients').select('*').order('name');
