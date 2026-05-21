@@ -436,6 +436,27 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="dir-grid" id="dir-grid"></div>
     </div>
 
+    <div id="view-clients" style="display:none">
+      <div class="section-head">
+        <div class="section-title">👥 Client Library</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="client-search" placeholder="Search name, phone..." oninput="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
+          <select id="client-cat-filter" onchange="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Categories</option>
+          </select>
+          <button class="btn btn-primary" onclick="openNewClient()">+ Add Client</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Name</th><th>Category</th><th>Phone</th><th>Emirate</th><th>District</th><th>Villa</th><th>Notes</th><th></th>
+          </tr></thead>
+          <tbody id="clients-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="view-users" style="display:none">
       <div class="section-head">
         <div class="section-title">Team Members</div>
@@ -447,6 +468,33 @@ select option{background:#1a1d27;color:#f0f2ff}
 </div>
 
 
+
+<!-- CLIENT MODAL -->
+<div class="overlay" id="client-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <div class="modal-title" id="client-modal-title">Add Client</div>
+      <button class="close-btn" onclick="closeModal('client-modal')">&#10005;</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Full Name *</label><input id="cl-name" placeholder="e.g. Latifa Al Mansouri"></div>
+      <div class="form-group"><label>Category</label>
+        <select id="cl-category"><option value="">— Select —</option></select>
+      </div>
+      <div class="form-group"><label>Phone</label><input id="cl-phone" placeholder="+971 5x xxx xxxx"></div>
+      <div class="form-group"><label>Emirate</label><input id="cl-emirate" placeholder="e.g. Dubai"></div>
+      <div class="form-group"><label>City</label><input id="cl-city" placeholder="e.g. Dubai"></div>
+      <div class="form-group"><label>District / Area</label><input id="cl-district" placeholder="e.g. JBR"></div>
+      <div class="form-group"><label>Villa / Apt #</label><input id="cl-villa" placeholder="e.g. Villa 12"></div>
+      <div class="form-group"><label>Location URL</label><input id="cl-location" placeholder="Google Maps link"></div>
+      <div class="form-group form-full"><label>Notes</label><input id="cl-notes" placeholder="Any additional info..."></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('client-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-client-btn" onclick="saveClient()">Save Client</button>
+    </div>
+  </div>
+</div>
 
 <!-- DRIVER MODAL -->
 <div class="overlay" id="driver-modal">
@@ -1060,11 +1108,12 @@ async function initApp(){
   nav.innerHTML=`<button class="tab-btn active" onclick="showView('orders')">Orders</button>`;
   if(isAdmin){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('products')">Products</button>`;
+    nav.innerHTML+=`<button class="tab-btn" onclick="showView('clients')">Clients</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients()]);
   renderFilters();renderTable();showView('orders');subscribeRealtime();
 
   // Apply dispatcher restrictions after render
@@ -1081,7 +1130,7 @@ async function initApp(){
 async function loadRefs(){
   const{data}=await sb.from('refs').select('*');
   if(!data)return;
-  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[]};
+  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[]};
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
@@ -1107,11 +1156,16 @@ async function loadProducts(){
 
 
 function showView(v){
-  ['orders','products','directory','users'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  ['orders','products','directory','users','clients'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();}
   if(v==='users')renderUsers();
   if(v==='products')renderProducts();
+  if(v==='clients'){
+    const catFilter=document.getElementById('client-cat-filter');
+    if(catFilter)catFilter.innerHTML='<option value="">All Categories</option>'+(refs.clientCategory||[]).map(r=>`<option value="${r.value}">${r.value}</option>`).join('');
+    renderClients();
+  }
 }
 
 function renderFilters(){
@@ -2855,7 +2909,138 @@ document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
 
-// ─── DISPATCH MODE ───────────────────────────────────────────────
+
+// ─── CLIENTS ─────────────────────────────────────────────────────
+let clients = [];
+let editClientId = null;
+
+async function loadClients() {
+  const { data } = await sb.from('clients').select('*').order('name');
+  clients = data || [];
+}
+
+function renderClients() {
+  const q = (document.getElementById('client-search')?.value || '').toLowerCase();
+  const cat = document.getElementById('client-cat-filter')?.value || '';
+  const tbody = document.getElementById('clients-tbody');
+  if (!tbody) return;
+
+  let filtered = clients.filter(c => {
+    if (cat && c.category !== cat) return false;
+    if (q) {
+      const hay = [c.name, c.phone, c.emirate, c.district, c.villa, c.notes].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><div>No clients found</div></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(c => `
+    <tr>
+      <td style="font-weight:600">${c.name}</td>
+      <td><span style="font-size:11px;background:rgba(255,200,0,.15);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--mono)">${c.category||'—'}</span></td>
+      <td style="font-family:var(--mono);font-size:12px">${c.phone||'—'}</td>
+      <td style="font-size:12px">${c.emirate||'—'}</td>
+      <td style="font-size:12px">${c.district||'—'}</td>
+      <td style="font-size:12px">${c.villa||'—'}</td>
+      <td style="font-size:11px;color:var(--muted)">${c.notes||'—'}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="act-btn" onclick="editClient('${c.id}')">Edit</button>
+          <button class="act-btn" onclick="deleteClient('${c.id}')" style="color:var(--red);border-color:var(--red)">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function openNewClient() {
+  editClientId = null;
+  document.getElementById('client-modal-title').textContent = 'Add Client';
+  ['cl-name','cl-phone','cl-emirate','cl-city','cl-district','cl-villa','cl-location','cl-notes'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('cl-category').value = '';
+  // Populate category select
+  const catSel = document.getElementById('cl-category');
+  catSel.innerHTML = '<option value="">— Select —</option>' +
+    (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
+  // Populate client-cat-filter too
+  const catFilter = document.getElementById('client-cat-filter');
+  if (catFilter) catFilter.innerHTML = '<option value="">All Categories</option>' +
+    (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
+  document.getElementById('client-modal').classList.add('open');
+}
+
+function editClient(id) {
+  const c = clients.find(x => x.id === id);
+  if (!c) return;
+  editClientId = id;
+  document.getElementById('client-modal-title').textContent = 'Edit Client';
+  const catSel = document.getElementById('cl-category');
+  catSel.innerHTML = '<option value="">— Select —</option>' +
+    (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
+  document.getElementById('cl-name').value = c.name||'';
+  document.getElementById('cl-phone').value = c.phone||'';
+  document.getElementById('cl-category').value = c.category||'';
+  document.getElementById('cl-emirate').value = c.emirate||'';
+  document.getElementById('cl-city').value = c.city||'';
+  document.getElementById('cl-district').value = c.district||'';
+  document.getElementById('cl-villa').value = c.villa||'';
+  document.getElementById('cl-location').value = c.location_url||'';
+  document.getElementById('cl-notes').value = c.notes||'';
+  document.getElementById('client-modal').classList.add('open');
+}
+
+async function saveClient() {
+  const name = document.getElementById('cl-name').value.trim();
+  if (!name) { toast('Name is required', true); return; }
+  const btn = document.getElementById('save-client-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+
+  const payload = {
+    name,
+    phone: document.getElementById('cl-phone').value.trim() || null,
+    category: document.getElementById('cl-category').value || null,
+    emirate: document.getElementById('cl-emirate').value.trim() || null,
+    city: document.getElementById('cl-city').value.trim() || null,
+    district: document.getElementById('cl-district').value.trim() || null,
+    villa: document.getElementById('cl-villa').value.trim() || null,
+    location_url: document.getElementById('cl-location').value.trim() || null,
+    notes: document.getElementById('cl-notes').value.trim() || null,
+    updated_at: new Date().toISOString()
+  };
+
+  let error;
+  if (editClientId) {
+    ({ error } = await sb.from('clients').update(payload).eq('id', editClientId));
+  } else {
+    ({ error } = await sb.from('clients').insert(payload));
+  }
+
+  btn.disabled = false; btn.textContent = 'Save Client';
+  if (error) { toast('Error: ' + error.message, true); return; }
+  toast(editClientId ? '✅ Client updated' : '✅ Client added');
+  closeModal('client-modal');
+  await loadClients();
+  renderClients();
+}
+
+async function deleteClient(id) {
+  if (!confirm('Delete this client?')) return;
+  const { error } = await sb.from('clients').delete().eq('id', id);
+  if (error) { toast('Error: ' + error.message, true); return; }
+  toast('Client deleted');
+  await loadClients();
+  renderClients();
+}
+
+// ─── END CLIENTS ──────────────────────────────────────────────────
+
+
 let dispatchMode = false;
 let dispatchSelected = []; // [{id, order, lat, lng}] in selection order
 let dispatchDriverName = '';
