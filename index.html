@@ -511,6 +511,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="cl-villa" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Location URL</label><input id="cl-location" placeholder="Google Maps link"></div>
+      <div class="form-group"><label>TRN</label><input id="cl-trn" placeholder="e.g. 100335421200003"></div>
       <div class="form-group form-full"><label>Notes</label><input id="cl-notes" placeholder="Any additional info..."></div>
     </div>
     <div class="modal-foot">
@@ -631,8 +632,14 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group" style="position:relative">
         <label>Seller</label>
-        <input id="f-seller-name" placeholder="Search seller..." autocomplete="off" oninput="filterSellerDropdown(this.value)" onfocus="filterSellerDropdown(this.value)" onblur="setTimeout(()=>hideSellerSuggest(),200)" style="width:100%">
+        <div style="position:relative">
+          <input id="f-seller-name" placeholder="— Select Seller —" autocomplete="off" readonly onclick="filterSellerDropdown('')" onblur="setTimeout(()=>hideSellerSuggest(),200)" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
+          <span onclick="filterSellerDropdown('')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none">▼</span>
+        </div>
         <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <div style="padding:6px 10px;border-bottom:1px solid var(--border)">
+            <input id="seller-search-input" placeholder="Search..." oninput="filterSellerDropdown(this.value)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box" onclick="event.stopPropagation()">
+          </div>
           <div id="seller-suggest-list"></div>
         </div>
       </div>
@@ -2155,13 +2162,16 @@ function filterSellerDropdown(q) {
   const filtered = q
     ? sellers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()))
     : sellers;
-  if (!filtered.length) { dd.style.display = 'none'; return; }
-  list.innerHTML = filtered.map(c => `
-    <div onclick="selectSeller('${c.id}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
-      <div style="font-size:13px;font-weight:600">${c.name}</div>
-      ${c.category?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${c.category}</div>`:''}
-    </div>`).join('');
+  list.innerHTML = filtered.length
+    ? filtered.map(c => `
+        <div onclick="selectSeller('${c.id}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+          <div style="font-size:13px;font-weight:600">${c.name}</div>
+          ${c.category?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${c.category}</div>`:''}
+        </div>`).join('')
+    : `<div style="padding:10px 14px;color:var(--muted);font-size:12px;font-family:var(--mono)">No sellers found</div>`;
   dd.style.display = '';
+  // Focus search input
+  setTimeout(() => { const si = document.getElementById('seller-search-input'); if(si && !q) si.focus(); }, 50);
 }
 
 function selectSeller(clientId) {
@@ -3140,7 +3150,7 @@ function onClientCityChange(preselectDistrict='') {
 function openNewClient() {
   editClientId = null;
   document.getElementById('client-modal-title').textContent = 'Add Client';
-  ['cl-name','cl-phone','cl-villa','cl-location','cl-notes'].forEach(id => {
+  ['cl-name','cl-phone','cl-villa','cl-location','cl-trn','cl-notes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('cl-is-client').checked = true;
@@ -3166,6 +3176,7 @@ function editClient(id) {
   document.getElementById('cl-phone').value = c.phone||'';
   document.getElementById('cl-category').value = c.category||'';
   document.getElementById('cl-villa').value = c.villa||'';
+  document.getElementById('cl-trn').value = c.trn||'';
   document.getElementById('cl-location').value = c.location_url||'';
   document.getElementById('cl-notes').value = c.notes||'';
   document.getElementById('cl-is-client').checked = c.is_client !== false;
@@ -3190,7 +3201,7 @@ async function saveClient() {
     district: document.getElementById('cl-district').value || null,
     villa: document.getElementById('cl-villa').value.trim() || null,
     location_url: document.getElementById('cl-location').value.trim() || null,
-    notes: document.getElementById('cl-notes').value.trim() || null,
+    trn: document.getElementById('cl-trn').value.trim() || null,
     is_client: document.getElementById('cl-is-client').checked,
     is_seller: document.getElementById('cl-is-seller').checked,
     updated_at: new Date().toISOString()
