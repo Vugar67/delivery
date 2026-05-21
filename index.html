@@ -1556,23 +1556,34 @@ function onEmirateChange() {
   distEl.innerHTML = '<option value="">— Select District —</option>';
   if (distCustom) distCustom.value = '';
 
-  if (!emirateId) {  return; }
+  if (!emirateId) { return; }
 
-  // Always auto-fill city with emirate name
-  cityEl.innerHTML = '';
-  const co = new Option(emirateName, emirateName);
-  co.selected = true;
-  cityEl.appendChild(co);
-
-  // Load districts directly from emirate
-  const districts = getLocs('district', parseInt(emirateId));
-  if (districts.length) {
-    districts.forEach(d => {
-      const o = new Option(d.name, d.name);
-      o.dataset.lid = d.id;
-      distEl.appendChild(o);
+  const cities = getLocs('city', parseInt(emirateId));
+  if (cities.length > 0) {
+    // Has cities — show city select
+    cityEl.innerHTML = '<option value="">— Select City —</option>';
+    cities.forEach((c, i) => {
+      const o = new Option(c.name, c.name);
+      o.dataset.lid = c.id;
+      if (cities.length === 1) o.selected = true;
+      cityEl.appendChild(o);
     });
-    distEl.appendChild(new Option('+ Custom...', '__custom'));
+    if (cities.length === 1) onCityChange();
+  } else {
+    // No cities — auto-fill city with emirate name, load districts from emirate
+    cityEl.innerHTML = '';
+    const co = new Option(emirateName, emirateName);
+    co.selected = true;
+    cityEl.appendChild(co);
+    const districts = getLocs('district', parseInt(emirateId));
+    if (districts.length) {
+      districts.forEach(d => {
+        const o = new Option(d.name, d.name);
+        o.dataset.lid = d.id;
+        distEl.appendChild(o);
+      });
+      distEl.appendChild(new Option('+ Custom...', '__custom'));
+    }
   }
 }
 
