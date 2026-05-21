@@ -602,7 +602,7 @@ select option{background:#1a1d27;color:#f0f2ff}
   <div class="modal">
     <div class="modal-head">
       <div class="modal-title" id="modal-title">New Order</div>
-      <button class="close-btn" onclick="closeModal('order-modal')">&#10005;</button>
+      <button class="close-btn" style="visibility:hidden">&#10005;</button>
     </div>
     <div class="form-grid">
       <div class="form-group"><label>Order #</label><input id="f-num" readonly style="opacity:.6"></div>
@@ -3046,7 +3046,7 @@ async function sendToDriver(orderId) {
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveDirItem();});
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
+document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el && el.id !== 'order-modal')el.classList.remove('open');}));
 
 
 async function loadClients() {
