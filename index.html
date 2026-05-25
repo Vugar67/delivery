@@ -1267,8 +1267,13 @@ async function loadProducts(){
 
 
 
+async function loadProducts(){
+  const{data}=await sb.from('products').select('*').eq('active',true).order('name');
+  products=(data||[]).map(p=>({...p,shelf_position:p.shelf_position?parseInt(p.shelf_position):null}));
+}
+
 function showView(v){
-  ['orders','products','directory','users','clients'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  ['orders','products','directory','users','clients','warehouse'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();}
   if(v==='users')renderUsers();
