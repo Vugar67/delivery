@@ -2556,6 +2556,9 @@ function switchProdTab(tab) {
 function renderShelfMap() {
   const grid = document.getElementById('shelf-grid');
   if (!grid) return;
+  console.log('products count:', products.length);
+  console.log('with shelf:', products.filter(p=>p.shelf_position).length);
+  console.log('sample:', products.slice(0,3).map(p=>({id:p.id,name:p.name,shelf:p.shelf_position})));
   // Build position→product map
   const posMap = {};
   products.forEach(p => { if (p.shelf_position) posMap[p.shelf_position] = p; });
