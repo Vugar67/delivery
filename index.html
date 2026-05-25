@@ -2576,10 +2576,10 @@ function renderShelfMap() {
       ? 'background:#1e2235;border-color:#ffcc00;border-width:2px'
       : 'background:#13151f;border-color:#2a2d3e';
     const content = p
-      ? `<div style="font-size:9px;font-family:var(--mono);color:#ffcc00;font-weight:700;text-align:center;line-height:1.3;word-break:break-word;padding:0 2px">${p.name.length>22?p.name.slice(0,20)+'…':p.name}</div>`
+      ? `<div style="font-size:8px;font-family:var(--mono);color:#ffcc00;font-weight:700;text-align:center;line-height:1.4;word-break:break-word;padding:0 2px">${p.name}</div>`
       : `<div style="font-size:11px;color:#444;font-family:var(--mono)">${pos}</div>`;
-    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:6px 4px;position:relative">
-      <div style="font-size:8px;color:${p?'#1a1a2e':'var(--muted)'};font-family:var(--mono);position:absolute;top:3px;left:5px;opacity:.6">${pos}</div>
+    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:14px 4px 4px;position:relative">
+      <div style="font-size:9px;color:${p?'#ffcc00':'#444'};font-family:var(--mono);font-weight:700;position:absolute;top:3px;left:5px">${pos}</div>
       ${content}
     </div>`;
   }).join('');
