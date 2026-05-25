@@ -420,8 +420,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="section-head">
         <div class="section-title">Products Catalog</div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-ghost" id="prod-tab-list" onclick="switchProdTab('list')" style="font-size:12px;padding:6px 14px;background:var(--accent);color:#000">☰ List</button>
-          <button class="btn btn-ghost" id="prod-tab-shelf" onclick="switchProdTab('shelf')" style="font-size:12px;padding:6px 14px">📦 Shelf Map</button>
+          <button class="btn btn-ghost" id="prod-tab-list" onclick="switchProdTab('list')" style="font-size:12px;padding:6px 14px;background:var(--accent);color:#000">List</button>
+          <button class="btn btn-ghost" id="prod-tab-shelf" onclick="switchProdTab('shelf')" style="font-size:12px;padding:6px 14px">Shelf Map</button>
           <input type="text" id="prod-search" placeholder="Search products..." oninput="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
           <select id="prod-cat-filter" onchange="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             <option value="">All Categories</option>
@@ -1272,7 +1272,12 @@ function showView(v){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();}
   if(v==='users')renderUsers();
-  if(v==='products')renderProducts();
+  if(v==='products'){
+    renderProducts();
+    // If shelf tab was active, re-render
+    const shelfView = document.getElementById('prod-view-shelf');
+    if(shelfView && shelfView.style.display === 'block') renderShelfMap();
+  }
   if(v==='clients'){
     const catFilter=document.getElementById('client-cat-filter');
     if(catFilter)catFilter.innerHTML='<option value="">All Categories</option>'+(refs.clientCategory||[]).map(r=>`<option value="${r.value}">${r.value}</option>`).join('');
