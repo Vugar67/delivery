@@ -3,7 +3,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DELIVR">
+<meta name="theme-color" content="#13151f">
+<link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>DELIVR / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -37,6 +43,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .role-admin{background:rgba(245,166,35,.2);color:var(--accent)}
 .role-operator{background:rgba(96,165,250,.2);color:var(--blue)}
 .role-dispatcher{background:rgba(0,230,150,.2);color:var(--green)}
+.role-warehouse{background:rgba(255,165,0,.2);color:#ffaa00}
+@media(max-width:600px){
+  #warehouse-queue .btn{min-width:unset!important;padding:10px 14px;font-size:13px}
+  #warehouse-queue>div{flex-wrap:wrap;gap:10px}
+  .tab-btn{font-size:13px;padding:8px 12px}
+  #app-header{padding:8px 12px}
+}
 .topnav{display:flex;gap:4px;flex-wrap:wrap}
 .tab-btn{background:none;border:none;color:var(--muted);font-family:var(--font);font-size:13px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:.15s}
 .tab-btn.active{background:var(--surface2);color:var(--text);font-weight:600}
@@ -459,7 +472,9 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
     </div>
 
-    <div id="view-users" style="display:none">
+    <div id="view-warehouse" style="display:none">
+      <div id="warehouse-queue"></div>
+    </div>
       <div class="section-head">
         <div class="section-title">Team Members</div>
         <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
@@ -826,7 +841,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Email</label><input id="u-email" type="email" placeholder="email@example.com"></div>
       <div class="form-group"><label>Password</label><input id="u-pass" type="password" placeholder="min 6 characters"></div>
       <div class="form-group"><label>System Role</label>
-        <select id="u-role"><option value="operator">Operator</option><option value="dispatcher">Dispatcher</option><option value="admin">Admin</option></select>
+        <select id="u-role"><option value="operator">Operator</option><option value="dispatcher">Dispatcher</option><option value="warehouse">Warehouse</option><option value="admin">Admin</option></select>
       </div>
       <div class="form-group"><label>Staff Role / Position</label>
         <select id="u-staff-role"><option value="">— Select position —</option></select>
@@ -1048,7 +1063,9 @@ _authListeners.push((event, session) => {
 function subscribeRealtime() {
   setInterval(async () => {
     if (!_authToken) return;
-    await loadOrders(); renderTable();
+    await loadOrders();
+    if (currentRole === 'warehouse') renderWarehouseQueue();
+    else renderTable();
   }, 15000); // poll every 15s
 }
 
@@ -1056,7 +1073,22 @@ function subscribeRealtime() {
 // Auto-refresh token every 50 minutes
 setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60 * 1000);
 
-// Auto-initialize on page load
+// ─── PWA SERVICE WORKER ──────────────────────────────────────────
+(function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  const sw = [
+    "const C='delivr-v1';",
+    "self.addEventListener('install',()=>self.skipWaiting());",
+    "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));",
+    "self.addEventListener('fetch',e=>{",
+    "  if(e.request.method!=='GET')return;",
+    "  if(e.request.url.includes('supabase.co')||e.request.url.includes('googleapis'))return;",
+    "  e.respondWith(caches.open(C).then(cache=>fetch(e.request).then(r=>{cache.put(e.request,r.clone());return r;}).catch(()=>caches.match(e.request))));",
+    "});"
+  ].join('\n');
+  const url = URL.createObjectURL(new Blob([sw], {type:'application/javascript'}));
+  navigator.serviceWorker.register(url).catch(()=>{});
+})();
 (async function initAuth() {
   const stored = sessionStorage.getItem('sb_session');
   if (stored) {
@@ -1148,6 +1180,16 @@ async function initApp(){
   const isAdmin      = currentRole === 'admin';
   const isOperator   = currentRole === 'operator';
   const isDispatcher = currentRole === 'dispatcher';
+  const isWarehouse  = currentRole === 'warehouse';
+
+  if(isWarehouse){
+    nav.innerHTML=`<button class="tab-btn active" onclick="showView('warehouse')">📦 Warehouse</button>`;
+    await Promise.all([loadOrders(),loadProducts()]);
+    showView('warehouse');
+    renderWarehouseQueue();
+    subscribeRealtime();
+    return;
+  }
 
   nav.innerHTML=`<button class="tab-btn active" onclick="showView('orders')">Orders</button>`;
   if(isAdmin){
@@ -2226,6 +2268,70 @@ function applyClientSuggest(clientId, type='client') {
   if (c.villa) document.getElementById('f-apt').value = c.villa;
   hideClientSuggest();
   toast('✅ ' + c.name + ' — fields filled');
+}
+
+// ─── WAREHOUSE ───────────────────────────────────────────────────
+function renderWarehouseQueue() {
+  const container = document.getElementById('warehouse-queue');
+  if (!container) return;
+
+  const queue = orders.filter(o => {
+    const ds = o.delivery_status || '';
+    return ds !== 'Delivered' && ds !== 'Cancelled';
+  }).sort((a,b) => (a.priority||3) - (b.priority||3) || new Date(a.created_at) - new Date(b.created_at));
+
+  if (!queue.length) {
+    container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted);font-size:15px">✅ No orders in queue</div>`;
+    return;
+  }
+
+  container.innerHTML = queue.map(o => {
+    const items = orderItems[o.id] || [];
+    const ws = o.warehouse_status || 'pending';
+    const priorityColor = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
+
+    const statusBadge = {
+      pending: `<span style="background:rgba(150,150,150,.2);color:var(--muted);padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">⏳ Pending</span>`,
+      picking: `<span style="background:rgba(255,200,0,.2);color:#ffcc00;padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">🔄 Picking</span>`,
+      packed:  `<span style="background:rgba(0,200,100,.2);color:#00ee88;padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">📦 Packed</span>`,
+      handed:  `<span style="background:rgba(100,150,255,.2);color:var(--blue);padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">🚗 Handed Over</span>`,
+    }[ws] || '';
+
+    const actionBtn = {
+      pending: `<button class="btn btn-primary" style="min-width:140px" onclick="warehouseAction('${o.id}','picking')">▶ Start Picking</button>`,
+      picking: `<button class="btn" style="min-width:140px;background:#00cc66;color:#fff;border:none" onclick="warehouseAction('${o.id}','packed')">✓ Done Packing</button>`,
+      packed:  `<button class="btn" style="min-width:140px;background:#4a90e2;color:#fff;border:none" onclick="warehouseAction('${o.id}','handed')">🚗 Hand to Driver</button>`,
+      handed:  `<button class="btn btn-ghost" style="min-width:140px;opacity:.5" disabled>Completed</button>`,
+    }[ws] || '';
+
+    const dimmed = ws === 'handed' ? 'opacity:.45;' : '';
+
+    return `<div style="${dimmed}background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${priorityColor};flex-shrink:0;box-shadow:0 0 6px ${priorityColor}"></div>
+      <div style="flex:0 0 110px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</div>
+      <div style="flex:1;min-width:0">
+        ${items.length ? items.map(i=>`<div style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">• ${i.product_name}${i.quantity>1?` ×${i.quantity}`:''}</div>`).join('') : '<div style="font-size:12px;color:var(--muted)">No items</div>'}
+      </div>
+      <div style="flex:0 0 auto">${statusBadge}</div>
+      <div style="flex:0 0 auto">${actionBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+async function warehouseAction(orderId, newStatus) {
+  const now = new Date().toISOString();
+  const update = { warehouse_status: newStatus };
+  if (newStatus === 'picking') update.picking_started_at = now;
+  if (newStatus === 'packed')  update.picking_done_at = now;
+  if (newStatus === 'handed')  update.handed_at = now;
+
+  const { error } = await sb.from('orders').update(update).eq('id', orderId);
+  if (error) { toast('Error: ' + error.message, true); return; }
+
+  const o = orders.find(x => x.id === orderId);
+  if (o) Object.assign(o, update);
+  renderWarehouseQueue();
+  toast(newStatus === 'picking' ? '🔄 Picking started' : newStatus === 'packed' ? '📦 Packed!' : '🚗 Handed to driver');
 }
 
 function addToCart(productId) {
