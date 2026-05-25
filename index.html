@@ -2569,12 +2569,12 @@ function renderShelfMap() {
   const grid = document.getElementById('shelf-grid');
   if (!grid) { console.warn('shelf-grid not found'); return; }
   const posMap = {};
-  products.forEach(p => { if (p.shelf_position) posMap[p.shelf_position] = p; });
+  products.forEach(p => { if (p.shelf_position) posMap[String(p.shelf_position)] = p; });
   console.log('posMap keys:', Object.keys(posMap).slice(0,5), 'posMap[3]:', posMap[3]);
 
   grid.innerHTML = Array.from({length:64}, (_,i) => {
     const pos = i + 1;
-    const p = posMap[pos];
+    const p = posMap[String(pos)];
     const label = p
       ? `<div style="font-size:9px;font-family:var(--mono);color:#000;font-weight:700;text-align:center;line-height:1.2;overflow:hidden;max-height:42px;word-break:break-word">${p.name.length>20?p.name.slice(0,18)+'…':p.name}</div>`
       : `<div style="font-size:10px;color:var(--muted);font-family:var(--mono)">${pos}</div>`;
