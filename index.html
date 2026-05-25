@@ -2567,22 +2567,18 @@ function switchProdTab(tab) {
 
 function renderShelfMap() {
   const grid = document.getElementById('shelf-grid');
-  if (!grid) { console.warn('shelf-grid not found'); return; }
-  const posMap = {};
-  products.forEach(p => { if (p.shelf_position) posMap[String(p.shelf_position)] = p; });
-  console.log('posMap keys:', Object.keys(posMap).slice(0,5), 'posMap[3]:', posMap[3]);
+  if (!grid) return;
 
   grid.innerHTML = Array.from({length:64}, (_,i) => {
     const pos = i + 1;
-    const p = posMap[String(pos)];
-    const label = p
-      ? `<div style="font-size:9px;font-family:var(--mono);color:#000;font-weight:700;text-align:center;line-height:1.2;overflow:hidden;max-height:42px;word-break:break-word">${p.name.length>20?p.name.slice(0,18)+'…':p.name}</div>`
-      : `<div style="font-size:10px;color:var(--muted);font-family:var(--mono)">${pos}</div>`;
-    const bg = p ? 'background:rgba(255,200,0,.25);border-color:var(--accent)' : 'background:var(--surface);border-color:var(--border)';
-    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:4px;position:relative;transition:.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${p?'var(--accent)':'var(--border)'}'">
-      <div style="font-size:9px;color:var(--muted);font-family:var(--mono);position:absolute;top:3px;left:5px">${pos}</div>
-      ${label}
-      ${p?`<div style="font-size:8px;color:var(--muted);font-family:var(--mono)">${p.price} AED</div>`:''}
+    const p = products.find(x => Number(x.shelf_position) === pos);
+    const bg = p ? 'background:rgba(255,200,0,.25);border-color:var(--accent)' : 'background:var(--surface2);border-color:var(--border)';
+    const content = p
+      ? `<div style="font-size:9px;font-family:var(--mono);color:var(--text);font-weight:600;text-align:center;line-height:1.3;word-break:break-word;padding:0 2px">${p.name.length>22?p.name.slice(0,20)+'…':p.name}</div>`
+      : `<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${pos}</div>`;
+    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:6px 4px;position:relative">
+      <div style="font-size:8px;color:var(--muted);font-family:var(--mono);position:absolute;top:3px;left:5px;opacity:.6">${pos}</div>
+      ${content}
     </div>`;
   }).join('');
 }
