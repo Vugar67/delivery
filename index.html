@@ -1264,13 +1264,6 @@ async function loadOrderItems(){
 }
 async function loadProducts(){
   const{data}=await sb.from('products').select('*').eq('active',true).order('name');
-  products=data||[];
-}
-
-
-
-async function loadProducts(){
-  const{data}=await sb.from('products').select('*').eq('active',true).order('name');
   products=(data||[]).map(p=>({...p,shelf_position:p.shelf_position?parseInt(p.shelf_position):null}));
 }
 
@@ -2545,14 +2538,26 @@ async function deleteOrder(id){
 // PRODUCTS
 // ─── SHELF MAP ───────────────────────────────────────────────────
 function switchProdTab(tab) {
-  const isList = tab === 'list';
-  document.getElementById('prod-view-list').style.display = isList ? '' : 'none';
-  document.getElementById('prod-view-shelf').style.display = isList ? 'none' : '';
-  document.getElementById('prod-tab-list').style.background = isList ? 'var(--accent)' : '';
-  document.getElementById('prod-tab-list').style.color = isList ? '#000' : '';
-  document.getElementById('prod-tab-shelf').style.background = isList ? '' : 'var(--accent)';
-  document.getElementById('prod-tab-shelf').style.color = isList ? '' : '#000';
-  if (!isList) renderShelfMap();
+  const listView = document.getElementById('prod-view-list');
+  const shelfView = document.getElementById('prod-view-shelf');
+  const listBtn = document.getElementById('prod-tab-list');
+  const shelfBtn = document.getElementById('prod-tab-shelf');
+  if (tab === 'shelf') {
+    listView.style.display = 'none';
+    shelfView.style.display = 'block';
+    listBtn.style.background = '';
+    listBtn.style.color = '';
+    shelfBtn.style.background = 'var(--accent)';
+    shelfBtn.style.color = '#000';
+    renderShelfMap();
+  } else {
+    listView.style.display = 'block';
+    shelfView.style.display = 'none';
+    listBtn.style.background = 'var(--accent)';
+    listBtn.style.color = '#000';
+    shelfBtn.style.background = '';
+    shelfBtn.style.color = '';
+  }
 }
 
 function renderShelfMap() {
