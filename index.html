@@ -475,6 +475,19 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div id="view-warehouse" style="display:none">
       <div id="warehouse-queue"></div>
     </div>
+
+    <div class="overlay" id="wh-modal">
+      <div class="modal" style="max-width:420px;width:92%">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+          <div id="wh-priority-dot" style="width:14px;height:14px;border-radius:50%;flex-shrink:0"></div>
+          <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)"></div>
+          <button class="close-btn" onclick="closeModal('wh-modal')" style="margin-left:auto">✕</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Items</div>
+        <div id="wh-items" style="margin-bottom:24px"></div>
+        <div id="wh-action"></div>
+      </div>
+    </div>
       <div class="section-head">
         <div class="section-title">Team Members</div>
         <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
@@ -2281,41 +2294,55 @@ function renderWarehouseQueue() {
   }).sort((a,b) => (a.priority||3) - (b.priority||3) || new Date(a.created_at) - new Date(b.created_at));
 
   if (!queue.length) {
-    container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted);font-size:15px">✅ No orders in queue</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:80px 20px;color:var(--muted);font-size:15px">✅ No orders in queue</div>`;
     return;
   }
 
-  container.innerHTML = queue.map(o => {
-    const items = orderItems[o.id] || [];
-    const ws = o.warehouse_status || 'pending';
-    const priorityColor = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
+  const wsLabel = { pending:'⏳ Pending', picking:'🔄 Picking', packed:'📦 Packed', handed:'🚗 Handed Over' };
+  const wsColor = { pending:'var(--muted)', picking:'#ffcc00', packed:'#00ee88', handed:'var(--blue)' };
 
-    const statusBadge = {
-      pending: `<span style="background:rgba(150,150,150,.2);color:var(--muted);padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">⏳ Pending</span>`,
-      picking: `<span style="background:rgba(255,200,0,.2);color:#ffcc00;padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">🔄 Picking</span>`,
-      packed:  `<span style="background:rgba(0,200,100,.2);color:#00ee88;padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">📦 Packed</span>`,
-      handed:  `<span style="background:rgba(100,150,255,.2);color:var(--blue);padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--mono)">🚗 Handed Over</span>`,
-    }[ws] || '';
+  container.innerHTML = `
+    <div style="padding:12px 16px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase">
+      ${queue.length} order${queue.length!==1?'s':''} in queue
+    </div>` +
+    queue.map(o => {
+      const ws = o.warehouse_status || 'pending';
+      const pc = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
+      const dimmed = ws==='handed'?'opacity:.4;':'';
+      return `<div onclick="openWarehouseOrder('${o.id}')" style="${dimmed}display:flex;align-items:center;gap:14px;padding:16px;margin:0 12px 8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;active:opacity:.7" ontouchstart="this.style.opacity='.6'" ontouchend="this.style.opacity='1'">
+        <div style="width:10px;height:10px;border-radius:50%;background:${pc};box-shadow:0 0 8px ${pc};flex-shrink:0"></div>
+        <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
+        <div style="font-size:12px;color:${wsColor[ws]||'var(--muted)'};font-family:var(--mono)">${wsLabel[ws]||ws}</div>
+        <div style="color:var(--muted);font-size:16px">›</div>
+      </div>`;
+    }).join('');
+}
 
-    const actionBtn = {
-      pending: `<button class="btn btn-primary" style="min-width:140px" onclick="warehouseAction('${o.id}','picking')">▶ Start Picking</button>`,
-      picking: `<button class="btn" style="min-width:140px;background:#00cc66;color:#fff;border:none" onclick="warehouseAction('${o.id}','packed')">✓ Done Packing</button>`,
-      packed:  `<button class="btn" style="min-width:140px;background:#4a90e2;color:#fff;border:none" onclick="warehouseAction('${o.id}','handed')">🚗 Hand to Driver</button>`,
-      handed:  `<button class="btn btn-ghost" style="min-width:140px;opacity:.5" disabled>Completed</button>`,
-    }[ws] || '';
+function openWarehouseOrder(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  const items = orderItems[o.id] || [];
+  const ws = o.warehouse_status || 'pending';
+  const pc = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
 
-    const dimmed = ws === 'handed' ? 'opacity:.45;' : '';
+  const actionBtn = {
+    pending: `<button class="btn btn-primary" style="width:100%;padding:16px;font-size:16px;border-radius:12px" onclick="warehouseAction('${o.id}','picking')">▶ Start Picking</button>`,
+    picking: `<button class="btn" style="width:100%;padding:16px;font-size:16px;border-radius:12px;background:#00cc66;color:#fff;border:none" onclick="warehouseAction('${o.id}','packed')">✓ Done Packing</button>`,
+    packed:  `<button class="btn" style="width:100%;padding:16px;font-size:16px;border-radius:12px;background:#4a90e2;color:#fff;border:none" onclick="warehouseAction('${o.id}','handed')">🚗 Hand to Driver</button>`,
+    handed:  `<div style="text-align:center;padding:16px;color:var(--muted);font-family:var(--mono)">✅ Completed</div>`,
+  }[ws] || '';
 
-    return `<div style="${dimmed}background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px">
-      <div style="width:8px;height:8px;border-radius:50%;background:${priorityColor};flex-shrink:0;box-shadow:0 0 6px ${priorityColor}"></div>
-      <div style="flex:0 0 110px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</div>
-      <div style="flex:1;min-width:0">
-        ${items.length ? items.map(i=>`<div style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">• ${i.product_name}${i.quantity>1?` ×${i.quantity}`:''}</div>`).join('') : '<div style="font-size:12px;color:var(--muted)">No items</div>'}
-      </div>
-      <div style="flex:0 0 auto">${statusBadge}</div>
-      <div style="flex:0 0 auto">${actionBtn}</div>
-    </div>`;
-  }).join('');
+  document.getElementById('wh-order-num').textContent = o.order_num;
+  document.getElementById('wh-priority-dot').style.background = pc;
+  document.getElementById('wh-priority-dot').style.boxShadow = `0 0 10px ${pc}`;
+  document.getElementById('wh-items').innerHTML = items.length
+    ? items.map(i=>`<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:14px">
+        <span style="color:var(--text)">${i.product_name}</span>
+        ${i.quantity>1?`<span style="color:var(--accent);font-family:var(--mono);margin-left:8px">×${i.quantity}</span>`:''}
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px">No items</div>';
+  document.getElementById('wh-action').innerHTML = actionBtn;
+  document.getElementById('wh-modal').classList.add('open');
 }
 
 async function warehouseAction(orderId, newStatus) {
@@ -2330,8 +2357,11 @@ async function warehouseAction(orderId, newStatus) {
 
   const o = orders.find(x => x.id === orderId);
   if (o) Object.assign(o, update);
+
+  closeModal('wh-modal');
   renderWarehouseQueue();
-  toast(newStatus === 'picking' ? '🔄 Picking started' : newStatus === 'packed' ? '📦 Packed!' : '🚗 Handed to driver');
+  const msgs = { picking:'🔄 Picking started', packed:'📦 Packed!', handed:'🚗 Handed to driver' };
+  toast(msgs[newStatus] || 'Updated');
 }
 
 function addToCart(productId) {
