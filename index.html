@@ -2565,6 +2565,7 @@ function renderShelfMap() {
   if (!grid) { console.warn('shelf-grid not found'); return; }
   const posMap = {};
   products.forEach(p => { if (p.shelf_position) posMap[p.shelf_position] = p; });
+  console.log('posMap keys:', Object.keys(posMap).slice(0,5), 'posMap[3]:', posMap[3]);
 
   grid.innerHTML = Array.from({length:64}, (_,i) => {
     const pos = i + 1;
