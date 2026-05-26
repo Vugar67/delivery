@@ -1265,6 +1265,9 @@ async function loadOrderItems(){
 async function loadProducts(){
   const{data}=await sb.from('products').select('*').eq('active',true).order('name');
   products=(data||[]).map(p=>({...p,shelf_position:p.shelf_position?parseInt(p.shelf_position):null}));
+  // Also load inactive for shelf map
+  const{data:allData}=await sb.from('products').select('*').order('name');
+  window._allProducts=(allData||[]).map(p=>({...p,shelf_position:p.shelf_position?parseInt(p.shelf_position):null}));
 }
 
 function showView(v){
@@ -2569,17 +2572,20 @@ function renderShelfMap() {
   const grid = document.getElementById('shelf-grid');
   if (!grid) return;
 
+  const allProds = window._allProducts || products;
   grid.innerHTML = Array.from({length:64}, (_,i) => {
     const pos = i + 1;
-    const p = products.find(x => Number(x.shelf_position) === pos);
+    const p = allProds.find(x => Number(x.shelf_position) === pos);
+    const inactive = p && p.active === false;
     const bg = p
-      ? 'background:#1e2235;border-color:#ffcc00;border-width:2px'
+      ? `background:${inactive?'rgba(100,100,100,.2)':'#1e2235'};border-color:${inactive?'#555':'#ffcc00'};border-width:2px`
       : 'background:#13151f;border-color:#2a2d3e';
+    const nameColor = inactive ? '#888' : '#ffcc00';
     const content = p
-      ? `<div style="font-size:8px;font-family:var(--mono);color:#ffcc00;font-weight:700;text-align:center;line-height:1.4;word-break:break-word;padding:0 2px">${p.name}</div>`
-      : `<div style="font-size:11px;color:#444;font-family:var(--mono)">${pos}</div>`;
-    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:14px 4px 4px;position:relative">
-      <div style="font-size:9px;color:${p?'#ffcc00':'#444'};font-family:var(--mono);font-weight:700;position:absolute;top:3px;left:5px">${pos}</div>
+      ? `<div style="font-size:11px;font-family:var(--mono);color:${nameColor};font-weight:700;text-align:center;line-height:1.4;word-break:break-word;padding:0 4px">${p.name}${inactive?' <span style="color:#f66;font-size:9px">(inactive)</span>':''}</div>`
+      : `<div style="font-size:14px;color:#444;font-family:var(--mono)">${pos}</div>`;
+    return `<div onclick="openShelfCell(${pos})" style="${bg};border:1px solid;border-radius:8px;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;padding:20px 4px 4px;position:relative">
+      <div style="font-size:18px;color:${p?(inactive?'#888':'#ffcc00'):'#444'};font-family:var(--mono);font-weight:700;position:absolute;top:3px;left:7px">${pos}</div>
       ${content}
     </div>`;
   }).join('');
