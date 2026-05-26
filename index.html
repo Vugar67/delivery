@@ -4068,9 +4068,11 @@ function updateDispatchCounter() {
   const n = dispatchSelected.length;
   const counter = document.getElementById('dispatch-counter');
   const sendBtn = document.getElementById('dispatch-send-btn');
+  console.log('updateDispatchCounter: n=', n, 'driver=', dispatchDriverName, 'btn=', sendBtn);
   if (counter) counter.textContent = n === 0 ? 'Select orders below' : `${n} order${n>1?'s':''} selected`;
   if (!sendBtn) return;
-  const canSend = n > 0 && dispatchDriverName;
+  const canSend = n > 0 && !!dispatchDriverName;
+  console.log('canSend=', canSend, 'setting disabled=', !canSend);
   sendBtn.disabled = !canSend;
   sendBtn.style.opacity = canSend ? '1' : '.4';
   sendBtn.style.cursor = canSend ? 'pointer' : 'default';
