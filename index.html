@@ -1400,6 +1400,12 @@ function getFiltered(){
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
   filtered.sort((a,b)=>{
+    // Dispatcher: Ready for Pick-up always first
+    if (window._dispatcherMode || currentRole === 'dispatcher') {
+      const aReady = a.delivery_status === 'Ready for Pick-up' ? 0 : 1;
+      const bReady = b.delivery_status === 'Ready for Pick-up' ? 0 : 1;
+      if (aReady !== bReady) return aReady - bReady;
+    }
     switch(sortVal){
       case 'priority': return (a.priority||3)-(b.priority||3);
       case 'date_desc': return new Date(b.created_at||0)-new Date(a.created_at||0);
@@ -1437,8 +1443,10 @@ function renderTable(){
       const itemsHtml=items.length?`<div class="items-preview" style="max-width:200px">${items.map(i=>`<span class="item-chip">${i.product_name} ×${i.quantity}</span>`).join('')}</div>`:'<span style="color:var(--muted);font-size:11px">&mdash;</span>';
       // In dispatch mode: dim rows that already have driver+wa_sent
       const dispatched = o.driver && o.wa_sent;
+      const isReady = o.delivery_status === 'Ready for Pick-up';
       const rowStyle = dispatchMode && dispatched ? 'opacity:.45;' : '';
-      return`<tr id="drow-${o.id}" oncontextmenu="openCtxMenu(event,'${o.id}')" onmouseenter="showOrderTooltip(event,'${o.id}')" onmouseleave="hideOrderTooltip()" onmousemove="moveOrderTooltip(event)" style="cursor:context-menu;${rowStyle}">
+      const rowBg = (window._dispatcherMode || currentRole === 'dispatcher') && isReady ? 'background:rgba(0,220,100,.08);' : '';
+      return`<tr id="drow-${o.id}" oncontextmenu="openCtxMenu(event,'${o.id}')" onmouseenter="showOrderTooltip(event,'${o.id}')" onmouseleave="hideOrderTooltip()" onmousemove="moveOrderTooltip(event)" style="cursor:context-menu;${rowStyle}${rowBg}">
         <td id="dispatch-td-${o.id}" style="${dispatchMode?'':'display:none;'}text-align:center;padding:4px">
           <input type="checkbox" class="dispatch-chk" data-id="${o.id}" ${dispatchSelected.find(s=>s.id===o.id)?'checked':''} onchange="onDispatchCheck(this)" style="cursor:pointer;width:16px;height:16px">
         </td>
