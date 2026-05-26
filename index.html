@@ -499,7 +499,6 @@ select option{background:#1a1d27;color:#f0f2ff}
             <div style="font-weight:700;font-size:15px">Send to Driver</div>
             <div id="dsm-driver-name" style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-top:2px"></div>
           </div>
-          <button id="dsm-send-btn" onclick="dispatchSend()" style="background:var(--green);color:#000;border:none;border-radius:8px;padding:10px 24px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer">▶ Send All</button>
           <button onclick="closeModal('dispatch-send-modal')" style="background:none;border:1px solid var(--border);border-radius:6px;padding:8px 14px;color:var(--muted);font-family:var(--mono);font-size:12px;cursor:pointer">✕</button>
         </div>
         <div id="dsm-list" style="overflow-y:auto;flex:1;padding:8px 0"></div>
@@ -4048,10 +4047,26 @@ function openDispatchModal() {
     <div id="dsm-row-${id}" style="display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--border)">
       <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
       <div style="font-size:12px;color:var(--muted)">${o.emirate||''} ${o.client_name?'· '+o.client_name:''}</div>
-      <div id="dsm-status-${id}" style="font-family:var(--mono);font-size:11px;color:var(--muted);min-width:60px;text-align:right">Pending</div>
+      <button id="dsm-btn-${id}" onclick="dispatchSendOne('${id}')" style="background:#25d366;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">WA ▶</button>
+      <div id="dsm-status-${id}" style="font-family:var(--mono);font-size:11px;color:var(--muted);min-width:50px;text-align:right">—</div>
     </div>`).join('');
   document.getElementById('dsm-list').innerHTML = rows;
   document.getElementById('dispatch-send-modal').classList.add('open');
+}
+
+async function dispatchSendOne(id) {
+  const btn = document.getElementById('dsm-btn-' + id);
+  const statusEl = document.getElementById('dsm-status-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+
+  await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, updated_by: currentUser.email }).eq('id', id);
+  const localOrder = orders.find(x => x.id === id);
+  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
+
+  await sendToDriver(id);
+
+  if (statusEl) { statusEl.textContent = '✓ Sent'; statusEl.style.color = '#00ee88'; }
+  if (btn) { btn.textContent = '✓'; btn.style.background = 'rgba(0,200,100,.2)'; btn.style.color = '#00ee88'; }
 }
 
 function dispatchSelectAll(checked) {
