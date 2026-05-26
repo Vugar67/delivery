@@ -3562,9 +3562,9 @@ async function sendToDriver(orderId) {
   // Try desktop app first, fallback to web
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
   const webUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg);
-  window.location.href = waUrl;
+  window.open(waUrl, '_blank');
   // Fallback to web after 2s if app doesn't open
-  setTimeout(() => { window.open(webUrl, '_blank'); }, 2000);
+  // setTimeout(() => { window.open(webUrl, '_blank'); }, 2000);
   // Save sent timestamp
   await sb.from('orders').update({
     wa_sent_at: new Date().toISOString(),
@@ -4073,7 +4073,7 @@ async function dispatchSend() {
     const localOrder = orders.find(x => x.id === id);
     if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
 
-    sendWhatsApp(id);
+    await sendToDriver(id);
 
     if (statusEl) { statusEl.textContent = '✓ Sent'; statusEl.style.color = '#00ee88'; }
 
