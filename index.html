@@ -2383,9 +2383,15 @@ function getPickerId(email) {
 
 function mqttLedsOn(orderId) {
   const items = orderItems[orderId] || [];
+  const o = orders.find(x => x.id === orderId);
+  const prog = o?.picking_progress || {};
   const allProds = window._allProducts || products;
+  // Only light positions that are not fully collected yet
   const leds = [...new Set(
-    items.map(i => {
+    items.filter(i => {
+      const k = i.product_id || i.id;
+      return (prog[k] || 0) < (i.quantity || 1);
+    }).map(i => {
       const p = allProds.find(x => x.id === i.product_id);
       return p?.shelf_position || null;
     }).filter(Boolean)
@@ -2400,19 +2406,7 @@ function mqttLedOff(pos) {
 
 function whCloseModal() {
   const orderId = window._whOrderId;
-  if (orderId) {
-    const o = orders.find(x => x.id === orderId);
-    const items = orderItems[orderId] || [];
-    const prog = o?.picking_progress || {};
-    const allProds = window._allProducts || products;
-    // Only turn off LEDs for fully collected items
-    const doneLeds = [...new Set(
-      items.filter(i => (prog[i.product_id || i.id] || 0) >= (i.quantity || 1))
-           .map(i => allProds.find(x => x.id === i.product_id)?.shelf_position)
-           .filter(Boolean)
-    )];
-    if (doneLeds.length) mqttPublish({ action: 'off', led: doneLeds, picker_id: getPickerId(currentUser?.email) });
-  }
+  if (orderId) mqttAllOff(orderId);
   closeModal('wh-modal');
 }
 
