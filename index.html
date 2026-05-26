@@ -504,36 +504,39 @@ select option{background:#1a1d27;color:#f0f2ff}
         <div id="dsm-list" style="overflow-y:auto;flex:1;padding:8px 0"></div>
       </div>
     </div>
-      <div class="modal" style="max-width:600px;width:96%;max-height:90vh;overflow-y:auto;padding:0">
-        <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-            <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
-            <button class="close-btn" onclick="if(currentRole==='warehouse'&&window._whOrderId)mqttAllOff(window._whOrderId);closeModal('wh-modal')">✕</button>
-          </div>
-          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-            <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
-          </div>
-          <div id="wh-progress-text" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px"></div>
-        </div>
-        <div style="padding:0 4px">
-          <table style="width:100%;border-collapse:collapse">
-            <thead>
-              <tr style="border-bottom:1px solid var(--border)">
-                <th style="padding:8px;text-align:left;font-size:11px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
-                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">POS</th>
-                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">NEED</th>
-                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">COLLECTED</th>
-              </tr>
-            </thead>
-            <tbody id="wh-items-table"></tbody>
-          </table>
-        </div>
-        <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;position:sticky;bottom:0;background:var(--surface)">
-          <button id="wh-complete-btn" onclick="whComplete()" style="flex:1;padding:14px;font-size:15px;font-weight:700;background:#00cc66;color:#fff;border:none;border-radius:10px;cursor:pointer;display:none">✅ Mark Ready for Pick-up</button>
-          <button id="wh-problem-btn" onclick="whReportProblem()" style="padding:14px 18px;font-size:13px;background:rgba(255,80,80,.2);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:10px;cursor:pointer">⚠️ Problem</button>
-        </div>
+
+<!-- WAREHOUSE ORDER MODAL -->
+<div class="overlay" id="wh-modal">
+  <div class="modal" style="max-width:600px;width:96%;max-height:90vh;overflow-y:auto;padding:0">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
+        <button class="close-btn" onclick="if(currentRole==='warehouse'&&window._whOrderId)mqttAllOff(window._whOrderId);closeModal('wh-modal')">✕</button>
       </div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
+      </div>
+      <div id="wh-progress-text" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px"></div>
     </div>
+    <div style="padding:0 4px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:8px;text-align:left;font-size:11px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
+            <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">POS</th>
+            <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">NEED</th>
+            <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">COLLECTED</th>
+          </tr>
+        </thead>
+        <tbody id="wh-items-table"></tbody>
+      </table>
+    </div>
+    <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;position:sticky;bottom:0;background:var(--surface)">
+      <button id="wh-complete-btn" onclick="whComplete()" style="flex:1;padding:14px;font-size:15px;font-weight:700;background:#00cc66;color:#fff;border:none;border-radius:10px;cursor:pointer;display:none">✅ Mark Ready for Pick-up</button>
+      <button id="wh-problem-btn" onclick="whReportProblem()" style="padding:14px 18px;font-size:13px;background:rgba(255,80,80,.2);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:10px;cursor:pointer">⚠️ Problem</button>
+    </div>
+  </div>
+</div>
       <div class="section-head">
         <div class="section-title">Team Members</div>
         <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
