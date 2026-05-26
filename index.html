@@ -2364,6 +2364,8 @@ function mqttConnect() {
 }
 
 function mqttPublish(payload) {
+  // Convert shelf positions to 0-based LED index
+  if (payload.led) payload.led = payload.led.map(p => p - 1);
   if (!mqttClient || !mqttClient.connected) {
     mqttConnect();
     setTimeout(() => mqttPublish(payload), 2000);
