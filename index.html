@@ -2472,7 +2472,7 @@ function renderWarehouseQueue() {
     (done.length ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>` + done.map(o => renderCard(o, true)).join('') : '');
 }
 
-function openWarehouseOrder(orderId) {
+function openWarehouseOrder(orderId, sendMqtt = true) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const items = orderItems[o.id] || [];
@@ -2519,7 +2519,7 @@ function openWarehouseOrder(orderId) {
   document.getElementById('wh-problem-btn').style.display = '';
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
-  mqttLedsOn(orderId);
+  if (sendMqtt) mqttLedsOn(orderId);
 }
 
 async function whAdjust(orderId, key, delta) {
@@ -2566,7 +2566,7 @@ async function whAdjust(orderId, key, delta) {
   const collected = Object.values(prog).reduce((s,v) => s + v, 0);
   if (collected >= totalQty && totalQty > 0) whBeep(660, 300);
 
-  openWarehouseOrder(orderId); // re-render modal
+  openWarehouseOrder(orderId, false); // re-render modal without MQTT
 }
 
 async function whComplete() {
