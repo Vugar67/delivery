@@ -3914,8 +3914,9 @@ function renderDispatchQueue() {
 }
 
 function toggleDispatchOrder(id) {
+  console.log('toggleDispatchOrder called, id=', id);
   const order = orders.find(o => o.id === id);
-  if (!order) return;
+  if (!order) { console.log('order not found'); return; }
   const idx = dispatchSelected.findIndex(s => s.id === id);
   if (idx === -1) {
     const coords = extractCoordsFromUrl(order.location_url);
@@ -3932,6 +3933,7 @@ function toggleDispatchOrder(id) {
     if (!dispatchSelected.length)
       document.getElementById('dispatch-map-placeholder').style.display = '';
   }
+  console.log('dispatchSelected after toggle:', dispatchSelected.length);
   updateDispatchCounter();
   renderDispatchQueue();
 }
@@ -4140,6 +4142,7 @@ async function saveDispatchNewDriver() {
 }
 
 function selectDispatchDriver(name) {
+  console.log('selectDispatchDriver:', name);
   dispatchDriverName = name;
   document.getElementById('dispatch-driver-label').textContent = name;
   hideDispatchDriverDD();
