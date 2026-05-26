@@ -2543,11 +2543,21 @@ async function whAdjust(orderId, key, delta) {
   if (error) { toast('Error: ' + error.message, true); return; }
   o.picking_progress = prog;
 
-  // Turn off LED if this position fully collected
+  // Turn off LED only when ALL items on this shelf position are fully collected
   const allProds = window._allProducts || products;
   const prodOfItem = allProds.find(x => x.id === parseInt(key));
-  if (prodOfItem?.shelf_position && next === need) {
-    mqttLedOff(prodOfItem.shelf_position);
+  if (prodOfItem?.shelf_position) {
+    const shelfPos = prodOfItem.shelf_position;
+    // Find all items in this order that are on the same shelf
+    const sameShelfItems = items.filter(i => {
+      const p = allProds.find(x => x.id === i.product_id);
+      return p?.shelf_position === shelfPos;
+    });
+    const allDone = sameShelfItems.every(i => {
+      const k = i.product_id || i.id;
+      return (prog[k] || 0) >= (i.quantity || 1);
+    });
+    if (allDone) mqttLedOff(shelfPos);
   }
 
   // Check if complete
