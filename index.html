@@ -4041,6 +4041,9 @@ function selectDispatchDriver(name) {
 function openDispatchModal() {
   if (!dispatchSelected.length || !dispatchDriverName) return;
   document.getElementById('dsm-driver-name').textContent = '🚗 ' + dispatchDriverName;
+  const sendBtn = document.getElementById('dsm-send-btn');
+  sendBtn.textContent = '▶ Send All';
+  sendBtn.disabled = false;
   const rows = dispatchSelected.map(({id, order: o}) => `
     <div id="dsm-row-${id}" style="display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--border)">
       <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
