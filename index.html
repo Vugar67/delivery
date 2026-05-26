@@ -4068,25 +4068,47 @@ async function dispatchSend() {
   sendBtn.textContent = 'Sending...';
 
   for (let i = 0; i < total; i++) {
-    const { id, order: o } = dispatchSelected[i];
+    const { id } = dispatchSelected[i];
     const statusEl = document.getElementById('dsm-status-' + id);
-    if (statusEl) { statusEl.textContent = '⏳ Sending'; statusEl.style.color = '#ffcc00'; }
 
+    // Assign driver in DB
     await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, updated_by: currentUser.email }).eq('id', id);
     const localOrder = orders.find(x => x.id === id);
     if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
 
+    if (statusEl) { statusEl.textContent = '⏳ Opening...'; statusEl.style.color = '#ffcc00'; }
+
+    // Open WA - wait for user to return before next
     await sendToDriver(id);
 
     if (statusEl) { statusEl.textContent = '✓ Sent'; statusEl.style.color = '#00ee88'; }
 
-    if (i < total - 1) await new Promise(r => setTimeout(r, 1200));
+    // Wait for user to come back to page before opening next
+    if (i < total - 1) {
+      await waitForPageVisible();
+      await new Promise(r => setTimeout(r, 800));
+    }
   }
 
   sendBtn.textContent = `✓ Done (${total})`;
   toast(`✅ Dispatched ${total} order${total>1?'s':''} to ${dispatchDriverName}`);
   await loadOrders();
   renderTable();
+}
+
+function waitForPageVisible() {
+  return new Promise(resolve => {
+    if (!document.hidden) { resolve(); return; }
+    const handler = () => {
+      if (!document.hidden) {
+        document.removeEventListener('visibilitychange', handler);
+        resolve();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    // Fallback: resolve after 10s anyway
+    setTimeout(resolve, 10000);
+  });
 }
 
 // Close driver dropdown on outside click
