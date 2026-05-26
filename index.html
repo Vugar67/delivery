@@ -3888,7 +3888,7 @@ async function geocodeOrderAddress(id, order, num) {
               const coords = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
               const sel = dispatchSelected.find(s => s.id === id);
               if (sel) sel.coords = coords;
-              if (dispatchMap && window.L) addDispatchMarker(id, order, coords, num);
+              if (dispatchMap && window.L && dispatchSelected.find(s => s.id === id)) addDispatchMarker(id, order, coords, num);
               return;
             }
           }
@@ -3910,7 +3910,7 @@ async function geocodeOrderAddress(id, order, num) {
       const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
       const sel = dispatchSelected.find(s => s.id === id);
       if (sel) sel.coords = coords;
-      if (dispatchMap && window.L) addDispatchMarker(id, order, coords, num);
+      if (dispatchMap && window.L && sel) addDispatchMarker(id, order, coords, num);
     }
   } catch(e) {}
 }
