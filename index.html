@@ -491,15 +491,34 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
 
     <div class="overlay" id="wh-modal">
-      <div class="modal" style="max-width:420px;width:92%">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-          <div id="wh-priority-dot" style="width:14px;height:14px;border-radius:50%;flex-shrink:0"></div>
-          <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)"></div>
-          <button class="close-btn" onclick="closeModal('wh-modal')" style="margin-left:auto">✕</button>
+      <div class="modal" style="max-width:600px;width:96%;max-height:90vh;overflow-y:auto;padding:0">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+            <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
+            <button class="close-btn" onclick="closeModal('wh-modal')">✕</button>
+          </div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
+          </div>
+          <div id="wh-progress-text" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px"></div>
         </div>
-        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Items</div>
-        <div id="wh-items" style="margin-bottom:24px"></div>
-        <div id="wh-action"></div>
+        <div style="padding:0 4px">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="padding:8px;text-align:left;font-size:11px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
+                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">POS</th>
+                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">NEED</th>
+                <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">COLLECTED</th>
+              </tr>
+            </thead>
+            <tbody id="wh-items-table"></tbody>
+          </table>
+        </div>
+        <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;position:sticky;bottom:0;background:var(--surface)">
+          <button id="wh-complete-btn" onclick="whComplete()" style="flex:1;padding:14px;font-size:15px;font-weight:700;background:#00cc66;color:#fff;border:none;border-radius:10px;cursor:pointer;display:none">✅ Mark Ready for Pick-up</button>
+          <button id="wh-problem-btn" onclick="whReportProblem()" style="padding:14px 18px;font-size:13px;background:rgba(255,80,80,.2);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:10px;cursor:pointer">⚠️ Problem</button>
+        </div>
       </div>
     </div>
       <div class="section-head">
@@ -2311,59 +2330,175 @@ function renderWarehouseQueue() {
 
   const queue = orders.filter(o => {
     const ds = o.delivery_status || '';
-    return ds !== 'Delivered' && ds !== 'Cancelled';
+    return ds !== 'Delivered' && ds !== 'Cancelled' && ds !== 'Ready for Pick-up';
   }).sort((a,b) => (a.priority||3) - (b.priority||3) || new Date(a.created_at) - new Date(b.created_at));
 
-  if (!queue.length) {
-    container.innerHTML = `<div style="text-align:center;padding:80px 20px;color:var(--muted);font-size:15px">✅ No orders in queue</div>`;
-    return;
-  }
+  const done = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
 
-  const wsLabel = { pending:'⏳ Pending', picking:'🔄 Picking', packed:'📦 Packed', handed:'🚗 Handed Over' };
-  const wsColor = { pending:'var(--muted)', picking:'#ffcc00', packed:'#00ee88', handed:'var(--blue)' };
+  const pc = p => p===1?'#ff2222':p===2?'#ffcc00':'#00ee44';
 
-  container.innerHTML = `
-    <div style="padding:12px 16px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase">
-      ${queue.length} order${queue.length!==1?'s':''} in queue
-    </div>` +
-    queue.map(o => {
-      const ws = o.warehouse_status || 'pending';
-      const pc = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
-      const dimmed = ws==='handed'?'opacity:.4;':'';
-      return `<div onclick="openWarehouseOrder('${o.id}')" style="${dimmed}display:flex;align-items:center;gap:14px;padding:16px;margin:0 12px 8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;active:opacity:.7" ontouchstart="this.style.opacity='.6'" ontouchend="this.style.opacity='1'">
-        <div style="width:10px;height:10px;border-radius:50%;background:${pc};box-shadow:0 0 8px ${pc};flex-shrink:0"></div>
-        <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
-        <div style="font-size:12px;color:${wsColor[ws]||'var(--muted)'};font-family:var(--mono)">${wsLabel[ws]||ws}</div>
-        <div style="color:var(--muted);font-size:16px">›</div>
-      </div>`;
-    }).join('');
+  const renderCard = (o, dimmed) => {
+    const items = orderItems[o.id] || [];
+    const totalQty = items.reduce((s,i) => s + (i.quantity||1), 0);
+    const prog = o.picking_progress || {};
+    const collected = Object.values(prog).reduce((s,v) => s + v, 0);
+    const isComplete = collected >= totalQty && totalQty > 0;
+    const pct = totalQty > 0 ? Math.round(collected/totalQty*100) : 0;
+
+    return `<div onclick="${dimmed?'':(`openWarehouseOrder('${o.id}')`)}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:${dimmed?'default':'pointer'};opacity:${dimmed?.5:1};position:relative;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:12px;height:12px;border-radius:50%;background:${pc(o.priority||3)};box-shadow:0 0 8px ${pc(o.priority||3)};flex-shrink:0"></div>
+        <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
+        <div style="font-size:13px;color:var(--muted)">${o.emirate||'—'}</div>
+        <div style="font-size:13px;font-family:var(--mono);color:var(--text)">${totalQty} item${totalQty!==1?'s':''}</div>
+        ${isComplete?`<span style="color:#00ee88;font-size:18px">✓</span>`:''}
+      </div>
+      ${totalQty>0&&!dimmed?`<div style="margin-top:10px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${pct===100?'#00ee88':'#ffcc00'};border-radius:2px;transition:.3s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px">${collected} / ${totalQty} collected</div>`:''}
+    </div>`;
+  };
+
+  container.innerHTML =
+    `<div style="padding:12px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase">📦 ${queue.length} order${queue.length!==1?'s':''} to pick</div>` +
+    (queue.length ? queue.map(o => renderCard(o, false)).join('') : `<div style="text-align:center;padding:40px;color:var(--muted)">No orders to pick</div>`) +
+    (done.length ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>` + done.map(o => renderCard(o, true)).join('') : '');
 }
 
 function openWarehouseOrder(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const items = orderItems[o.id] || [];
-  const ws = o.warehouse_status || 'pending';
-  const pc = o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44';
+  const prog = o.picking_progress || {};
+  const totalQty = items.reduce((s,i) => s + (i.quantity||1), 0);
+  const collected = Object.values(prog).reduce((s,v) => s + v, 0);
+  const pct = totalQty > 0 ? Math.round(collected/totalQty*100) : 0;
 
-  const actionBtn = {
-    pending: `<button class="btn btn-primary" style="width:100%;padding:16px;font-size:16px;border-radius:12px" onclick="warehouseAction('${o.id}','picking')">▶ Start Picking</button>`,
-    picking: `<button class="btn" style="width:100%;padding:16px;font-size:16px;border-radius:12px;background:#00cc66;color:#fff;border:none" onclick="warehouseAction('${o.id}','packed')">✓ Done Packing</button>`,
-    packed:  `<button class="btn" style="width:100%;padding:16px;font-size:16px;border-radius:12px;background:#4a90e2;color:#fff;border:none" onclick="warehouseAction('${o.id}','handed')">🚗 Hand to Driver</button>`,
-    handed:  `<div style="text-align:center;padding:16px;color:var(--muted);font-family:var(--mono)">✅ Completed</div>`,
-  }[ws] || '';
+  const rows = items.map(item => {
+    const key = item.product_id || item.id;
+    const need = item.quantity || 1;
+    const have = prog[key] || 0;
+    const allProds = window._allProducts || products;
+    const prod = allProds.find(p => p.id === item.product_id);
+    const shelf = prod?.shelf_position || '—';
+    let rowBg, rowColor;
+    if (have === 0) { rowBg = 'rgba(80,80,80,.15)'; rowColor = 'var(--muted)'; }
+    else if (have < need) { rowBg = 'rgba(255,200,0,.15)'; rowColor = '#ffcc00'; }
+    else { rowBg = 'rgba(0,200,100,.15)'; rowColor = '#00ee88'; }
+
+    const canAdd = have < need;
+    const canSub = have > 0;
+
+    return `<tr style="background:${rowBg}">
+      <td style="padding:10px 8px;font-size:13px;color:var(--text);font-weight:500">${item.product_name}</td>
+      <td style="padding:10px 8px;text-align:center;font-family:var(--mono);font-size:13px;font-weight:700;color:#ffaa00">${shelf}</td>
+      <td style="padding:10px 8px;text-align:center;font-family:var(--mono);color:var(--muted)">${need}</td>
+      <td style="padding:10px 8px;text-align:center">
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+          <button onmousedown="whAdjust('${orderId}','${key}',-1)" style="width:32px;height:32px;border-radius:50%;border:none;background:${canSub?'rgba(255,80,80,.3)':'rgba(80,80,80,.2)'};color:${canSub?'#ff6666':'#444'};font-size:18px;cursor:${canSub?'pointer':'default'};line-height:1">−</button>
+          <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:${rowColor};min-width:20px;text-align:center">${have}</span>
+          <button onmousedown="whAdjust('${orderId}','${key}',1)" style="width:32px;height:32px;border-radius:50%;border:none;background:${canAdd?'rgba(0,200,100,.3)':'rgba(80,80,80,.2)'};color:${canAdd?'#00ee88':'#444'};font-size:18px;cursor:${canAdd?'pointer':'default'};line-height:1">+</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('wh-order-num').textContent = o.order_num;
-  document.getElementById('wh-priority-dot').style.background = pc;
-  document.getElementById('wh-priority-dot').style.boxShadow = `0 0 10px ${pc}`;
-  document.getElementById('wh-items').innerHTML = items.length
-    ? items.map(i=>`<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:14px">
-        <span style="color:var(--text)">${i.product_name}</span>
-        ${i.quantity>1?`<span style="color:var(--accent);font-family:var(--mono);margin-left:8px">×${i.quantity}</span>`:''}
-      </div>`).join('')
-    : '<div style="color:var(--muted);font-size:13px">No items</div>';
-  document.getElementById('wh-action').innerHTML = actionBtn;
+  document.getElementById('wh-progress-bar').style.width = pct + '%';
+  document.getElementById('wh-progress-bar').style.background = pct===100?'#00ee88':'#ffcc00';
+  document.getElementById('wh-progress-text').textContent = `${collected} / ${totalQty} collected`;
+  document.getElementById('wh-items-table').innerHTML = rows;
+  document.getElementById('wh-complete-btn').style.display = (collected >= totalQty && totalQty > 0) ? '' : 'none';
+  document.getElementById('wh-problem-btn').style.display = '';
   document.getElementById('wh-modal').classList.add('open');
+  window._whOrderId = orderId;
+}
+
+async function whAdjust(orderId, key, delta) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  const items = orderItems[orderId] || [];
+  const prog = {...(o.picking_progress || {})};
+  const item = items.find(i => String(i.product_id || i.id) === String(key));
+  const need = item ? (item.quantity || 1) : 1;
+  const cur = prog[key] || 0;
+  const next = Math.max(0, Math.min(need, cur + delta));
+  if (next === cur) return;
+  prog[key] = next;
+  if (next === 0) delete prog[key];
+
+  // Play sound
+  if (delta > 0) whBeep(440, 80);
+  else whBeep(220, 80);
+
+  const { error } = await sb.from('orders').update({ picking_progress: prog }).eq('id', orderId);
+  if (error) { toast('Error: ' + error.message, true); return; }
+  o.picking_progress = prog;
+
+  // Check if complete
+  const totalQty = items.reduce((s,i) => s + (i.quantity||1), 0);
+  const collected = Object.values(prog).reduce((s,v) => s + v, 0);
+  if (collected >= totalQty && totalQty > 0) whBeep(660, 300);
+
+  openWarehouseOrder(orderId); // re-render modal
+}
+
+async function whComplete() {
+  const orderId = window._whOrderId;
+  if (!orderId) return;
+  const { error } = await sb.from('orders').update({
+    delivery_status: 'Ready for Pick-up',
+    warehouse_status: 'packed',
+    picking_done_at: new Date().toISOString()
+  }).eq('id', orderId);
+  if (error) { toast('Error: ' + error.message, true); return; }
+  const o = orders.find(x => x.id === orderId);
+  if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; }
+  whBeep(880, 500);
+  closeModal('wh-modal');
+  await loadOrders();
+  renderWarehouseQueue();
+  toast('✅ Order ready for pick-up!');
+}
+
+async function whReportProblem() {
+  const orderId = window._whOrderId;
+  if (!orderId) return;
+  const note = prompt('Describe the problem (e.g. item out of stock):');
+  if (!note) return;
+  const o = orders.find(x => x.id === orderId);
+  const existing = o?.notes || '';
+  const newNote = `[WAREHOUSE ISSUE ${new Date().toLocaleString()}]: ${note}\n${existing}`;
+  await sb.from('orders').update({ notes: newNote, warehouse_status: 'pending' }).eq('id', orderId);
+  if (o) o.notes = newNote;
+  toast('⚠️ Problem reported');
+  closeModal('wh-modal');
+}
+
+function whBeep(freq, dur) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur/1000);
+    osc.start(); osc.stop(ctx.currentTime + dur/1000);
+  } catch(e) {}
+}
+
+async function warehouseAction(orderId, newStatus) {
+  const now = new Date().toISOString();
+  const update = { warehouse_status: newStatus };
+  if (newStatus === 'picking') update.picking_started_at = now;
+  if (newStatus === 'handed')  update.handed_at = now;
+  const { error } = await sb.from('orders').update(update).eq('id', orderId);
+  if (error) { toast('Error: ' + error.message, true); return; }
+  const o = orders.find(x => x.id === orderId);
+  if (o) Object.assign(o, update);
+  renderWarehouseQueue();
 }
 
 async function warehouseAction(orderId, newStatus) {
