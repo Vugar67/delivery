@@ -363,7 +363,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             <!-- Driver select -->
             <div style="position:relative">
               <input id="dispatch-driver-search" placeholder="Search driver..." oninput="filterDispatchDrivers()" onfocus="filterDispatchDrivers()" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:12px;color:var(--text);width:180px">
-              <div id="dispatch-driver-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;z-index:200;max-height:240px;overflow-y:auto;margin-top:2px;min-width:220px">
+              <div id="dispatch-driver-dropdown" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:6px;z-index:9999;max-height:240px;overflow-y:auto;margin-top:2px;min-width:220px">
                 <div id="dispatch-driver-list"></div>
                 <!-- Quick add new driver -->
                 <div id="dispatch-new-driver-toggle" onclick="toggleDispatchNewDriver()" style="padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--accent);border-top:1px solid var(--border);display:flex;align-items:center;gap:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
@@ -3975,6 +3975,11 @@ function renderDispatchDriverList(q) {
 function filterDispatchDrivers() {
   const q = document.getElementById('dispatch-driver-search').value.toLowerCase();
   const dd = document.getElementById('dispatch-driver-dropdown');
+  const input = document.getElementById('dispatch-driver-search');
+  const rect = input.getBoundingClientRect();
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.left = rect.left + 'px';
+  dd.style.width = Math.max(220, rect.width) + 'px';
   dd.style.display = '';
   renderDispatchDriverList(q);
 }
