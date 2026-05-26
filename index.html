@@ -3556,7 +3556,7 @@ async function sendToDriver(orderId) {
   const itemsSection = showItems && items ? `\n\n📦 *Items:*\n${items}` : '';
   const locationSection = o.location_url ? `\n\n🗺 *Location:* ${o.location_url}` : '';
   const clientLine = [o.client_name, o.client_number].filter(Boolean).join(' — ');
-  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n👤 *Client:* ${clientLine||'—'}${locationSection}${itemsSection}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n💵 *Total: ${totalAmount.toFixed(2)} AED*\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
+  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n👤 *Client:* ${clientLine||'—'}${locationSection}${itemsSection}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
