@@ -2384,7 +2384,7 @@ function mqttPublish(payload) {
     setTimeout(() => mqttPublish(payload), 2000);
     return;
   }
-  mqttClient.publish(MQTT_CONFIG.topic, JSON.stringify(payload), { qos: 1 });
+  mqttClient.publish(MQTT_CONFIG.topic, JSON.stringify(payload), { qos: 1, retain: true });
 }
 
 function getPickerId(email) {
@@ -2620,18 +2620,6 @@ function whBeep(freq, dur) {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur/1000);
     osc.start(); osc.stop(ctx.currentTime + dur/1000);
   } catch(e) {}
-}
-
-async function warehouseAction(orderId, newStatus) {
-  const now = new Date().toISOString();
-  const update = { warehouse_status: newStatus };
-  if (newStatus === 'picking') update.picking_started_at = now;
-  if (newStatus === 'handed')  update.handed_at = now;
-  const { error } = await sb.from('orders').update(update).eq('id', orderId);
-  if (error) { toast('Error: ' + error.message, true); return; }
-  const o = orders.find(x => x.id === orderId);
-  if (o) Object.assign(o, update);
-  renderWarehouseQueue();
 }
 
 async function warehouseAction(orderId, newStatus) {
