@@ -508,7 +508,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
             <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
-            <button class="close-btn" onclick="whCloseModal()">✕</button>
+            <button class="close-btn" onclick="if(currentRole==='warehouse'&&window._whOrderId)mqttAllOff(window._whOrderId);closeModal('wh-modal')">✕</button>
           </div>
           <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
             <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
