@@ -1401,8 +1401,8 @@ function getFiltered(){
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
   filtered.sort((a,b)=>{
-    // Dispatcher: Ready for Pick-up always first
-    if (window._dispatcherMode || currentRole === 'dispatcher') {
+    // Dispatcher only: Ready for Pick-up always first
+    if (currentRole === 'dispatcher') {
       const aReady = a.delivery_status === 'Ready for Pick-up' ? 0 : 1;
       const bReady = b.delivery_status === 'Ready for Pick-up' ? 0 : 1;
       if (aReady !== bReady) return aReady - bReady;
