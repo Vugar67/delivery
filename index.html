@@ -282,6 +282,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
 
@@ -495,7 +496,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
             <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
-            <button class="close-btn" onclick="closeModal('wh-modal')">✕</button>
+            <button class="close-btn" onclick="whCloseModal()">✕</button>
           </div>
           <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
             <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
@@ -1232,6 +1233,7 @@ async function initApp(){
   if(isWarehouse){
     nav.innerHTML=`<button class="tab-btn active" onclick="showView('warehouse')">📦 Warehouse</button>`;
     await Promise.all([loadOrders(),loadProducts()]);
+    mqttConnect();
     showView('warehouse');
     renderWarehouseQueue();
     subscribeRealtime();
@@ -2334,6 +2336,97 @@ function applyClientSuggest(clientId, type='client') {
   toast('✅ ' + c.name + ' — fields filled');
 }
 
+// ─── MQTT ────────────────────────────────────────────────────────
+const MQTT_CONFIG = {
+  host: 'wss://c14ac6c6046c42dbb49ab5573c499048.s1.eu.hivemq.cloud:8884/mqtt',
+  username: 'esp32_shelf',
+  password: 'Qwer77za!',
+  topic: 'warehouse/shelf/1'
+};
+
+let mqttClient = null;
+
+function mqttConnect() {
+  if (mqttClient) return;
+  try {
+    mqttClient = mqtt.connect(MQTT_CONFIG.host, {
+      username: MQTT_CONFIG.username,
+      password: MQTT_CONFIG.password,
+      clientId: 'delivr_' + Math.random().toString(16).slice(2, 8),
+      reconnectPeriod: 5000,
+      connectTimeout: 10000
+    });
+    mqttClient.on('connect', () => console.log('MQTT connected'));
+    mqttClient.on('error', e => console.warn('MQTT error:', e.message));
+  } catch(e) {
+    console.warn('MQTT init failed:', e.message);
+  }
+}
+
+function mqttPublish(payload) {
+  if (!mqttClient || !mqttClient.connected) {
+    mqttConnect();
+    setTimeout(() => mqttPublish(payload), 2000);
+    return;
+  }
+  mqttClient.publish(MQTT_CONFIG.topic, JSON.stringify(payload), { qos: 1 });
+  console.log('MQTT publish:', payload);
+}
+
+function getPickerId(email) {
+  // warehouse1@... → 1, warehouse2@... → 2, etc.
+  const m = (email || '').match(/warehouse(\d+)/i);
+  return m ? parseInt(m[1]) : 1;
+}
+
+function mqttLedsOn(orderId) {
+  const items = orderItems[orderId] || [];
+  const allProds = window._allProducts || products;
+  const leds = [...new Set(
+    items.map(i => {
+      const p = allProds.find(x => x.id === i.product_id);
+      return p?.shelf_position || null;
+    }).filter(Boolean)
+  )];
+  if (!leds.length) return;
+  mqttPublish({ action: 'on', led: leds, picker_id: getPickerId(currentUser?.email) });
+}
+
+function mqttLedOff(pos) {
+  mqttPublish({ action: 'off', led: [pos], picker_id: getPickerId(currentUser?.email) });
+}
+
+function whCloseModal() {
+  const orderId = window._whOrderId;
+  if (orderId) {
+    const o = orders.find(x => x.id === orderId);
+    const items = orderItems[orderId] || [];
+    const prog = o?.picking_progress || {};
+    const allProds = window._allProducts || products;
+    // Only turn off LEDs for fully collected items
+    const doneLeds = [...new Set(
+      items.filter(i => (prog[i.product_id || i.id] || 0) >= (i.quantity || 1))
+           .map(i => allProds.find(x => x.id === i.product_id)?.shelf_position)
+           .filter(Boolean)
+    )];
+    if (doneLeds.length) mqttPublish({ action: 'off', led: doneLeds, picker_id: getPickerId(currentUser?.email) });
+  }
+  closeModal('wh-modal');
+}
+
+function mqttAllOff(orderId) {
+  const items = orderItems[orderId] || [];
+  const allProds = window._allProducts || products;
+  const leds = [...new Set(
+    items.map(i => {
+      const p = allProds.find(x => x.id === i.product_id);
+      return p?.shelf_position || null;
+    }).filter(Boolean)
+  )];
+  if (!leds.length) return;
+  mqttPublish({ action: 'off', led: leds, picker_id: getPickerId(currentUser?.email) });
+}
+
 // ─── WAREHOUSE ───────────────────────────────────────────────────
 function renderWarehouseQueue() {
   const container = document.getElementById('warehouse-queue');
@@ -2424,6 +2517,7 @@ function openWarehouseOrder(orderId) {
   document.getElementById('wh-problem-btn').style.display = '';
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
+  mqttLedsOn(orderId);
 }
 
 async function whAdjust(orderId, key, delta) {
@@ -2447,6 +2541,13 @@ async function whAdjust(orderId, key, delta) {
   if (error) { toast('Error: ' + error.message, true); return; }
   o.picking_progress = prog;
 
+  // Turn off LED if this position fully collected
+  const allProds = window._allProducts || products;
+  const prodOfItem = allProds.find(x => x.id === parseInt(key));
+  if (prodOfItem?.shelf_position && next === need) {
+    mqttLedOff(prodOfItem.shelf_position);
+  }
+
   // Check if complete
   const totalQty = items.reduce((s,i) => s + (i.quantity||1), 0);
   const collected = Object.values(prog).reduce((s,v) => s + v, 0);
@@ -2467,6 +2568,7 @@ async function whComplete() {
   const o = orders.find(x => x.id === orderId);
   if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; }
   whBeep(880, 500);
+  mqttAllOff(orderId);
   closeModal('wh-modal');
   await loadOrders();
   renderWarehouseQueue();
