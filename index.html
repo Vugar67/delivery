@@ -1247,7 +1247,9 @@ async function initApp(){
   }
 
   await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients()]);
-  renderFilters();renderTable();showView('orders');subscribeRealtime();
+  renderFilters();
+  if(!isDispatcher) renderTable();
+  showView('orders');subscribeRealtime();
 
   // Apply dispatcher restrictions after render
   if(isDispatcher){
