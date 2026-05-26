@@ -352,69 +352,85 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
         <button class="btn btn-ghost" onclick="exportCSV()">&#8595; CSV</button>
       </div>
-      <!-- DISPATCH MODE PANEL -->
-      <div id="dispatch-panel" style="display:none;margin-bottom:16px">
-        <div style="background:var(--surface);border:1px solid var(--accent2);border-radius:12px;overflow:hidden">
-          <!-- Header -->
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:rgba(255,200,0,.06)">
-            <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent2)">🚀 DISPATCH MODE</span>
-            <span id="dispatch-counter" style="font-family:var(--mono);font-size:12px;color:var(--muted)">Select orders below</span>
-            <div style="flex:1"></div>
-            <!-- Driver select -->
-            <div style="position:relative" id="dispatch-driver-wrap" onclick="event.stopPropagation()">
-              <div onclick="toggleDispatchDriverDD();event.stopPropagation()" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 28px 6px 10px;font-family:var(--mono);font-size:12px;color:var(--text);width:180px;cursor:pointer;position:relative;user-select:none">
-                <span id="dispatch-driver-label">— Select Driver —</span>
-                <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px">▼</span>
+      <!-- DISPATCH MODE PANEL (header bar) -->
+      <div id="dispatch-panel" style="display:none;margin-bottom:12px">
+        <div style="border:1px solid var(--accent2);border-radius:10px;display:flex;align-items:center;gap:12px;padding:10px 16px;background:rgba(255,200,0,.06)">
+          <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent2)">🚀 DISPATCH MODE</span>
+          <span id="dispatch-counter" style="font-family:var(--mono);font-size:12px;color:var(--muted)">Select orders below</span>
+          <div style="flex:1"></div>
+          <div style="position:relative" id="dispatch-driver-wrap" onclick="event.stopPropagation()">
+            <div onclick="toggleDispatchDriverDD();event.stopPropagation()" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 28px 6px 10px;font-family:var(--mono);font-size:12px;color:var(--text);width:180px;cursor:pointer;position:relative;user-select:none">
+              <span id="dispatch-driver-label">— Select Driver —</span>
+              <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:10px">▼</span>
+            </div>
+            <div id="dispatch-driver-dropdown" style="display:none;position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;z-index:9999;margin-top:2px;min-width:220px;max-height:300px;overflow-y:auto">
+              <div id="dispatch-driver-list"></div>
+              <div onclick="toggleDispatchNewDriver()" style="padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--accent);border-top:1px solid var(--border);display:flex;align-items:center;gap:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+                <span style="font-size:14px">+</span> New Driver
               </div>
-              <div id="dispatch-driver-dropdown" style="display:none;position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;z-index:9999;margin-top:2px;min-width:220px;max-height:300px;overflow-y:auto">
-                <div id="dispatch-driver-list"></div>
-                <div onclick="toggleDispatchNewDriver()" style="padding:8px 12px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--accent);border-top:1px solid var(--border);display:flex;align-items:center;gap:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
-                  <span style="font-size:14px">+</span> New Driver
-                </div>
-                <div id="dispatch-new-driver-form" style="display:none;padding:10px 12px;border-top:1px solid var(--border);background:var(--bg)">
-                  <input id="dispatch-new-drv-name" placeholder="Name *" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:6px;box-sizing:border-box">
-                  <input id="dispatch-new-drv-phone" placeholder="Phone" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:8px;box-sizing:border-box">
-                  <button onclick="saveDispatchNewDriver()" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:5px;padding:6px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">Save Driver</button>
-                </div>
+              <div id="dispatch-new-driver-form" style="display:none;padding:10px 12px;border-top:1px solid var(--border);background:var(--bg)">
+                <input id="dispatch-new-drv-name" placeholder="Name *" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:6px;box-sizing:border-box">
+                <input id="dispatch-new-drv-phone" placeholder="Phone" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:8px;box-sizing:border-box">
+                <button onclick="saveDispatchNewDriver()" style="width:100%;background:var(--accent);color:#000;border:none;border-radius:5px;padding:6px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">Save Driver</button>
               </div>
             </div>
-            <button id="dispatch-send-btn" onclick="openDispatchModal()" disabled style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 20px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;opacity:.4">▶ SEND</button>
-            <button onclick="toggleDispatchMode()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">✕ Exit</button>
           </div>
-          <!-- Map -->
-          <div id="dispatch-map" style="height:280px;background:var(--bg);position:relative">
+          <button id="dispatch-send-btn" onclick="openDispatchModal()" disabled style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 20px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;opacity:.4">▶ SEND</button>
+          <button onclick="toggleDispatchMode()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">✕ Exit</button>
+        </div>
+      </div>
+
+      <!-- 3-COLUMN DISPATCH LAYOUT -->
+      <div id="dispatch-3col" style="display:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;height:calc(100vh - 185px)">
+
+        <!-- LEFT: queue -->
+        <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0">
+            📋 Queue — <span id="dcol-queue-count">0</span> orders
+          </div>
+          <div id="dcol-queue" style="overflow-y:auto;flex:1;padding:6px"></div>
+        </div>
+
+        <!-- MIDDLE: map -->
+        <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0">
+            🗺 Map
+          </div>
+          <div style="flex:1;position:relative;min-height:0">
             <div id="dispatch-map-inner" style="width:100%;height:100%"></div>
             <div id="dispatch-map-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;pointer-events:none">
               📍 Select orders to see them on the map
             </div>
           </div>
-          <!-- Send progress -->
-          <div id="dispatch-progress" style="display:none;padding:10px 16px;border-top:1px solid var(--border)">
-            <div style="display:flex;align-items:center;gap:12px">
-              <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">Sending:</span>
-              <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-                <div id="dispatch-progress-bar" style="height:100%;background:var(--green);border-radius:3px;transition:width .3s;width:0%"></div>
-              </div>
-              <span id="dispatch-progress-label" style="font-family:var(--mono);font-size:12px;color:var(--green);min-width:60px;text-align:right"></span>
-            </div>
-          </div>
         </div>
+
+        <!-- RIGHT: dispatched -->
+        <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0">
+            ✅ Dispatched — <span id="dcol-sent-count">0</span>
+          </div>
+          <div id="dcol-sent" style="overflow-y:auto;flex:1;padding:6px"></div>
+        </div>
+
       </div>
 
-      <div class="table-wrap">
-        <table class="tbl">
-          <thead><tr>
-            <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
-            <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Emirate</th><th>City</th>
-            <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
-            <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
-          </tr></thead>
-          <tbody id="order-tbody"></tbody>
-        </table>
-      </div>
-      <div class="pagination">
-        <div class="page-info" id="page-info"></div>
-        <div class="page-btns" id="page-btns"></div>
+      <!-- NORMAL TABLE (hidden in dispatch mode) -->
+      <div id="dispatch-normal-table">
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
+              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Emirate</th><th>City</th>
+              <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
+              <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
+            </tr></thead>
+            <tbody id="order-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="page-info" id="page-info"></div>
+          <div class="page-btns" id="page-btns"></div>
+        </div>
       </div>
     </div>
 
@@ -3792,38 +3808,45 @@ function toggleDispatchMode() {
   dispatchMode = !dispatchMode;
   dispatchSelected = [];
   dispatchDriverName = '';
+  const dlbl = document.getElementById('dispatch-driver-label');
+  if (dlbl) dlbl.textContent = '— Select Driver —';
 
   const panel = document.getElementById('dispatch-panel');
-  const th = document.getElementById('dispatch-th');
+  const col3 = document.getElementById('dispatch-3col');
+  const normalTable = document.getElementById('dispatch-normal-table');
   const btn = document.getElementById('dispatch-btn');
 
   if (dispatchMode) {
     panel.style.display = '';
-    th.style.display = '';
+    col3.style.display = 'grid';
+    normalTable.style.display = 'none';
     btn.style.background = 'var(--red)';
     btn.style.color = '#fff';
     btn.textContent = '✕ Exit Dispatch';
-    // Show all dispatch td cells
-    document.querySelectorAll('[id^="dispatch-td-"]').forEach(td => td.style.display = '');
     initDispatchMap();
     updateDispatchCounter();
     populateDispatchDrivers();
+    renderDispatchQueue();
+    renderDispatchSent();
   } else {
     panel.style.display = 'none';
-    th.style.display = 'none';
+    col3.style.display = 'none';
+    normalTable.style.display = '';
     btn.style.background = 'var(--accent2)';
     btn.style.color = '#000';
     btn.textContent = '🚀 Dispatch';
-    document.querySelectorAll('[id^="dispatch-td-"]').forEach(td => td.style.display = 'none');
-    document.querySelectorAll('.dispatch-chk').forEach(c => c.checked = false);
-    document.querySelectorAll('[id^="drow-"]').forEach(r => r.style.background = '');
-    document.getElementById('dispatch-progress').style.display = 'none';
+    dispatchMarkers.forEach(m => m.marker.remove());
+    dispatchMarkers = [];
   }
 }
 
 function initDispatchMap() {
-  if (dispatchMap) { dispatchMap.invalidateSize(); return; }
-  createLeafletMap();
+  if (dispatchMap) {
+    setTimeout(() => dispatchMap.invalidateSize(), 50);
+    return;
+  }
+  // Wait for column to be visible before init
+  setTimeout(() => createLeafletMap(), 50);
 }
 
 function createLeafletMap() {
@@ -3860,6 +3883,97 @@ function onDispatchCheck(chk) {
   }
   updateDispatchCounter();
 }
+
+// ─── DISPATCH 3-COL RENDER ───────────────────────────────────────
+
+function renderDispatchQueue() {
+  const el = document.getElementById('dcol-queue');
+  const countEl = document.getElementById('dcol-queue-count');
+  if (!el) return;
+  const queue = orders.filter(o => o.delivery_status === 'Ready for Pick-up' && !o.wa_sent);
+  if (countEl) countEl.textContent = queue.length;
+  if (!queue.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No orders in queue</div>';
+    return;
+  }
+  el.innerHTML = queue.map(o => {
+    const isSelected = dispatchSelected.find(s => s.id === o.id);
+    const items = orderItems[o.id] || [];
+    const itemCount = items.reduce((s,i) => s + (i.quantity||1), 0);
+    return `<div onclick="toggleDispatchOrder('${o.id}')" style="cursor:pointer;border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};background:${isSelected ? 'rgba(245,166,35,.1)' : 'var(--bg)'};transition:.15s">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};box-shadow:0 0 6px ${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};flex-shrink:0"></div>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</span>
+        ${isSelected ? '<span style="margin-left:auto;font-size:10px;color:var(--accent);font-family:var(--mono);background:rgba(245,166,35,.2);padding:1px 6px;border-radius:4px">SELECTED</span>' : ''}
+      </div>
+      <div style="font-size:12px;color:var(--text)">${o.client_name||'—'}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[o.emirate, o.city].filter(Boolean).join(' · ')} ${o.client_number ? '· ' + o.client_number : ''}</div>
+      ${itemCount ? `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:3px">${itemCount} item${itemCount!==1?'s':''}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function toggleDispatchOrder(id) {
+  const order = orders.find(o => o.id === id);
+  if (!order) return;
+  const idx = dispatchSelected.findIndex(s => s.id === id);
+  if (idx === -1) {
+    const coords = extractCoordsFromUrl(order.location_url);
+    dispatchSelected.push({ id, order, coords });
+    document.getElementById('dispatch-map-placeholder').style.display = 'none';
+    if (coords && dispatchMap && window.L) {
+      addDispatchMarker(id, order, coords, dispatchSelected.length);
+    } else {
+      geocodeOrderAddress(id, order, dispatchSelected.length);
+    }
+  } else {
+    dispatchSelected.splice(idx, 1);
+    removeDispatchMarker(id);
+    if (!dispatchSelected.length)
+      document.getElementById('dispatch-map-placeholder').style.display = '';
+  }
+  updateDispatchCounter();
+  renderDispatchQueue();
+}
+
+function renderDispatchSent() {
+  const el = document.getElementById('dcol-sent');
+  const countEl = document.getElementById('dcol-sent-count');
+  if (!el) return;
+  // Today's sent orders — wa_sent=true, has driver
+  const today = new Date().toISOString().split('T')[0];
+  const sent = orders.filter(o => o.wa_sent && o.driver && (o.wa_sent_at||'').startsWith(today));
+  if (countEl) countEl.textContent = sent.length;
+  if (!sent.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No dispatched orders yet</div>';
+    return;
+  }
+  // Group by driver
+  const byDriver = {};
+  sent.forEach(o => {
+    if (!byDriver[o.driver]) byDriver[o.driver] = [];
+    byDriver[o.driver].push(o);
+  });
+  el.innerHTML = Object.entries(byDriver).map(([driver, dOrders]) => `
+    <div style="margin-bottom:10px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;padding:4px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)">🚗 ${driver} (${dOrders.length})</div>
+      ${dOrders.map(o => {
+        const sentAgo = o.wa_sent_at ? (() => {
+          const diff = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000);
+          return diff < 1 ? 'just now' : diff + 'm ago';
+        })() : '';
+        return `<div style="border-radius:8px;padding:8px 10px;margin-bottom:4px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.05)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+            <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${o.order_num}</span>
+            <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${sentAgo}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text)">${o.client_name||'—'}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
 
 async function geocodeOrderAddress(id, order, num) {
   console.log('geocodeOrderAddress:', order.order_num, '| url:', order.location_url, '| emirate:', order.emirate, '| city:', order.city, '| apt:', order.apt);
@@ -4049,14 +4163,22 @@ async function dispatchSendOne(id) {
   const statusEl = document.getElementById('dsm-status-' + id);
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
-  await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, updated_by: currentUser.email }).eq('id', id);
+  const now = new Date().toISOString();
+  await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, wa_sent_at: now, wa_sent_by: currentUser.email, updated_by: currentUser.email }).eq('id', id);
   const localOrder = orders.find(x => x.id === id);
-  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
+  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; localOrder.wa_sent_at = now; localOrder.wa_sent_by = currentUser.email; }
 
   await sendToDriver(id);
 
   if (statusEl) { statusEl.textContent = '✓ Sent'; statusEl.style.color = '#00ee88'; }
   if (btn) { btn.textContent = '✓'; btn.style.background = 'rgba(0,200,100,.2)'; btn.style.color = '#00ee88'; }
+
+  // Move order out of queue, into dispatched column
+  dispatchSelected = dispatchSelected.filter(s => s.id !== id);
+  removeDispatchMarker(id);
+  updateDispatchCounter();
+  renderDispatchQueue();
+  renderDispatchSent();
 }
 
 function dispatchSelectAll(checked) {
