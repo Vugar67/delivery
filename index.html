@@ -2479,6 +2479,7 @@ function renderWarehouseQueue() {
 }
 
 function openWarehouseOrder(orderId, sendMqtt = true) {
+  if (currentRole !== 'warehouse') return;
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const items = orderItems[o.id] || [];
