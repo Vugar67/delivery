@@ -2366,13 +2366,13 @@ function mqttConnect() {
 function mqttPublish(payload) {
   // Convert shelf positions to 0-based LED index
   if (payload.led) payload.led = payload.led.map(p => p - 1);
+  console.log('MQTT publish:', JSON.stringify(payload), '\nFrom:', new Error().stack.split('\n')[2]);
   if (!mqttClient || !mqttClient.connected) {
     mqttConnect();
     setTimeout(() => mqttPublish(payload), 2000);
     return;
   }
   mqttClient.publish(MQTT_CONFIG.topic, JSON.stringify(payload), { qos: 1 });
-  console.log('MQTT publish:', payload);
 }
 
 function getPickerId(email) {
