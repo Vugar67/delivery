@@ -1547,7 +1547,7 @@ function renderTable(){
     if(!disabled){const p=page;b.onclick=()=>{currentPage=p;renderTable();};}
     pb.appendChild(b);
   };
-  const range=5;
+  const range=25;
   const start=Math.max(1,currentPage-Math.floor(range/2));
   const end=Math.min(totalPages,start+range-1);
   addBtn('«',1,currentPage===1,false);
