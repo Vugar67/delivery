@@ -527,7 +527,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);flex:1"></div>
-        <button class="close-btn" onclick="if(currentRole==='warehouse'&&window._whOrderId)mqttAllOff(window._whOrderId);closeModal('wh-modal')">✕</button>
+        <button class="close-btn" onclick="whCloseModal()">✕</button>
       </div>
       <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
         <div id="wh-progress-bar" style="height:100%;width:0%;border-radius:3px;transition:.3s"></div>
@@ -2443,7 +2443,9 @@ function mqttLedOff(pos) {
 
 function whCloseModal() {
   const orderId = window._whOrderId;
-  if (orderId) mqttAllOff(orderId);
+  if (orderId && currentRole === 'warehouse') {
+    sb.from('orders').update({ current_picker_id: null }).eq('id', orderId).then(() => {});
+  }
   closeModal('wh-modal');
 }
 
@@ -2551,7 +2553,9 @@ function openWarehouseOrder(orderId, sendMqtt = true) {
   document.getElementById('wh-problem-btn').style.display = '';
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
-  if (sendMqtt) mqttLedsOn(orderId);
+  // Write current_picker_id to DB — Edge Function handles MQTT
+  const pickerId = getPickerId(currentUser?.email);
+  sb.from('orders').update({ current_picker_id: pickerId }).eq('id', orderId).then(() => {});
 }
 
 async function whAdjust(orderId, key, delta) {
@@ -2590,7 +2594,7 @@ async function whAdjust(orderId, key, delta) {
       return (prog[k] || 0) >= (i.quantity || 1);
     });
     console.log('shelfPos:', shelfPos, 'allDone:', allDone, 'sameShelfItems:', sameShelfItems.length);
-    if (allDone) mqttLedOff(shelfPos);
+    // Edge Function handles LED off via DB webhook
   }
 
   // Check if complete
@@ -2613,7 +2617,8 @@ async function whComplete() {
   const o = orders.find(x => x.id === orderId);
   if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; }
   whBeep(880, 500);
-  mqttAllOff(orderId);
+  // current_picker_id cleared via warehouse_status=packed — Edge Function handles LED off
+  await sb.from('orders').update({ current_picker_id: null }).eq('id', orderId);
   closeModal('wh-modal');
   await loadOrders();
   renderWarehouseQueue();
