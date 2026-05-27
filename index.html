@@ -2486,9 +2486,7 @@ function renderWarehouseQueue() {
     const isComplete = collected >= totalQty && totalQty > 0;
     const pct = totalQty > 0 ? Math.round(collected/totalQty*100) : 0;
 
-    const isBlocked = !dimmed && window._whOrderId && window._whOrderId !== o.id;
-    const clickHandler = dimmed ? '' : isBlocked ? "toast('⚠️ Close current order first',true)" : `openWarehouseOrder('${o.id}')`;
-    return `<div onclick="${clickHandler}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:${dimmed||isBlocked?'default':'pointer'};opacity:${dimmed?.5:isBlocked?.4:1};position:relative;overflow:hidden">
+    return `<div onclick="whCardClick('${o.id}',${dimmed})" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:pointer;opacity:${dimmed?.5:1};position:relative;overflow:hidden">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="width:12px;height:12px;border-radius:50%;background:${pc(o.priority||3)};box-shadow:0 0 8px ${pc(o.priority||3)};flex-shrink:0"></div>
         <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
@@ -2507,6 +2505,15 @@ function renderWarehouseQueue() {
     `<div style="padding:12px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase">📦 ${queue.length} order${queue.length!==1?'s':''} to pick</div>` +
     (queue.length ? queue.map(o => renderCard(o, false)).join('') : `<div style="text-align:center;padding:40px;color:var(--muted)">No orders to pick</div>`) +
     (done.length ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>` + done.map(o => renderCard(o, true)).join('') : '');
+}
+
+function whCardClick(orderId, dimmed) {
+  if (dimmed) return;
+  if (window._whOrderId && window._whOrderId !== orderId) {
+    toast('⚠️ Close current order first', true);
+    return;
+  }
+  openWarehouseOrder(orderId);
 }
 
 let _whInactivityTimer = null;
