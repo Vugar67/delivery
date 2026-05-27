@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.3</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1466,12 +1466,30 @@ function getFiltered(){
 }
 
 function renderStats(){
-  const total=orders.length,delivered=orders.filter(o=>o.delivery_status==='Delivered').length,inProgress=orders.filter(o=>o.delivery_status==='In Progress').length,pending=orders.filter(o=>o.payment_status==='Pending via Link').length;
+  const total = orders.length;
+  // Count by delivery status dynamically
+  const statusColors = {
+    'Delivered':        'green',
+    'In Progress':      'blue',
+    'Ready for Pick-up':'accent',
+    'Cancelled':        'red',
+    'Returned':         'red',
+    'On Hold':          'muted',
+  };
+  const statusCounts = {};
+  orders.forEach(o => {
+    const s = o.delivery_status || 'Unknown';
+    statusCounts[s] = (statusCounts[s] || 0) + 1;
+  });
+  // Sort by count desc
+  const statuses = Object.entries(statusCounts).sort((a,b) => b[1]-a[1]);
+  const statusHtml = statuses.map(([s,n]) => {
+    const col = statusColors[s] || 'muted';
+    return `<div class="stat"><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
+  }).join('');
   document.getElementById('stats-row').innerHTML=`
     <div class="stat"><div class="stat-label">Total Orders</div><div class="stat-val accent">${total}</div></div>
-    <div class="stat"><div class="stat-label">Delivered</div><div class="stat-val green">${delivered}</div></div>
-    <div class="stat"><div class="stat-label">In Progress</div><div class="stat-val blue">${inProgress}</div></div>
-    <div class="stat"><div class="stat-label">Pending Payment</div><div class="stat-val red">${pending}</div></div>`;
+    ${statusHtml}`;
 }
 
 function renderTable(){
