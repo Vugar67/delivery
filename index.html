@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.6</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -721,8 +721,16 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group" style="position:relative">
         <label>Client Name</label>
-        <input id="f-client-name" placeholder="e.g. Latifa" autocomplete="off" oninput="onClientNameInput(this.value,'client')" onblur="setTimeout(()=>hideClientSuggest(),200)">
-        <div id="client-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+        <div style="position:relative">
+          <input id="f-client-name" placeholder="— Select Client —" autocomplete="off" readonly onclick="filterClientDropdown('')" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
+          <span onclick="filterClientDropdown('')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none">▼</span>
+        </div>
+        <div id="client-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:220px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <div style="padding:6px 10px;border-bottom:1px solid var(--border)">
+            <input id="client-search-input" placeholder="Search..." oninput="filterClientDropdown(this.value)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box" onclick="event.stopPropagation()">
+          </div>
+          <div id="client-suggest-list"></div>
+        </div>
       </div>
       <div class="form-group" style="position:relative">
         <label>Seller</label>
@@ -2370,6 +2378,24 @@ function selectSeller(clientId) {
   if (!c) return;
   document.getElementById('f-seller-name').value = c.name;
   hideSellerSuggest();
+}
+
+function filterClientDropdown(q) {
+  const dd = document.getElementById('client-suggest');
+  const list = document.getElementById('client-suggest-list');
+  const clientList = clients.filter(c => c.is_client !== false);
+  const filtered = q
+    ? clientList.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || (c.phone||'').includes(q))
+    : clientList;
+  list.innerHTML = filtered.length
+    ? filtered.map(c => `
+        <div onmousedown="applyClientSuggest('${c.id}','client')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+          <div style="font-size:13px;font-weight:600">${c.name} ${c.category?`<span style="font-size:10px;color:var(--accent);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 6px;border-radius:8px">${c.category}</span>`:''}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[c.phone, c.emirate, c.city].filter(Boolean).join(' · ')}</div>
+        </div>`).join('')
+    : `<div style="padding:10px 14px;color:var(--muted);font-size:12px;font-family:var(--mono)">No clients found</div>`;
+  dd.style.display = '';
+  setTimeout(() => { const si = document.getElementById('client-search-input'); if(si && !q) si.focus(); }, 50);
 }
 
 function hideClientSuggest() {
@@ -4377,6 +4403,9 @@ document.addEventListener('click', e => {
   }
   if (!e.target.closest('#dispatch-driver-wrap')) {
     hideDispatchDriverDD();
+  }
+  if (!e.target.closest('#f-client-name') && !e.target.closest('#client-suggest')) {
+    hideClientSuggest();
   }
   if (!e.target.closest('#f-seller-name') && !e.target.closest('#seller-suggest')) {
     hideSellerSuggest();
