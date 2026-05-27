@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.7</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1551,11 +1551,11 @@ function renderTable(){
               const diffM = Math.floor(diffMs / 60000);
               const timeAgo = diffH > 0 ? diffH+'h ago' : diffM > 0 ? diffM+'m ago' : 'just now';
               return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
-                <button class="act-btn" onclick="sendToDriver('${o.id}')" title="Sent by ${o.wa_sent_by||'?'} — click to resend" style="color:#25d366;border-color:#25d366;background:rgba(37,211,102,.12)">✓ WA</button>
+                <button class="act-btn" onclick="sendToClient('${o.id}')" title="Sent by ${o.wa_sent_by||'?'} — click to resend" style="color:#25d366;border-color:#25d366;background:rgba(37,211,102,.12)">✓ WA</button>
                 <span style="font-size:9px;color:#25d366;font-family:var(--mono)">${timeAgo}</span>
               </div>`;
             }
-            return `<button class="act-btn" onclick="sendToDriver('${o.id}')" title="Send to Driver via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>`;
+            return `<button class="act-btn" onclick="sendToClient('${o.id}')" title="Send to Client via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>`;
           })() : ''}
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
           <button class="act-btn del" onclick="deleteOrder('${o.id}')">&#10005;</button>
@@ -3686,6 +3686,35 @@ async function cyclePriority(orderId, currentPriority) {
   await sb.from('orders').update({priority: next}).eq('id', orderId);
   await loadOrders();
   renderTable();
+}
+
+async function sendToClient(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  if (!o.client_number) { toast('Client has no phone number', true); return; }
+  const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', orderId);
+  const waItems = freshItems || orderItems[orderId] || [];
+  const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
+  const discount = parseFloat(o.discount||0);
+  const deliveryCharge = parseFloat(o.delivery_charge||0);
+  const total = itemsSubtotal - discount + deliveryCharge;
+  const nl = '\n';
+  const itemLines = waItems.map(i => '  - ' + i.product_name + ' x' + i.quantity + ' - ' + (parseFloat(i.price||0)*parseFloat(i.quantity||1)).toFixed(2) + ' AED').join(nl);
+  const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
+  const locationPart = o.location_url ? nl + 'Location: ' + o.location_url : '';
+  const discountPart = discount > 0 ? nl + '  Discount: -' + discount.toFixed(2) + ' AED' : '';
+  const msg = 'Order ' + o.order_num + nl +
+    nl + 'Items:' + nl + itemLines +
+    nl + nl + 'Summary:' +
+    nl + '  Subtotal: ' + itemsSubtotal.toFixed(2) + ' AED' + discountPart +
+    nl + '  Delivery: ' + deliveryCharge.toFixed(2) + ' AED' +
+    nl + '  Total: ' + total.toFixed(2) + ' AED' +
+    nl + '  Payment: ' + (o.payment_status || '-') +
+    nl + nl + 'Delivery Address:' +
+    nl + '  ' + address + locationPart + nl;
+  const phone = o.client_number.replace(/[^0-9]/g, '');
+  const waUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg);
+  window.open(waUrl, '_blank');
 }
 
 async function sendToDriver(orderId) {
