@@ -2486,7 +2486,9 @@ function renderWarehouseQueue() {
     const isComplete = collected >= totalQty && totalQty > 0;
     const pct = totalQty > 0 ? Math.round(collected/totalQty*100) : 0;
 
-    return `<div onclick="${dimmed?'':(`openWarehouseOrder('${o.id}')`)}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:${dimmed?'default':'pointer'};opacity:${dimmed?.5:1};position:relative;overflow:hidden">
+    const isBlocked = !dimmed && window._whOrderId && window._whOrderId !== o.id;
+    const clickHandler = dimmed ? '' : isBlocked ? "toast('⚠️ Close current order first',true)" : `openWarehouseOrder('${o.id}')`;
+    return `<div onclick="${clickHandler}" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:${dimmed||isBlocked?'default':'pointer'};opacity:${dimmed?.5:isBlocked?.4:1};position:relative;overflow:hidden">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="width:12px;height:12px;border-radius:50%;background:${pc(o.priority||3)};box-shadow:0 0 8px ${pc(o.priority||3)};flex-shrink:0"></div>
         <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
