@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.1</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.2</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -2488,25 +2488,58 @@ function renderWarehouseQueue() {
     const isComplete = collected >= totalQty && totalQty > 0;
     const pct = totalQty > 0 ? Math.round(collected/totalQty*100) : 0;
 
-    return `<div onclick="whCardClick('${o.id}',${dimmed})" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:0 12px 10px;cursor:pointer;opacity:${dimmed?.5:1};position:relative;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:12px;height:12px;border-radius:50%;background:${pc(o.priority||3)};box-shadow:0 0 8px ${pc(o.priority||3)};flex-shrink:0"></div>
-        <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
-        <div style="font-size:13px;color:var(--muted)">${o.emirate||'—'}</div>
-        <div style="font-size:13px;font-family:var(--mono);color:var(--text)">${totalQty} item${totalQty!==1?'s':''}</div>
-        ${isComplete?`<span style="color:#00ee88;font-size:18px">✓</span>`:''}
+    const allProds = window._allProducts || products;
+    const itemList = items.slice(0,3).map(i => {
+      const p = allProds.find(x => x.id === i.product_id);
+      return `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p?.shelf_position?`<span style="color:#ffaa00;font-weight:700">[${p.shelf_position}]</span> `:''}`+`${i.product_name||p?.name||'—'} ×${i.quantity||1}</div>`;
+    }).join('') + (items.length>3?`<div style="font-size:10px;color:var(--muted);font-family:var(--mono)">+${items.length-3} more</div>`:'');
+
+    return `<div onclick="whCardClick('${o.id}',${dimmed})" style="
+      background:var(--surface);
+      border:1px solid ${dimmed?'var(--border)':isComplete?'rgba(0,238,136,.4)':'var(--border)'};
+      border-radius:12px;
+      cursor:pointer;
+      opacity:${dimmed?.5:1};
+      position:relative;
+      overflow:hidden;
+      aspect-ratio:1.586;
+      display:flex;
+      flex-direction:column;
+      padding:14px;
+      box-sizing:border-box;
+      transition:.15s;
+    ">
+      <!-- Top row: priority dot + order num + emirate -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${pc(o.priority||3)};box-shadow:0 0 6px ${pc(o.priority||3)}"></div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
+        ${isComplete?`<span style="color:#00ee88;font-size:14px">✓</span>`:`<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${totalQty} item${totalQty!==1?'s':''}</span>`}
       </div>
-      ${totalQty>0&&!dimmed?`<div style="margin-top:10px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${pct===100?'#00ee88':'#ffcc00'};border-radius:2px;transition:.3s"></div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px">${collected} / ${totalQty} collected</div>`:''}
+      <!-- Client name -->
+      <div style="font-size:11px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px">${o.client_name||'—'}</div>
+      <!-- Location -->
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">${[o.emirate,o.city].filter(Boolean).join(' · ')||'—'}</div>
+      <!-- Items list -->
+      <div style="flex:1;overflow:hidden">${itemList}</div>
+      <!-- Progress bar -->
+      ${totalQty>0&&!dimmed?`<div style="margin-top:auto;padding-top:6px">
+        <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${pct===100?'#00ee88':'#ffcc00'};border-radius:2px;transition:.3s"></div>
+        </div>
+        <div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-top:3px;text-align:right">${collected}/${totalQty}</div>
+      </div>`:''}
     </div>`;
   };
 
   container.innerHTML =
     `<div style="padding:12px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase">📦 ${queue.length} order${queue.length!==1?'s':''} to pick</div>` +
-    (queue.length ? queue.map(o => renderCard(o, false)).join('') : `<div style="text-align:center;padding:40px;color:var(--muted)">No orders to pick</div>`) +
-    (done.length ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>` + done.map(o => renderCard(o, true)).join('') : '');
+    (queue.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:0 12px 12px">${queue.map(o => renderCard(o, false)).join('')}</div>`
+      : `<div style="text-align:center;padding:40px;color:var(--muted)">No orders to pick</div>`) +
+    (done.length
+      ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>
+         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:0 12px 12px">${done.map(o => renderCard(o, true)).join('')}</div>`
+      : '');
 }
 
 function whCardClick(orderId, dimmed) {
