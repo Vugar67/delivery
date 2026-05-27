@@ -2443,9 +2443,11 @@ function mqttLedOff(pos) {
 
 function whCloseModal() {
   const orderId = window._whOrderId;
+  if (_whInactivityTimer) { clearTimeout(_whInactivityTimer); _whInactivityTimer = null; }
   if (orderId && currentRole === 'warehouse') {
     sb.from('orders').update({ current_picker_id: null }).eq('id', orderId).then(() => {});
   }
+  window._whOrderId = null;
   closeModal('wh-modal');
 }
 
@@ -2505,8 +2507,26 @@ function renderWarehouseQueue() {
     (done.length ? `<div style="padding:16px 16px 4px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:8px">✅ Ready for pick-up</div>` + done.map(o => renderCard(o, true)).join('') : '');
 }
 
+let _whInactivityTimer = null;
+const WH_TIMEOUT_MS = 60000; // 1 minute
+
+function resetWhInactivityTimer() {
+  if (_whInactivityTimer) clearTimeout(_whInactivityTimer);
+  _whInactivityTimer = setTimeout(() => {
+    if (window._whOrderId) {
+      toast('⏱ Session timed out — order closed', true);
+      whCloseModal();
+    }
+  }, WH_TIMEOUT_MS);
+}
+
 function openWarehouseOrder(orderId, sendMqtt = true) {
   if (currentRole !== 'warehouse') return;
+  // Block if another order is already open
+  if (window._whOrderId && window._whOrderId !== orderId) {
+    toast('⚠️ Close current order first', true);
+    return;
+  }
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const items = orderItems[o.id] || [];
@@ -2556,9 +2576,11 @@ function openWarehouseOrder(orderId, sendMqtt = true) {
   // Write current_picker_id to DB — Edge Function handles MQTT
   const pickerId = getPickerId(currentUser?.email);
   sb.from('orders').update({ current_picker_id: pickerId }).eq('id', orderId).then(() => {});
+  resetWhInactivityTimer();
 }
 
 async function whAdjust(orderId, key, delta) {
+  resetWhInactivityTimer();
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   const items = orderItems[orderId] || [];
