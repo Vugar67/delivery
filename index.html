@@ -3713,7 +3713,7 @@ async function sendToClient(orderId) {
     nl + nl + 'Delivery Address:' +
     nl + '  ' + address + locationPart + nl;
   const phone = o.client_number.replace(/[^0-9]/g, '');
-  const waUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg);
+  const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
   window.open(waUrl, '_blank');
 }
 
