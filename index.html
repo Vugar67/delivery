@@ -1539,7 +1539,22 @@ function renderTable(){
   }
   document.getElementById('page-info').textContent=`${filtered.length} orders · page ${currentPage}/${totalPages}`;
   const pb=document.getElementById('page-btns');pb.innerHTML='';
-  for(let i=1;i<=Math.min(totalPages,20);i++){const b=document.createElement('button');b.className='page-btn'+(i===currentPage?' active':'');b.textContent=i;const p=i;b.onclick=()=>{currentPage=p;renderTable();};pb.appendChild(b);}
+  const addBtn=(label,page,disabled,active)=>{
+    const b=document.createElement('button');
+    b.className='page-btn'+(active?' active':'');
+    b.textContent=label;
+    b.disabled=disabled;
+    if(!disabled){const p=page;b.onclick=()=>{currentPage=p;renderTable();};}
+    pb.appendChild(b);
+  };
+  const range=5;
+  const start=Math.max(1,currentPage-Math.floor(range/2));
+  const end=Math.min(totalPages,start+range-1);
+  addBtn('«',1,currentPage===1,false);
+  addBtn('‹',currentPage-1,currentPage===1,false);
+  for(let i=start;i<=end;i++) addBtn(i,i,false,i===currentPage);
+  addBtn('›',currentPage+1,currentPage===totalPages,false);
+  addBtn('»',totalPages,currentPage===totalPages,false);
   renderStats();
 }
 
