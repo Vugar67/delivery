@@ -4089,7 +4089,7 @@ function updateDispatchCounter() {
 function toggleDispatchDriverDD() {
   const dd = document.getElementById('dispatch-driver-dropdown');
   if (dd.style.display === 'none' || !dd.style.display) {
-    renderDispatchDriverList('');
+    renderDispatchDriverListAndStore('');
     dd.style.display = '';
   } else {
     dd.style.display = 'none';
@@ -4097,7 +4097,7 @@ function toggleDispatchDriverDD() {
 }
 
 function showDispatchDriverDD() {
-  renderDispatchDriverList('');
+  renderDispatchDriverListAndStore('');
   document.getElementById('dispatch-driver-dropdown').style.display = '';
 }
 
@@ -4106,22 +4106,11 @@ function hideDispatchDriverDD() {
 }
 
 function populateDispatchDrivers() {
-  renderDispatchDriverList('');
-}
-
-function renderDispatchDriverList(q) {
-  const list = document.getElementById('dispatch-driver-list');
-  if (!list) return;
-  const filtered = q ? drivers.filter(d => d.name.toLowerCase().includes(q)) : drivers;
-  list.innerHTML = filtered.length
-    ? filtered.map(d =>
-        `<div onmousedown="selectDispatchDriver('${d.name.replace(/'/g,"\\'")}');event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${d.name}${d.phone?`<span style="color:var(--muted);font-size:10px;margin-left:8px">${d.phone}</span>`:''}</div>`
-      ).join('')
-    : `<div style="padding:8px 12px;color:var(--muted);font-family:var(--mono);font-size:12px">No drivers found</div>`;
+  renderDispatchDriverListAndStore('');
 }
 
 function filterDispatchDrivers() {
-  renderDispatchDriverList('');
+  renderDispatchDriverListAndStore('');
 }
 
 function toggleDispatchNewDriver() {
@@ -4143,12 +4132,30 @@ async function saveDispatchNewDriver() {
   document.getElementById('dispatch-new-drv-name').value = '';
   document.getElementById('dispatch-new-drv-phone').value = '';
   document.getElementById('dispatch-new-driver-form').style.display = 'none';
-  renderDispatchDriverList('');
+  renderDispatchDriverListAndStore('');
   selectDispatchDriver(name);
 }
 
+let _dispatchFilteredDrivers = [];
+
+function renderDispatchDriverListAndStore(q) {
+  const list = document.getElementById('dispatch-driver-list');
+  if (!list) return;
+  _dispatchFilteredDrivers = q ? drivers.filter(d => d.name.toLowerCase().includes(q.toLowerCase())) : [...drivers];
+  list.innerHTML = _dispatchFilteredDrivers.length
+    ? _dispatchFilteredDrivers.map((d,i) =>
+        `<div onclick="selectDispatchDriverByIndex(${i});event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${d.name}${d.phone?`<span style="color:var(--muted);font-size:10px;margin-left:8px">${d.phone}</span>`:''}</div>`
+      ).join('')
+    : `<div style="padding:8px 12px;color:var(--muted);font-family:var(--mono);font-size:12px">No drivers found</div>`;
+}
+
+function selectDispatchDriverByIndex(i) {
+  const d = _dispatchFilteredDrivers[i];
+  if (!d) return;
+  selectDispatchDriver(d.name);
+}
+
 function selectDispatchDriver(name) {
-  console.log('selectDispatchDriver:', name);
   dispatchDriverName = name;
   document.getElementById('dispatch-driver-label').textContent = name;
   hideDispatchDriverDD();
