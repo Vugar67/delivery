@@ -3906,7 +3906,7 @@ function renderDispatchQueue() {
     const isSelected = dispatchSelected.find(s => s.id === o.id);
     const items = orderItems[o.id] || [];
     const itemCount = items.reduce((s,i) => s + (i.quantity||1), 0);
-    return `<div onclick="toggleDispatchOrder('${o.id}')" style="cursor:pointer;border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};background:${isSelected ? 'rgba(245,166,35,.1)' : 'var(--bg)'};transition:.15s">
+    return `<div onclick="console.log('CARD CLICK',this);toggleDispatchOrder('${o.id}')" style="cursor:pointer;border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};background:${isSelected ? 'rgba(245,166,35,.1)' : 'var(--bg)'};transition:.15s">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <div style="width:8px;height:8px;border-radius:50%;background:${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};box-shadow:0 0 6px ${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};flex-shrink:0"></div>
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</span>
