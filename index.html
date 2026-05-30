@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.8</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -2623,7 +2623,7 @@ function resetWhInactivityTimer() {
   }, WH_TIMEOUT_MS);
 }
 
-function openWarehouseOrder(orderId, sendMqtt = true) {
+async function openWarehouseOrder(orderId, sendMqtt = true) {
   if (currentRole !== 'warehouse') return;
   // Block if another order is already open
   if (window._whOrderId && window._whOrderId !== orderId) {
@@ -2632,6 +2632,9 @@ function openWarehouseOrder(orderId, sendMqtt = true) {
   }
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
+  // Always load fresh items from DB
+  const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', orderId);
+  if (freshItems) orderItems[orderId] = freshItems;
   const items = orderItems[o.id] || [];
   const prog = o.picking_progress || {};
   const totalQty = items.reduce((s,i) => s + (i.quantity||1), 0);
