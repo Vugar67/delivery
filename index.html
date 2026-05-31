@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v2.9</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.1</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -509,6 +509,14 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="warehouse-queue"></div>
     </div>
 
+    <div id="view-users" style="display:none">
+      <div class="section-head">
+        <div class="section-title">Team Members</div>
+        <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
+      </div>
+      <div class="users-wrap" id="users-wrap"></div>
+    </div>
+
     <div class="overlay" id="dispatch-send-modal">
       <div class="modal" style="max-width:520px;width:96%;padding:0;max-height:85vh;display:flex;flex-direction:column">
         <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
@@ -554,14 +562,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
   </div>
 </div>
-      <div class="section-head">
-        <div class="section-title">Team Members</div>
-        <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
-      </div>
-      <div class="users-wrap" id="users-wrap"></div>
-    </div>
-  </div>
-</div>
+
 
 
 
