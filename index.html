@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.1</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.2</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -4116,6 +4116,94 @@ function toggleDispatchOrder(id) {
   renderDispatchQueue();
 }
 
+// ─── DISPATCH SENT ACTIONS ───────────────────────────────────────
+
+async function dispatchResend(orderId) {
+  await sendToDriver(orderId);
+  renderDispatchSent();
+}
+
+async function dispatchReassign(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  // Show driver picker
+  const driverName = await pickDriver('Reassign ' + o.order_num);
+  if (!driverName) return;
+  // Send cancellation to old driver
+  await sendCancellationToDriver(orderId);
+  // Update driver
+  await sb.from('orders').update({ driver: driverName, wa_sent: true, wa_sent_at: new Date().toISOString(), wa_sent_by: currentUser.email }).eq('id', orderId);
+  const localOrder = orders.find(x => x.id === orderId);
+  if (localOrder) { localOrder.driver = driverName; localOrder.wa_sent = true; }
+  // Send to new driver
+  await sendToDriver(orderId);
+  renderDispatchSent();
+  renderDispatchQueue();
+}
+
+async function dispatchUnassign(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  if (!confirm('Unassign driver from ' + o.order_num + '?')) return;
+  // Send cancellation to driver
+  await sendCancellationToDriver(orderId);
+  // Clear driver
+  await sb.from('orders').update({ driver: null, wa_sent: false, wa_sent_at: null, wa_sent_by: null }).eq('id', orderId);
+  const localOrder = orders.find(x => x.id === orderId);
+  if (localOrder) { localOrder.driver = null; localOrder.wa_sent = false; localOrder.wa_sent_at = null; }
+  renderDispatchSent();
+  renderDispatchQueue();
+  toast(o.order_num + ' unassigned');
+}
+
+async function sendCancellationToDriver(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o || !o.driver) return;
+  const driver = drivers.find(d => d.name === o.driver);
+  if (!driver || !driver.phone) return;
+  const nl = '\n';
+  const msg = 'Order ' + o.order_num + ' - CANCELLED' + nl + nl +
+    'This order has been reassigned to another driver.' + nl +
+    'Please disregard the previous delivery instructions.';
+  const phone = driver.phone.replace(/[^0-9]/g, '');
+  const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
+  window.open(waUrl, '_blank');
+  await new Promise(r => setTimeout(r, 1500));
+}
+
+function pickDriver(title) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('pick-driver-overlay');
+    if (existing) existing.remove();
+    window._pickDriverResolve = resolve;
+    const overlay = document.createElement('div');
+    overlay.id = 'pick-driver-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:center;justify-content:center';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;width:320px;max-height:400px;overflow-y:auto';
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;display:flex;justify-content:space-between';
+    header.innerHTML = '<span>' + title + '</span>';
+    const closeBtn = document.createElement('span');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'cursor:pointer;color:var(--muted)';
+    closeBtn.onclick = () => { overlay.remove(); resolve(null); };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+    drivers.forEach(d => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)';
+      row.innerHTML = d.name + (d.phone ? '<span style="font-size:11px;color:var(--muted);margin-left:8px">' + d.phone + '</span>' : '');
+      row.onmouseover = () => row.style.background = 'var(--surface2)';
+      row.onmouseout = () => row.style.background = '';
+      row.onclick = () => { overlay.remove(); resolve(d.name); };
+      modal.appendChild(row);
+    });
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  });
+}
+
 function renderDispatchSent() {
   const el = document.getElementById('dcol-sent');
   const countEl = document.getElementById('dcol-sent-count');
@@ -4147,8 +4235,13 @@ function renderDispatchSent() {
             <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${o.order_num}</span>
             <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${sentAgo}</span>
           </div>
-          <div style="font-size:11px;color:var(--text)">${o.client_name||'—'}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+          <div style="font-size:11px;color:var(--text);margin-bottom:4px">${o.client_name||'—'}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+          <div style="display:flex;gap:4px">
+            <button onclick="event.stopPropagation();dispatchResend('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(37,211,102,.15);color:#25d366;border:1px solid rgba(37,211,102,.3);border-radius:5px;cursor:pointer">↺ Resend</button>
+            <button onclick="event.stopPropagation();dispatchReassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">⇄ Reassign</button>
+            <button onclick="event.stopPropagation();dispatchUnassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(255,80,80,.15);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:5px;cursor:pointer">✕ Unassign</button>
+          </div>
         </div>`;
       }).join('')}
     </div>`).join('');
