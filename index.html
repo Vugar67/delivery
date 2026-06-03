@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.3</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -338,6 +338,11 @@ select option{background:#1a1d27;color:#f0f2ff}
             <div id="filter-delivery-list" style="padding:6px 0;max-height:220px;overflow-y:auto"></div>
           </div>
         </div>
+        <select class="filter-sel" id="filter-confirmed" onchange="renderTable()" style="min-width:150px">
+          <option value="">All Orders</option>
+          <option value="Yes">✅ Confirmed</option>
+          <option value="No">⏳ Not Confirmed</option>
+        </select>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
           <option value="date_desc">📅 Newest First</option>
@@ -1442,11 +1447,13 @@ function getFiltered(){
   const q=(document.getElementById('search-input').value||'').toLowerCase();
   const em=document.getElementById('filter-emirate').value;
   const dr=document.getElementById('filter-driver').value;
+  const conf=document.getElementById('filter-confirmed')?.value||'';
   const sortVal=document.getElementById('sort-select')?.value||'priority';
   const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
     if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
+    if(conf&&(o.confirmed||'No')!==conf)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     // dispatch mode: show all orders, dimming handled in row render
     return true;
