@@ -1325,7 +1325,7 @@ async function loadRefs(){
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
-  const{data,error}=await sb.from('orders').select('*').order('created_at',{ascending:false}).range(0,4999);
+  const{data,error}=await sb.from('orders').select('*').order('created_at',{ascending:false}).range(0,1499);
   if(!error)orders=data||[];
   await loadOrderItems();
 }
