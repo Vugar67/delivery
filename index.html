@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.7</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1330,20 +1330,23 @@ async function loadRefs(){
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
-  // Fetch up to 5000 orders using Range header directly
-  const _url = SUPABASE_URL + '/rest/v1/orders?select=*&order=created_at.desc';
-  const _res = await fetch(_url, {
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': 'Bearer ' + _authToken,
-      'Range-Unit': 'items',
-      'Range': '0-4999'
-    }
-  });
-  const _text = await _res.text();
-  const data = _text ? JSON.parse(_text) : [];
-  const error = _res.ok ? null : { message: _text };
-  if(!error) orders = data || [];
+  // Fetch all orders in batches of 1000
+  let allOrders = [];
+  let offset = 0;
+  const batchSize = 1000;
+  while(true) {
+    const _url = SUPABASE_URL + '/rest/v1/orders?select=*&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
+    const _res = await fetch(_url, {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
+    });
+    const _text = await _res.text();
+    const batch = _text ? JSON.parse(_text) : [];
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    allOrders = allOrders.concat(batch);
+    if (batch.length < batchSize) break;
+    offset += batchSize;
+  }
+  orders = allOrders;
   await loadOrderItems();
 }
 async function loadOrderItems(){
