@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.5</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1055,12 +1055,13 @@ class Query {
       if (this._selectCols && this._selectCols !== 'undefined') params.push('select=' + encodeURIComponent(this._selectCols));
       this._filters.forEach(f => params.push(f));
       if (this._order) params.push('order=' + this._order);
+      if (this._limit !== undefined) params.push('limit=' + this._limit);
+      if (this._rangeFrom !== undefined) { params.push('limit=' + (this._rangeTo - this._rangeFrom + 1)); params.push('offset=' + this._rangeFrom); }
       const url = base + (params.length ? '?' + params.join('&') : '');
 
       const hdrs = _headers();
       if (this._upsert) hdrs['Prefer'] = 'resolution=merge-duplicates';
-      if (this._rangeFrom !== undefined) hdrs['Range'] = this._rangeFrom + '-' + this._rangeTo;
-      else if (this._limit !== undefined) hdrs['Range'] = '0-' + (this._limit - 1);
+
       // Don't add Prefer return for POST/PATCH to avoid column issues
 
       const opts = { method: this._method, headers: hdrs };
