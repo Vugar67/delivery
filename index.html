@@ -1035,6 +1035,8 @@ class Query {
     return this; 
   }
   single() { this._single = true; return this; }
+  limit(n) { this._limit = n; return this; }
+  range(from, to) { this._rangeFrom = from; this._rangeTo = to; return this; }
   update(body) { this._method = 'PATCH'; this._body = body; return this; }
   insert(body) { this._method = 'POST'; this._body = body; return this; }
   upsert(body) { this._method = 'POST'; this._body = body; this._upsert = true; return this; }
@@ -1057,6 +1059,8 @@ class Query {
 
       const hdrs = _headers();
       if (this._upsert) hdrs['Prefer'] = 'resolution=merge-duplicates';
+      if (this._rangeFrom !== undefined) hdrs['Range'] = this._rangeFrom + '-' + this._rangeTo;
+      else if (this._limit !== undefined) hdrs['Range'] = '0-' + (this._limit - 1);
       // Don't add Prefer return for POST/PATCH to avoid column issues
 
       const opts = { method: this._method, headers: hdrs };
