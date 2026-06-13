@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.9</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -443,8 +443,9 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div id="view-products" style="display:none">
       <div class="section-head">
         <div class="section-title">Products Catalog</div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" id="prod-tab-list" onclick="switchProdTab('list')" style="font-size:12px;padding:6px 14px;background:var(--accent);color:#000">List</button>
+          <button class="btn btn-ghost" id="prod-tab-table" onclick="switchProdTab('table')" style="font-size:12px;padding:6px 14px">Table</button>
           <button class="btn btn-ghost" id="prod-tab-shelf" onclick="switchProdTab('shelf')" style="font-size:12px;padding:6px 14px">Shelf Map</button>
           <input type="text" id="prod-search" placeholder="Search products..." oninput="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
           <select id="prod-cat-filter" onchange="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
@@ -453,8 +454,27 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button class="btn btn-primary" onclick="openNewProduct()">+ Add Product</button>
         </div>
       </div>
+      <div id="prod-stats-row" class="stats" style="display:flex;margin-bottom:16px"></div>
       <div id="prod-view-list">
         <div class="products-grid" id="products-grid"></div>
+      </div>
+      <div id="prod-view-table" style="display:none">
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th style="width:50px">#</th>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Type</th>
+              <th style="text-align:center">Pos</th>
+              <th>Unit</th>
+              <th class="col-financial">Price</th>
+              <th>Barcode</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="products-table-body"></tbody>
+          </table>
+        </div>
       </div>
       <div id="prod-view-shelf" style="display:none;padding:16px">
         <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Click a cell to assign a product</div>
@@ -2999,24 +3019,34 @@ async function deleteOrder(id){
 // ─── SHELF MAP ───────────────────────────────────────────────────
 function switchProdTab(tab) {
   const listView = document.getElementById('prod-view-list');
+  const tableView = document.getElementById('prod-view-table');
   const shelfView = document.getElementById('prod-view-shelf');
+  const statsRow = document.getElementById('prod-stats-row');
   const listBtn = document.getElementById('prod-tab-list');
+  const tableBtn = document.getElementById('prod-tab-table');
   const shelfBtn = document.getElementById('prod-tab-shelf');
+  const allBtns = [listBtn, tableBtn, shelfBtn];
+  allBtns.forEach(b => { b.style.background=''; b.style.color=''; });
+  listView.style.display = 'none';
+  tableView.style.display = 'none';
+  shelfView.style.display = 'none';
+  statsRow.style.display = 'none';
   if (tab === 'shelf') {
-    listView.style.display = 'none';
     shelfView.style.display = 'block';
-    listBtn.style.background = '';
-    listBtn.style.color = '';
     shelfBtn.style.background = 'var(--accent)';
     shelfBtn.style.color = '#000';
     renderShelfMap();
+  } else if (tab === 'table') {
+    tableView.style.display = 'block';
+    statsRow.style.display = 'flex';
+    tableBtn.style.background = 'var(--accent)';
+    tableBtn.style.color = '#000';
+    renderProducts();
   } else {
     listView.style.display = 'block';
-    shelfView.style.display = 'none';
+    statsRow.style.display = 'flex';
     listBtn.style.background = 'var(--accent)';
     listBtn.style.color = '#000';
-    shelfBtn.style.background = '';
-    shelfBtn.style.color = '';
   }
 }
 
@@ -3097,6 +3127,24 @@ async function saveShelfCell(pos) {
   toast(`Position ${pos} updated`);
 }
 
+function renderProductStats(){
+  const statsRow = document.getElementById('prod-stats-row');
+  if(!statsRow) return;
+  const total = products.length;
+  const regular = products.filter(p=>(p.product_type||'Regular')==='Regular').length;
+  const custom = products.filter(p=>p.product_type==='Custom').length;
+  const withShelf = products.filter(p=>p.shelf_position).length;
+  const withoutShelf = total - withShelf;
+  const categories = new Set(products.map(p=>p.category).filter(Boolean)).size;
+  statsRow.innerHTML = `
+    <div class="stat"><div class="stat-label">Total Products</div><div class="stat-val accent">${total}</div></div>
+    <div class="stat"><div class="stat-label">Regular</div><div class="stat-val blue">${regular}</div></div>
+    <div class="stat"><div class="stat-label">Custom</div><div class="stat-val green">${custom}</div></div>
+    <div class="stat"><div class="stat-label">With Shelf Position</div><div class="stat-val accent">${withShelf}</div></div>
+    <div class="stat"><div class="stat-label">Without Position</div><div class="stat-val red">${withoutShelf}</div></div>
+    <div class="stat"><div class="stat-label">Categories</div><div class="stat-val muted">${categories}</div></div>`;
+}
+
 function renderProducts(){
   const q=(document.getElementById('prod-search').value||'').toLowerCase();
   const cat=document.getElementById('prod-cat-filter').value;
@@ -3110,9 +3158,11 @@ function renderProducts(){
     if(q&&!p.name.toLowerCase().includes(q))return false;
     return true;
   });
+  renderProductStats();
   const grid=document.getElementById('products-grid');
-  if(!filtered.length){grid.innerHTML=`<div class="empty"><div class="empty-icon">&#128717;</div><div>No products found</div></div>`;return;}
-  grid.innerHTML=filtered.map(p=>`
+  if(grid){
+    if(!filtered.length){grid.innerHTML=`<div class="empty"><div class="empty-icon">&#128717;</div><div>No products found</div></div>`;}
+    else grid.innerHTML=filtered.map(p=>`
     <div class="product-card">
       ${p.image_url ? `<img class="product-card-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="product-card-img-placeholder">&#128247;</div>'}
       <div class="product-card-head">
@@ -3130,6 +3180,31 @@ function renderProducts(){
         </div>
       </div>
     </div>`).join('');
+  }
+  const tbody=document.getElementById('products-table-body');
+  if(tbody){
+    if(!filtered.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">No products found</td></tr>`;}
+    else tbody.innerHTML=filtered.map((p,i)=>{
+      const type=p.product_type||'Regular';
+      const typeColor=type==='Custom'?'var(--green)':'var(--blue)';
+      return `<tr>
+        <td style="color:var(--muted);font-family:var(--mono)">${i+1}</td>
+        <td style="font-weight:600">${p.name}</td>
+        <td>${p.category||'&mdash;'}</td>
+        <td><span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:${typeColor}22;color:${typeColor}">${type}</span></td>
+        <td style="text-align:center;font-family:var(--mono);color:${p.shelf_position?'var(--accent)':'var(--muted)'}">${p.shelf_position||'&mdash;'}</td>
+        <td>${p.unit}</td>
+        <td class="col-financial" style="font-family:var(--mono)">${parseFloat(p.price||0).toFixed(2)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${p.barcode||'&mdash;'}</td>
+        <td>
+          <div class="product-actions">
+            <button class="act-btn" onclick="editProduct(${p.id})">Edit</button>
+            <button class="act-btn del" onclick="deleteProduct(${p.id})">&#10005;</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 function openNewProduct(){
