@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v3.9</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.0</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -542,6 +542,19 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="users-wrap" id="users-wrap"></div>
     </div>
 
+    <div id="view-brands" style="display:none">
+      <div class="section-head" style="margin-bottom:16px">
+        <div class="section-title">🏷️ Brand Profiles</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="brand-seller-filter" onchange="renderBrandProfiles()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;min-width:200px">
+            <option value="">All Sellers</option>
+          </select>
+          <button class="btn btn-primary" onclick="openNewAlias()">+ Add Alias</button>
+        </div>
+      </div>
+      <div id="brands-wrap"></div>
+    </div>
+
     <div class="overlay" id="dispatch-send-modal">
       <div class="modal" style="max-width:520px;width:96%;padding:0;max-height:85vh;display:flex;flex-direction:column">
         <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
@@ -590,6 +603,34 @@ select option{background:#1a1d27;color:#f0f2ff}
 
 
 
+
+<!-- ALIAS MODAL -->
+<div class="overlay" id="alias-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <div class="modal-title">Add Brand Alias</div>
+      <button class="close-btn" onclick="closeModal('alias-modal')">&#10005;</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label>Seller</label>
+        <select id="alias-seller-sel" style="width:100%"><option value="">— Select Seller —</option></select>
+      </div>
+      <div class="form-group form-full">
+        <label>Product</label>
+        <select id="alias-product-sel" style="width:100%"><option value="">— Select Product —</option></select>
+      </div>
+      <div class="form-group form-full">
+        <label>Alias Name <span style="font-size:11px;color:var(--muted)">(shown to seller instead of standard name)</span></label>
+        <input id="alias-name-inp" placeholder="e.g. PainAway 500">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn" onclick="closeModal('alias-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAlias()">Save Alias</button>
+    </div>
+  </div>
+</div>
 
 <!-- CLIENT MODAL -->
 <div class="overlay" id="client-modal">
@@ -1329,10 +1370,11 @@ async function initApp(){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('products')">Products</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('clients')">Clients</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
+    nav.innerHTML+=`<button class="tab-btn" onclick="showView('brands')">Brand Profiles</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases()]);
   renderFilters();
   if(!isDispatcher) renderTable();
   showView('orders');subscribeRealtime();
@@ -1394,7 +1436,7 @@ async function loadProducts(){
 }
 
 function showView(v){
-  ['orders','products','directory','users','clients','warehouse'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  ['orders','products','directory','users','clients','warehouse','brands'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();}
   if(v==='users')renderUsers();
@@ -1409,6 +1451,7 @@ function showView(v){
     if(catFilter)catFilter.innerHTML='<option value="">All Categories</option>'+(refs.clientCategory||[]).map(r=>`<option value="${r.value}">${r.value}</option>`).join('');
     renderClients();
   }
+  if(v==='brands') renderBrandProfiles();
 }
 
 function renderFilters(){
@@ -2314,8 +2357,14 @@ function renderCart() {
 
   const getPrice = item => item.is_custom ? item.price : (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price));
   const getQty   = item => item.is_custom ? item.quantity : item.qty;
-  const getName  = item => item.is_custom ? item.product_name : item.product.name;
   const getUnit  = item => item.is_custom ? '' : item.product.unit;
+  const _sellerEl = document.getElementById('f-seller-id') || {};
+  const _sellerId = window._selectedSellerId || '';
+  const getName = item => {
+    if (item.is_custom) return item.product_name;
+    const alias = _sellerId ? getAlias(_sellerId, item.product.id) : null;
+    return alias ? item.product.name + ' <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">→ ' + alias + '</span>' : item.product.name;
+  };
 
   const total = cart.reduce((s, item) => s + getPrice(item) * getQty(item), 0);
   if (totalEl) totalEl.textContent = total.toFixed(2) + ' AED';
@@ -2431,7 +2480,9 @@ function selectSeller(clientId) {
   const c = clients.find(x => x.id === clientId);
   if (!c) return;
   document.getElementById('f-seller-name').value = c.name;
+  window._selectedSellerId = c.id;
   hideSellerSuggest();
+  renderCart(); // refresh alias display
 }
 
 function filterClientDropdown(q) {
@@ -2896,6 +2947,7 @@ async function openNewOrder(){
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
   ['f-apt','f-client','f-client-name','f-seller-name','f-notes'].forEach(id=>document.getElementById(id).value='');
+  window._selectedSellerId = '';
   ['f-location-raw','f-location-url','f-raw-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
   const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
@@ -2991,10 +3043,12 @@ async function saveOrder(){
   // save cart items
   await sb.from('order_items').delete().eq('order_id',orderId);
   if(cart.length){
-    const items=cart.map(item=> item.is_custom
-      ? {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity}
-      : {order_id:orderId, product_id:item.product.id, product_name:item.product.name, unit:item.product.unit, price:item.customPrice!==undefined?item.customPrice:item.product.price, quantity:item.qty}
-    );
+    const _sId = window._selectedSellerId || '';
+    const items=cart.map(item=> {
+      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity};
+      const alias = _sId ? getAlias(_sId, item.product.id) : null;
+      return {order_id:orderId, product_id:item.product.id, product_name:alias||item.product.name, unit:item.product.unit, price:item.customPrice!==undefined?item.customPrice:item.product.price, quantity:item.qty};
+    });
     await sb.from('order_items').insert(items);
     const subtotal=cart.reduce((s,item)=>s+(item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined?parseFloat(item.customPrice):parseFloat(item.product.price))*item.qty),0);
     const deliveryCharge=parseFloat(document.getElementById('f-delivery-charge').value)||0;
@@ -3125,6 +3179,110 @@ async function saveShelfCell(pos) {
   await loadProducts();
   renderShelfMap();
   toast(`Position ${pos} updated`);
+}
+
+// ─── BRAND PROFILES ──────────────────────────────────────────────
+
+let aliases = [];
+
+async function loadAliases() {
+  const { data } = await sb.from('seller_product_aliases').select('*');
+  aliases = data || [];
+}
+
+function renderBrandProfiles() {
+  const sellers = clients.filter(c => c.is_seller);
+  const sellerFilter = document.getElementById('brand-seller-filter');
+  const wrap = document.getElementById('brands-wrap');
+  if (!sellerFilter || !wrap) return;
+
+  const curSeller = sellerFilter.value;
+  sellerFilter.innerHTML = '<option value="">All Sellers</option>' +
+    sellers.map(s => `<option value="${s.id}" ${curSeller===s.id?'selected':''}>${s.name}</option>`).join('');
+
+  const filtered = curSeller ? aliases.filter(a => a.seller_id === curSeller) : aliases;
+
+  if (!filtered.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:13px">No aliases defined yet</div>';
+    return;
+  }
+
+  // Group by seller
+  const bySeller = {};
+  filtered.forEach(a => {
+    if (!bySeller[a.seller_id]) bySeller[a.seller_id] = [];
+    bySeller[a.seller_id].push(a);
+  });
+
+  wrap.innerHTML = Object.entries(bySeller).map(([sellerId, items]) => {
+    const seller = clients.find(c => c.id === sellerId);
+    const rows = items.map(a => {
+      const prod = products.find(p => String(p.id) === String(a.product_id));
+      return `<tr>
+        <td style="font-size:13px">${prod ? prod.name : '—'}</td>
+        <td style="font-size:13px;color:var(--accent);font-weight:600">${a.alias_name}</td>
+        <td><button class="act-btn del" onclick="deleteAlias('${a.id}')">✕</button></td>
+      </tr>`;
+    }).join('');
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;overflow:hidden">
+      <div style="padding:12px 16px;background:var(--surface2);font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">
+        🏢 ${seller ? seller.name : sellerId}
+      </div>
+      <table class="tbl" style="margin:0">
+        <thead><tr>
+          <th>Standard Product Name</th>
+          <th>Alias (shown to seller)</th>
+          <th style="width:50px"></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+let _aliasEditId = null;
+function openNewAlias() {
+  _aliasEditId = null;
+  document.getElementById('alias-seller-sel').value = '';
+  document.getElementById('alias-product-sel').value = '';
+  document.getElementById('alias-name-inp').value = '';
+  // Populate selects
+  const sellerSel = document.getElementById('alias-seller-sel');
+  const prodSel = document.getElementById('alias-product-sel');
+  sellerSel.innerHTML = '<option value="">— Select Seller —</option>' +
+    clients.filter(c=>c.is_seller).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  prodSel.innerHTML = '<option value="">— Select Product —</option>' +
+    products.filter(p=>p.active!==false).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('alias-modal').classList.add('open');
+}
+
+async function saveAlias() {
+  const seller_id = document.getElementById('alias-seller-sel').value;
+  const product_id = document.getElementById('alias-product-sel').value;
+  const alias_name = document.getElementById('alias-name-inp').value.trim();
+  if (!seller_id || !product_id || !alias_name) { toast('Please fill all fields', true); return; }
+  const { error } = await sb.from('seller_product_aliases').upsert(
+    { seller_id, product_id: parseInt(product_id), alias_name },
+    { onConflict: 'seller_id,product_id' }
+  );
+  if (error) { toast('Error: ' + error.message, true); return; }
+  await loadAliases();
+  closeModal('alias-modal');
+  renderBrandProfiles();
+  toast('Alias saved');
+}
+
+async function deleteAlias(id) {
+  if (!confirm('Delete this alias?')) return;
+  await sb.from('seller_product_aliases').delete().eq('id', id);
+  await loadAliases();
+  renderBrandProfiles();
+  toast('Alias deleted');
+}
+
+function getAlias(sellerId, productId) {
+  const a = aliases.find(a => a.seller_id === sellerId && String(a.product_id) === String(productId));
+  return a ? a.alias_name : null;
 }
 
 function renderProductStats(){
