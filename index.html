@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.0</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.1</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -507,6 +507,18 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="delivery-rates-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:24px"></div>
       <div class="section-head" style="margin-bottom:14px"><div class="section-title">&#128218; Reference Lists</div></div>
       <div class="dir-grid" id="dir-grid"></div>
+
+      <div class="section-head" style="margin-top:24px;margin-bottom:14px">
+        <div class="section-title">⚗️ Units of Measurement</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewUnit()">+ Add Unit</button>
+      </div>
+      <div id="units-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:24px"></div>
+
+      <div class="section-head" style="margin-bottom:14px">
+        <div class="section-title">🧬 Components</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewComponent()">+ Add Component</button>
+      </div>
+      <div id="components-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:24px"></div>
     </div>
 
     <div id="view-clients" style="display:none">
@@ -603,6 +615,25 @@ select option{background:#1a1d27;color:#f0f2ff}
 
 
 
+
+<!-- CUSTOMIZE MODAL -->
+<div class="overlay" id="customize-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">🧪 Customize Composition</div>
+        <div id="customize-product-name" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal('customize-modal')">&#10005;</button>
+    </div>
+    <div id="customize-rows" style="margin-bottom:12px"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addCustRow()" style="margin-bottom:16px">+ Add Component</button>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('customize-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="applyCustomize()">Apply</button>
+    </div>
+  </div>
+</div>
 
 <!-- ALIAS MODAL -->
 <div class="overlay" id="alias-modal">
@@ -965,6 +996,14 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
         <input type="file" id="p-image" accept="image/*" onchange="previewProductImage(this)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:13px;width:100%;cursor:pointer">
       </div>
+    </div>
+    <!-- Components section -->
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">🧪 Components</div>
+        <button class="btn btn-ghost btn-sm" onclick="addProductComponentRow()">+ Add</button>
+      </div>
+      <div id="p-components-list" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button>
@@ -1374,7 +1413,7 @@ async function initApp(){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents()]);
   renderFilters();
   if(!isDispatcher) renderTable();
   showView('orders');subscribeRealtime();
@@ -1438,7 +1477,7 @@ async function loadProducts(){
 function showView(v){
   ['orders','products','directory','users','clients','warehouse','brands'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
-  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();}
   if(v==='users')renderUsers();
   if(v==='products'){
     renderProducts();
@@ -2385,6 +2424,7 @@ function renderCart() {
         <span style="font-size:10px;color:var(--muted)">AED</span>
       </div>
       <div class="shop-cart-item-price">${(getPrice(item)*getQty(item)).toFixed(2)}</div>
+      ${!item.is_custom ? `<button onclick="openCustomize(${i})" title="Customize composition" style="background:${item.customComponents?'rgba(245,166,35,.2)':'none'};border:1px solid ${item.customComponents?'var(--accent)':'var(--border)'};border-radius:6px;padding:3px 6px;color:${item.customComponents?'var(--accent)':'var(--muted)'};cursor:pointer;font-size:11px;font-family:var(--mono)">🧪</button>` : ''}
       <button class="shop-cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
     </div>`).join('');
   
@@ -3181,6 +3221,27 @@ async function saveShelfCell(pos) {
   toast(`Position ${pos} updated`);
 }
 
+// ─── UNITS & COMPONENTS ──────────────────────────────────────────
+
+let units = [];
+let components = [];
+let productComponents = [];
+
+async function loadUnits() {
+  const { data } = await sb.from('units').select('*').order('name');
+  units = data || [];
+}
+
+async function loadComponents() {
+  const { data } = await sb.from('components').select('*').order('name');
+  components = data || [];
+}
+
+async function loadProductComponents() {
+  const { data } = await sb.from('product_components').select('*');
+  productComponents = data || [];
+}
+
 // ─── BRAND PROFILES ──────────────────────────────────────────────
 
 let aliases = [];
@@ -3285,6 +3346,114 @@ function getAlias(sellerId, productId) {
   return a ? a.alias_name : null;
 }
 
+// ─── PRODUCT COMPONENTS (recipe) ─────────────────────────────────
+
+let _editProductComponents = []; // temp list while editing product
+
+function renderProductComponentsList() {
+  const el = document.getElementById('p-components-list');
+  if (!el) return;
+  if (!_editProductComponents.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;font-family:var(--mono)">No components defined</div>';
+    return;
+  }
+  el.innerHTML = _editProductComponents.map((row, i) => {
+    const compOpts = components.map(c => `<option value="${c.id}" ${String(row.component_id)===String(c.id)?'selected':''}>${c.name}</option>`).join('');
+    const unitOpts = units.map(u => `<option value="${u.id}" ${String(row.unit_id)===String(u.id)?'selected':''}>${u.symbol}</option>`).join('');
+    return `<div style="display:flex;gap:6px;align-items:center">
+      <select onchange="updatePCompRow(${i},'component_id',this.value)" style="flex:2;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
+        <option value="">— Component —</option>${compOpts}
+      </select>
+      <input type="number" min="0" step="0.001" value="${row.quantity||''}" onchange="updatePCompRow(${i},'quantity',this.value)" placeholder="Qty" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;text-align:center">
+      <select onchange="updatePCompRow(${i},'unit_id',this.value)" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
+        <option value="">unit</option>${unitOpts}
+      </select>
+      <button onclick="removePCompRow(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function addProductComponentRow() {
+  _editProductComponents.push({ component_id: '', quantity: '', unit_id: '' });
+  renderProductComponentsList();
+}
+
+function updatePCompRow(i, field, val) {
+  _editProductComponents[i][field] = val;
+}
+
+function removePCompRow(i) {
+  _editProductComponents.splice(i, 1);
+  renderProductComponentsList();
+}
+
+async function saveProductComponents(productId) {
+  // Delete existing
+  await sb.from('product_components').delete().eq('product_id', productId);
+  const rows = _editProductComponents.filter(r => r.component_id && r.quantity);
+  if (!rows.length) return;
+  const items = rows.map(r => ({
+    product_id: productId,
+    component_id: parseInt(r.component_id),
+    quantity: parseFloat(r.quantity),
+    unit_id: r.unit_id ? parseInt(r.unit_id) : null
+  }));
+  await sb.from('product_components').insert(items);
+  await loadProductComponents();
+}
+
+// ─── CUSTOMIZE IN CART ───────────────────────────────────────────
+
+let _customizeCartIdx = null;
+let _customizeRows = [];
+
+function openCustomize(cartIdx) {
+  _customizeCartIdx = cartIdx;
+  const item = cart[cartIdx];
+  const productId = item.product?.id;
+  // Load product components as starting point
+  const baseComps = productComponents.filter(pc => String(pc.product_id) === String(productId));
+  _customizeRows = baseComps.length
+    ? baseComps.map(pc => ({ component_id: pc.component_id, quantity: pc.quantity, unit_id: pc.unit_id }))
+    : [{ component_id: '', quantity: '', unit_id: '' }];
+  // If cart item already has custom composition, use that
+  if (item.customComponents) _customizeRows = JSON.parse(JSON.stringify(item.customComponents));
+  document.getElementById('customize-product-name').textContent = item.product?.name || '';
+  renderCustomizeRows();
+  document.getElementById('customize-modal').classList.add('open');
+}
+
+function renderCustomizeRows() {
+  const el = document.getElementById('customize-rows');
+  if (!el) return;
+  el.innerHTML = _customizeRows.map((row, i) => {
+    const compOpts = components.map(c => `<option value="${c.id}" ${String(row.component_id)===String(c.id)?'selected':''}>${c.name}</option>`).join('');
+    const unitOpts = units.map(u => `<option value="${u.id}" ${String(row.unit_id)===String(u.id)?'selected':''}>${u.symbol}</option>`).join('');
+    return `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <select onchange="updateCustRow(${i},'component_id',this.value)" style="flex:2;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px;outline:none">
+        <option value="">— Component —</option>${compOpts}
+      </select>
+      <input type="number" min="0" step="0.001" value="${row.quantity||''}" onchange="updateCustRow(${i},'quantity',this.value)" placeholder="Qty" style="width:75px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px;outline:none;text-align:center">
+      <select onchange="updateCustRow(${i},'unit_id',this.value)" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px;outline:none">
+        <option value="">unit</option>${unitOpts}
+      </select>
+      <button onclick="removeCustRow(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function updateCustRow(i, field, val) { _customizeRows[i][field] = val; }
+function removeCustRow(i) { _customizeRows.splice(i, 1); renderCustomizeRows(); }
+function addCustRow() { _customizeRows.push({ component_id: '', quantity: '', unit_id: '' }); renderCustomizeRows(); }
+
+function applyCustomize() {
+  if (_customizeCartIdx !== null && cart[_customizeCartIdx]) {
+    cart[_customizeCartIdx].customComponents = JSON.parse(JSON.stringify(_customizeRows.filter(r => r.component_id)));
+  }
+  closeModal('customize-modal');
+  toast('Composition updated');
+}
+
 function renderProductStats(){
   const statsRow = document.getElementById('prod-stats-row');
   if(!statsRow) return;
@@ -3377,6 +3546,8 @@ function openNewProduct(){
   document.getElementById('p-shelf').value='';
   document.getElementById('p-image').value='';
   document.getElementById('p-img-preview').style.display='none';
+  _editProductComponents = [];
+  renderProductComponentsList();
   document.getElementById('product-modal').classList.add('open');
 }
 
@@ -3399,6 +3570,11 @@ function editProduct(id){
   const previewImg=document.getElementById('p-img-preview-img');
   if(p.image_url){previewImg.src=p.image_url;preview.style.display='block';}
   else{preview.style.display='none';}
+  // Load existing components
+  _editProductComponents = productComponents
+    .filter(pc => String(pc.product_id) === String(id))
+    .map(pc => ({ component_id: pc.component_id, quantity: pc.quantity, unit_id: pc.unit_id }));
+  renderProductComponentsList();
   document.getElementById('product-modal').classList.add('open');
 }
 
@@ -3468,6 +3644,8 @@ async function saveProduct(){
   
   btn.disabled=false;btn.textContent='Save Product';
   if(error){toast('Error: '+error.message,true);return;}
+  // Save components
+  if (productId) await saveProductComponents(productId);
   toast(editProductId?'Product updated':'Product added');
   closeModal('product-modal');await loadProducts();renderProducts();
 }
@@ -3567,6 +3745,81 @@ async function deleteLoc(id){
   toast('Deleted');
   await loadLocations();
   renderLocations();
+}
+
+// ─── UNITS & COMPONENTS MANAGEMENT ──────────────────────────────
+
+function renderUnitsGrid() {
+  const el = document.getElementById('units-grid');
+  if (!el) return;
+  el.innerHTML = units.length
+    ? units.map(u => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:600;font-size:13px">${u.name}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${u.symbol}</div>
+        </div>
+        <button class="act-btn del" onclick="deleteUnit(${u.id})">✕</button>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px">No units defined</div>';
+}
+
+function openNewUnit() {
+  const name = prompt('Unit name (e.g. Gram):');
+  if (!name) return;
+  const symbol = prompt('Symbol (e.g. g):');
+  if (!symbol) return;
+  sb.from('units').insert({ name: name.trim(), symbol: symbol.trim() }).then(async () => {
+    await loadUnits();
+    renderUnitsGrid();
+    toast('Unit added');
+  });
+}
+
+async function deleteUnit(id) {
+  if (!confirm('Delete this unit?')) return;
+  await sb.from('units').delete().eq('id', id);
+  await loadUnits();
+  renderUnitsGrid();
+  toast('Unit deleted');
+}
+
+function renderComponentsGrid() {
+  const el = document.getElementById('components-grid');
+  if (!el) return;
+  el.innerHTML = components.length
+    ? components.map(c => {
+        const unit = units.find(u => u.id === c.unit_id);
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:600;font-size:13px">${c.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${unit ? unit.symbol : '—'}${c.description ? ' · ' + c.description : ''}</div>
+          </div>
+          <button class="act-btn del" onclick="deleteComponent(${c.id})">✕</button>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);font-size:13px">No components defined</div>';
+}
+
+function openNewComponent() {
+  const name = prompt('Component name:');
+  if (!name) return;
+  const unitOpts = units.map((u,i) => `${i+1}. ${u.name} (${u.symbol})`).join('\n');
+  const choice = prompt('Select unit number:\n' + unitOpts + '\n0. None');
+  const unitId = choice && parseInt(choice) > 0 ? units[parseInt(choice)-1]?.id : null;
+  sb.from('components').insert({ name: name.trim(), unit_id: unitId || null }).then(async () => {
+    await loadComponents();
+    renderComponentsGrid();
+    toast('Component added');
+  });
+}
+
+async function deleteComponent(id) {
+  if (!confirm('Delete this component?')) return;
+  await sb.from('components').delete().eq('id', id);
+  await loadComponents();
+  renderComponentsGrid();
+  toast('Component deleted');
 }
 
 function renderDirectory(){
