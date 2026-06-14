@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.3</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -320,7 +320,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div id="view-orders" style="display:none">
       <div class="stats" id="stats-row"></div>
       <div class="toolbar">
-        <div class="search-wrap">
+        <div class="search-wrap" style="max-width:220px">
           <span class="s-ico">&#9906;</span>
           <input type="text" id="search-input" placeholder="Search order#, client, city..." oninput="renderTable()">
         </div>
@@ -342,6 +342,18 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="">All Orders</option>
           <option value="Yes">✅ Confirmed</option>
           <option value="No">⏳ Not Confirmed</option>
+        </select>
+        <select class="filter-sel" id="filter-content" onchange="renderTable()">
+          <option value="">All Content</option>
+          <option value="Regular">Regular</option>
+          <option value="Custom">Custom</option>
+          <option value="Mixed">Mixed</option>
+        </select>
+        <select class="filter-sel" id="filter-content" onchange="renderTable()" style="min-width:140px">
+          <option value="">All Content</option>
+          <option value="Regular">Regular</option>
+          <option value="Custom">Custom</option>
+          <option value="Mixed">Mixed</option>
         </select>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
@@ -428,7 +440,7 @@ select option{background:#1a1d27;color:#f0f2ff}
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
               <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Emirate</th><th>City</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
-              <th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
+              <th>Content</th><th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
             </tr></thead>
             <tbody id="order-tbody"></tbody>
           </table>
@@ -1571,17 +1583,48 @@ function delBadge(v){
 }
 function confBadge(v){return v==='Yes'?`<span class="badge badge-yes">Yes</span>`:`<span class="badge badge-no">No</span>`;}
 
+function getOrderContentType(orderId) {
+  const items = orderItems[orderId] || [];
+  if (!items.length) return 'Regular';
+  const allProds = window._allProducts || products;
+  const types = items.map(i => {
+    if (!i.product_id) return 'Custom'; // custom item (no product_id)
+    const p = allProds.find(x => String(x.id) === String(i.product_id));
+    return (p?.product_type || 'Regular');
+  });
+  const hasRegular = types.includes('Regular');
+  const hasCustom  = types.includes('Custom');
+  if (hasRegular && hasCustom) return 'Mixed';
+  if (hasCustom) return 'Custom';
+  return 'Regular';
+}
+
+function contentBadge(orderId) {
+  const ct = getOrderContentType(orderId);
+  const styles = {
+    'Regular': 'background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3)',
+    'Custom':  'background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3)',
+    'Mixed':   'background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3)',
+  };
+  return `<span class="badge" style="${styles[ct]||''}">${ct}</span>`;
+}
+
 function getFiltered(){
   const q=(document.getElementById('search-input').value||'').toLowerCase();
   const em=document.getElementById('filter-emirate').value;
   const dr=document.getElementById('filter-driver').value;
   const conf=document.getElementById('filter-confirmed')?.value||'';
+  const contentFilter=document.getElementById('filter-content')?.value||'';
   const sortVal=document.getElementById('sort-select')?.value||'priority';
   const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
     if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
     if(conf&&(o.confirmed||'No')!==conf)return false;
+    if(contentFilter){
+      const ct=getOrderContentType(o.id);
+      if(ct!==contentFilter)return false;
+    }
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     // dispatch mode: show all orders, dimming handled in row render
     return true;
@@ -1668,6 +1711,7 @@ function renderTable(){
         <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${o.location_url}" target="_blank" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
+        <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
         <td>${confBadge(o.confirmed)}</td>
