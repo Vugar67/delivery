@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.5</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1579,10 +1579,31 @@ function confBadge(v){return v==='Yes'?`<span class="badge badge-yes">Yes</span>
 
 function getOrderContentType(orderId) {
   const items = orderItems[orderId] || [];
-  if (!items.length) return 'Regular';
+  if (!items.length) {
+    // Check cart if order is being created (orderId matches current cart)
+    if (cart && cart.length) {
+      const types = cart.map(i => {
+        if (i.is_custom) return 'Custom';
+        if (i.customComponents && i.customComponents.length) return 'Custom';
+        const allProds = window._allProducts || products;
+        const p = allProds.find(x => String(x.id) === String(i.product?.id));
+        return p?.product_type || 'Regular';
+      });
+      const hasR = types.includes('Regular');
+      const hasC = types.includes('Custom');
+      if (hasR && hasC) return 'Mixed';
+      if (hasC) return 'Custom';
+      return 'Regular';
+    }
+    return 'Regular';
+  }
   const allProds = window._allProducts || products;
   const types = items.map(i => {
     if (!i.product_id) return 'Custom'; // custom item (no product_id)
+    // Use saved item_type if available
+    if (i.item_type) return i.item_type;
+    // Fallback: check custom_components
+    if (i.custom_components && i.custom_components.length) return 'Custom';
     const p = allProds.find(x => String(x.id) === String(i.product_id));
     return (p?.product_type || 'Regular');
   });
@@ -3123,9 +3144,26 @@ async function saveOrder(){
   if(cart.length){
     const _sId = window._selectedSellerId || '';
     const items=cart.map(item=> {
-      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity};
+      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
       const alias = _sId ? getAlias(_sId, item.product.id) : null;
-      return {order_id:orderId, product_id:item.product.id, product_name:alias||item.product.name, unit:item.product.unit, price:item.customPrice!==undefined?item.customPrice:item.product.price, quantity:item.qty};
+      const hasCustomComp = item.customComponents && item.customComponents.length > 0;
+      // Check if custom components differ from standard
+      const stdComps = productComponents.filter(pc => String(pc.product_id) === String(item.product.id));
+      const isDifferent = hasCustomComp && (
+        item.customComponents.length !== stdComps.length ||
+        item.customComponents.some((c,i) => !stdComps[i] || String(c.component_id) !== String(stdComps[i].component_id) || String(c.quantity) !== String(stdComps[i].quantity))
+      );
+      const itemType = isDifferent ? 'Custom' : (item.product.product_type || 'Regular');
+      return {
+        order_id: orderId,
+        product_id: item.product.id,
+        product_name: alias || item.product.name,
+        unit: item.product.unit,
+        price: item.customPrice !== undefined ? item.customPrice : item.product.price,
+        quantity: item.qty,
+        item_type: itemType,
+        custom_components: isDifferent ? item.customComponents : null,
+      };
     });
     await sb.from('order_items').insert(items);
     const subtotal=cart.reduce((s,item)=>s+(item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined?parseFloat(item.customPrice):parseFloat(item.product.price))*item.qty),0);
