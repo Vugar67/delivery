@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.7</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -3479,8 +3479,8 @@ function renderStorage() {
       const p = products.find(x => x.id === i.product_id);
       return `<tr>
         <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? p.name : '—'}</td>
-        <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${p?.category||'—'}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p ? p.name : ''}">${p ? p.name : '—'}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${p?.category||'—'}</td>
         <td style="padding:6px 8px;text-align:center">
           <input type="number" min="0" step="0.01" value="${i.quantity}"
             onchange="updateInventoryQty(${i.id},this.value)"
