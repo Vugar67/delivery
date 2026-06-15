@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.6</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -3475,30 +3475,53 @@ function renderStorage() {
   const renderCard = (s) => {
     const inv = storageInventory.filter(i => i.storage_id === s.id);
     const driver = s.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
-    const itemCount = inv.reduce((sum, i) => sum + parseFloat(i.quantity || 0), 0);
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
+    const invRows = inv.map((i, idx) => {
+      const p = products.find(x => x.id === i.product_id);
+      return `<tr>
+        <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? p.name : '—'}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${p?.category||'—'}</td>
+        <td style="padding:6px 8px;text-align:center">
+          <input type="number" min="0" step="0.01" value="${i.quantity}"
+            onchange="updateInventoryQty(${i.id},this.value)"
+            style="width:65px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;text-align:center">
+        </td>
+        <td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${p?.unit||'—'}</td>
+        <td style="padding:6px 8px"><button class="act-btn del" style="padding:2px 6px;font-size:11px" onclick="deleteInventoryItem(${i.id},'${s.id}')">✕</button></td>
+      </tr>`;
+    }).join('');
+    const prodOpts = products.filter(p=>p.active!==false).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
         <div>
           <div style="font-weight:700;font-size:14px">${s.name}</div>
           ${driver ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">🚗 ${driver.name}</div>` : ''}
           ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${s.notes}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px">
-          <button class="act-btn" onclick="openInventory(${s.id})">📦 Inventory</button>
           <button class="act-btn" onclick="editStorage(${s.id})">Edit</button>
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${inv.length ? `<div style="border-top:1px solid var(--border);padding-top:8px">
-        ${inv.slice(0,3).map(i => {
-          const p = products.find(x => x.id === i.product_id);
-          return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
-            <span style="color:var(--text)">${p ? p.name : '—'}</span>
-            <span style="font-family:var(--mono);color:var(--accent)">${i.quantity} ${p?.unit||''}</span>
-          </div>`;
-        }).join('')}
-        ${inv.length > 3 ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">+${inv.length-3} more items</div>` : ''}
-      </div>` : `<div style="font-size:12px;color:var(--muted)">No inventory</div>`}
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
+          <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
+          <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">CATEGORY</th>
+          <th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">QTY</th>
+          <th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">UNIT</th>
+          <th style="width:32px"></th>
+        </tr></thead>
+        <tbody>${invRows || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">No items — add below</td></tr>'}</tbody>
+      </table>
+      <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;background:var(--surface2)">
+        <select id="inv-add-prod-${s.id}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
+          <option value="">+ Select product...</option>${prodOpts}
+        </select>
+        <input id="inv-add-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Qty"
+          style="width:70px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')">Add</button>
+      </div>
     </div>`;
   };
   const depotsEl = document.getElementById('storage-depots');
@@ -3627,11 +3650,25 @@ async function updateInventoryQty(invId, val) {
   await loadStorage();
 }
 
-async function deleteInventoryItem(invId) {
+async function deleteInventoryItem(invId, storageId) {
   await sb.from('storage_inventory').delete().eq('id', invId);
   await loadStorage();
-  renderInventoryList();
+  renderStorage();
   toast('Item removed');
+}
+
+async function addInventoryInline(storageId) {
+  const sid = parseInt(storageId);
+  const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
+  const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
+  if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter quantity', true); return; }
+  await sb.from('storage_inventory').upsert(
+    { storage_id: sid, product_id: parseInt(product_id), quantity: qty, updated_at: new Date().toISOString() },
+    { onConflict: 'storage_id,product_id' }
+  );
+  await loadStorage();
+  renderStorage();
+  toast('Inventory updated');
 }
 
 // ── STOCK DEDUCTION ─────────────────────────────────────────────
