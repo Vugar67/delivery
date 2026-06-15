@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.8</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -571,10 +571,10 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <!-- Depots -->
       <div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">🏢 Depots</div>
-      <div id="storage-depots" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px"></div>
+      <div id="storage-depots" style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px"></div>
       <!-- Rovers -->
       <div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">🚗 Rovers</div>
-      <div id="storage-rovers" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px"></div>
+      <div id="storage-rovers" style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px"></div>
     </div>
 
     <div id="view-brands" style="display:none">
@@ -3479,7 +3479,7 @@ function renderStorage() {
       const p = products.find(x => x.id === i.product_id);
       return `<tr>
         <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:6px 8px;font-size:12px;font-weight:600;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p ? p.name : ''}">${p ? p.name : '—'}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? p.name : '—'}</td>
         <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${p?.category||'—'}</td>
         <td style="padding:6px 8px;text-align:center">
           <input type="number" min="0" step="0.01" value="${i.quantity}"
