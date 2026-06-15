@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.6</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -448,17 +448,21 @@ select option{background:#1a1d27;color:#f0f2ff}
 
     <div id="view-products" style="display:none">
       <div class="section-head">
-        <div class="section-title">Products Catalog</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" id="prod-tab-list" onclick="switchProdTab('list')" style="font-size:12px;padding:6px 14px;background:var(--accent);color:#000">List</button>
           <button class="btn btn-ghost" id="prod-tab-table" onclick="switchProdTab('table')" style="font-size:12px;padding:6px 14px">Table</button>
           <button class="btn btn-ghost" id="prod-tab-shelf" onclick="switchProdTab('shelf')" style="font-size:12px;padding:6px 14px">Shelf Map</button>
-          <input type="text" id="prod-search" placeholder="Search products..." oninput="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
+          <input type="text" id="prod-search" placeholder="Search products..." oninput="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:180px">
           <select id="prod-cat-filter" onchange="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             <option value="">All Categories</option>
           </select>
-          <button class="btn btn-primary" onclick="openNewProduct()">+ Add Product</button>
+          <select id="prod-type-filter" onchange="renderProducts()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Types</option>
+            <option value="Regular">Regular</option>
+            <option value="Custom">Custom</option>
+          </select>
         </div>
+        <button class="btn btn-primary" onclick="openNewProduct()">+ Add Product</button>
       </div>
       <div id="prod-stats-row" class="stats" style="display:flex;margin-bottom:16px"></div>
       <div id="prod-view-list">
@@ -3551,6 +3555,7 @@ function renderProductStats(){
 function renderProducts(){
   const q=(document.getElementById('prod-search').value||'').toLowerCase();
   const cat=document.getElementById('prod-cat-filter').value;
+  const typeF=document.getElementById('prod-type-filter')?.value||'';
   // update cat filter
   const cats=[...new Set(products.map(p=>p.category).filter(Boolean))];
   const catFilter=document.getElementById('prod-cat-filter');
@@ -3558,6 +3563,7 @@ function renderProducts(){
   catFilter.innerHTML='<option value="">All Categories</option>'+cats.map(c=>`<option value="${c}" ${curCat===c?'selected':''}>${c}</option>`).join('');
   const filtered=products.filter(p=>{
     if(cat&&p.category!==cat)return false;
+    if(typeF&&(p.product_type||'Regular')!==typeF)return false;
     if(q&&!p.name.toLowerCase().includes(q))return false;
     return true;
   });
