@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.4</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -654,6 +654,29 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('customize-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="applyCustomize()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- STOCK DEDUCTION MODAL -->
+<div class="overlay" id="stock-deduct-modal" style="z-index:1200">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">📦 Stock Deduction</div>
+        <div id="stock-deduct-subtitle" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:var(--muted);font-family:var(--mono)">DEDUCT FROM</label>
+      <select id="stock-deduct-storage" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none">
+        <option value="">— Select Storage Location —</option>
+      </select>
+    </div>
+    <div id="stock-deduct-items" style="margin-bottom:16px"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" onclick="skipStockDeduction()">Skip</button>
+      <button class="btn btn-primary" onclick="applyStockDeduction()">Deduct Stock</button>
     </div>
   </div>
 </div>
@@ -2503,7 +2526,15 @@ function renderShopProducts() {
       ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
       <div class="shop-product-name">${p.name}</div>
-    ${(() => { const stock = getProductStock(p.id); if (!stock) return ''; return '<div style="font-size:9px;color:var(--green);font-family:var(--mono);margin-top:2px">' + stock.map(s => (s.driver||s.name) + ': ' + s.qty).join(' · ') + '</div>'; })()}
+    ${(() => {
+      const stock = getProductStock(p.id);
+      if (!stock) return '';
+      const avColor = stock.available > 0 ? 'var(--green)' : 'var(--red)';
+      return '<div style="font-size:9px;font-family:var(--mono);margin-top:3px;display:flex;gap:6px">' +
+        '<span style="color:var(--muted)">Committed: ' + stock.committed + '</span>' +
+        '<span style="color:' + avColor + '">Available: ' + stock.available + '</span>' +
+        '</div>';
+    })()}
       <div class="shop-product-cat">${p.category||''}</div>
       <div>
         <span class="shop-product-price">${parseFloat(p.price).toFixed(2)} AED</span>
@@ -3255,6 +3286,19 @@ async function saveOrder(){
     await sb.from('orders').update({subtotal:parseFloat(subtotal.toFixed(2)),delivery_charge:deliveryCharge,total:parseFloat(total.toFixed(2))}).eq('id',orderId);
   }
   btn.disabled=false;btn.textContent='Save Order';
+  // Check if status changed to En Route - trigger stock deduction
+  if (payload.delivery_status === 'En Route') {
+    const prevOrder = orders.find(x => x.id === orderId);
+    const wasAlreadyEnRoute = prevOrder?.delivery_status === 'En Route';
+    if (!wasAlreadyEnRoute) {
+      closeModal('order-modal');
+      await loadOrders();
+      renderTable();
+      toast(editId?'Order updated':'Order created');
+      await openStockDeduction(orderId);
+      return;
+    }
+  }
   toast(editId?'Order updated':'Order created');
   closeModal('order-modal');await loadOrders();renderTable();
 }
@@ -3572,16 +3616,118 @@ async function deleteInventoryItem(invId) {
   toast('Item removed');
 }
 
+// ── STOCK DEDUCTION ─────────────────────────────────────────────
+
+let _deductOrderId = null;
+const LAST_STORAGE_KEY = 'delivr_last_storage_id';
+
+async function openStockDeduction(orderId) {
+  _deductOrderId = orderId;
+  const order = orders.find(o => o.id === orderId);
+  if (!order) return;
+
+  // Populate storage select
+  const sel = document.getElementById('stock-deduct-storage');
+  const lastStorageId = parseInt(localStorage.getItem(LAST_STORAGE_KEY) || '0');
+  
+  sel.innerHTML = '<option value="">— Select Storage Location —</option>' +
+    storageLocations.filter(s => s.active !== false).map(s => {
+      const drv = s.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
+      const label = (s.type === 'Depot' ? '🏢 ' : '🚗 ') + s.name + (drv ? ' (' + drv.name + ')' : '');
+      return `<option value="${s.id}" ${s.id === lastStorageId ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+
+  // Subtitle
+  document.getElementById('stock-deduct-subtitle').textContent =
+    'Order ' + order.order_num + (driver ? ' · Driver: ' + driver : '');
+
+  // Load order items
+  const { data: items } = await sb.from('order_items').select('*').eq('order_id', orderId);
+  const el = document.getElementById('stock-deduct-items');
+  if (!items || !items.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No items</div>'; }
+  else {
+    el.innerHTML = '<div style="border-top:1px solid var(--border);padding-top:12px">' +
+      items.filter(i => i.product_id).map(i => {
+        const p = products.find(x => x.id === i.product_id);
+        return `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)">
+          <span>${p ? p.name : i.product_name}</span>
+          <span style="font-family:var(--mono);color:var(--accent)">× ${i.quantity} ${p?.unit||''}</span>
+        </div>`;
+      }).join('') + '</div>';
+  }
+
+  document.getElementById('stock-deduct-modal').classList.add('open');
+}
+
+async function applyStockDeduction() {
+  const storageId = parseInt(document.getElementById('stock-deduct-storage').value);
+  if (!storageId) { toast('Please select a storage location', true); return; }
+
+  // Save as default
+  localStorage.setItem(LAST_STORAGE_KEY, storageId);
+
+  // Load order items
+  const { data: items } = await sb.from('order_items').select('*').eq('order_id', _deductOrderId);
+  if (!items) { closeModal('stock-deduct-modal'); return; }
+
+  // Deduct each product
+  let errors = [];
+  for (const item of items.filter(i => i.product_id && i.quantity > 0)) {
+    const inv = storageInventory.find(i => i.storage_id === storageId && String(i.product_id) === String(item.product_id));
+    if (!inv) {
+      errors.push((products.find(p => p.id === item.product_id)?.name || item.product_name) + ' not in stock');
+      continue;
+    }
+    const newQty = Math.max(0, parseFloat(inv.quantity) - parseFloat(item.quantity));
+    await sb.from('storage_inventory').update({ quantity: newQty, updated_at: new Date().toISOString() }).eq('id', inv.id);
+  }
+
+  await loadStorage();
+  closeModal('stock-deduct-modal');
+
+  if (errors.length) {
+    toast('Deducted with warnings: ' + errors.join(', '), true);
+  } else {
+    toast('Stock deducted successfully');
+  }
+}
+
+function skipStockDeduction() {
+  closeModal('stock-deduct-modal');
+  toast('Stock deduction skipped');
+}
+
 // ── AVAILABILITY HINT IN CART ────────────────────────────────────
+
+function getCommittedQty(productId) {
+  // Count qty in orders with status before En Route (Roaming, Ready for Pick-up, Picking, etc.)
+  const preShipStatuses = ['Roaming', 'Ready for Pick-up', 'Stand By', 'Processing'];
+  let committed = 0;
+  orders.forEach(o => {
+    if (!preShipStatuses.includes(o.delivery_status)) return;
+    const items = orderItems[o.id] || [];
+    items.forEach(i => {
+      if (String(i.product_id) === String(productId)) committed += parseFloat(i.quantity || 0);
+    });
+  });
+  return committed;
+}
 
 function getProductStock(productId) {
   const inv = storageInventory.filter(i => String(i.product_id) === String(productId));
   if (!inv.length) return null;
-  return inv.map(i => {
-    const s = storageLocations.find(x => x.id === i.storage_id);
-    const driver = s?.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
-    return { name: s ? s.name : '?', type: s?.type || '?', qty: i.quantity, driver: driver?.name };
-  });
+  const committed = getCommittedQty(productId);
+  const totalQty = inv.reduce((s, i) => s + parseFloat(i.quantity || 0), 0);
+  return {
+    locations: inv.map(i => {
+      const s = storageLocations.find(x => x.id === i.storage_id);
+      const drv = s?.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
+      return { name: s ? s.name : '?', type: s?.type || '?', qty: i.quantity, driver: drv?.name };
+    }),
+    total: totalQty,
+    committed,
+    available: Math.max(0, totalQty - committed),
+  };
 }
 
 // ─── BRAND PROFILES ──────────────────────────────────────────────
