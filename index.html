@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.1</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -3155,7 +3155,7 @@ async function saveOrder(){
         item.customComponents.length !== stdComps.length ||
         item.customComponents.some((c,i) => !stdComps[i] || String(c.component_id) !== String(stdComps[i].component_id) || String(c.quantity) !== String(stdComps[i].quantity))
       );
-      const itemType = isDifferent ? 'Custom' : (item.product.product_type || 'Regular');
+      const itemType = (item.product.product_type === 'Custom' || isDifferent) ? 'Custom' : 'Regular';
       return {
         order_id: orderId,
         product_id: item.product.id,
