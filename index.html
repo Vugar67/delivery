@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.5</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -720,7 +720,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 
 <!-- STORAGE INVENTORY MODAL -->
 <div class="overlay" id="storage-inv-modal">
-  <div class="modal" style="max-width:520px">
+  <div class="modal" style="max-width:640px">
     <div class="modal-head">
       <div>
         <div class="modal-title" id="storage-inv-title">Inventory</div>
@@ -728,14 +728,26 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <button class="close-btn" onclick="closeModal('storage-inv-modal')">&#10005;</button>
     </div>
-    <div style="margin-bottom:12px;display:flex;gap:8px">
-      <select id="inv-product-sel" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none">
-        <option value="">— Select Product —</option>
+    <div class="table-wrap" style="max-height:60vh;overflow-y:auto;margin-bottom:12px">
+      <table class="tbl" style="min-width:unset">
+        <thead><tr>
+          <th>#</th>
+          <th>Product</th>
+          <th>Category</th>
+          <th style="text-align:center">Quantity</th>
+          <th style="text-align:center">Unit</th>
+          <th style="width:40px"></th>
+        </tr></thead>
+        <tbody id="storage-inv-list"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--border);padding-top:12px">
+      <select id="inv-product-sel" style="flex:2;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none">
+        <option value="">— Select Product to Add —</option>
       </select>
       <input id="inv-qty" type="number" min="0" step="0.01" placeholder="Qty" style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none;text-align:center">
-      <button class="btn btn-primary" onclick="saveInventoryItem()">Add</button>
+      <button class="btn btn-primary" onclick="saveInventoryItem()">+ Add</button>
     </div>
-    <div id="storage-inv-list"></div>
   </div>
 </div>
 
@@ -3575,18 +3587,24 @@ function openInventory(storageId) {
 function renderInventoryList() {
   const el = document.getElementById('storage-inv-list');
   const inv = storageInventory.filter(i => i.storage_id === _invStorageId);
-  if (!inv.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No items in inventory</div>'; return; }
-  el.innerHTML = inv.map(i => {
+  if (!inv.length) {
+    el.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">No items in inventory</td></tr>';
+    return;
+  }
+  el.innerHTML = inv.map((i, idx) => {
     const p = products.find(x => x.id === i.product_id);
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:13px">${p ? p.name : '—'}</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" min="0" step="0.01" value="${i.quantity}" onchange="updateInventoryQty(${i.id},this.value)"
+    return `<tr>
+      <td style="color:var(--muted);font-family:var(--mono)">${idx+1}</td>
+      <td style="font-weight:600">${p ? p.name : '—'}</td>
+      <td style="color:var(--muted)">${p?.category||'—'}</td>
+      <td style="text-align:center">
+        <input type="number" min="0" step="0.01" value="${i.quantity}"
+          onchange="updateInventoryQty(${i.id},this.value)"
           style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;text-align:center">
-        <span style="font-size:12px;color:var(--muted)">${p?.unit||''}</span>
-        <button class="act-btn del" onclick="deleteInventoryItem(${i.id})">✕</button>
-      </div>
-    </div>`;
+      </td>
+      <td style="text-align:center;color:var(--muted);font-family:var(--mono)">${p?.unit||'—'}</td>
+      <td><button class="act-btn del" onclick="deleteInventoryItem(${i.id})">✕</button></td>
+    </tr>`;
   }).join('');
 }
 
