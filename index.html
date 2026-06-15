@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v4.8</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1619,7 +1619,8 @@ function getOrderContentType(orderId) {
 }
 
 function contentBadge(orderId) {
-  const ct = getOrderContentType(orderId);
+  const o = orders.find(x => x.id === orderId);
+  const ct = o?.content_type || 'Regular';
   const styles = {
     'Regular': 'background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3)',
     'Custom':  'background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3)',
@@ -1640,10 +1641,7 @@ function getFiltered(){
     if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
     if(conf&&(o.confirmed||'No')!==conf)return false;
-    if(contentFilter){
-      const ct=getOrderContentType(o.id);
-      if(ct!==contentFilter)return false;
-    }
+    if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     // dispatch mode: show all orders, dimming handled in row render
     return true;
@@ -3170,6 +3168,13 @@ async function saveOrder(){
       };
     });
     await sb.from('order_items').insert(items);
+  // Update content_type on order
+  const hasCustom = items.some(i => i.item_type === 'Custom');
+  const hasRegular = items.some(i => i.item_type === 'Regular');
+  const contentType = hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular';
+  await sb.from('orders').update({ content_type: contentType }).eq('id', orderId);
+  const localOrder = orders.find(x => x.id === orderId);
+  if (localOrder) localOrder.content_type = contentType;
     const subtotal=cart.reduce((s,item)=>s+(item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined?parseFloat(item.customPrice):parseFloat(item.product.price))*item.qty),0);
     const deliveryCharge=parseFloat(document.getElementById('f-delivery-charge').value)||0;
     const total=subtotal+deliveryCharge;
