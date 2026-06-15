@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.1</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.2</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -564,6 +564,19 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="users-wrap" id="users-wrap"></div>
     </div>
 
+    <div id="view-storage" style="display:none">
+      <div class="section-head" style="margin-bottom:16px">
+        <div class="section-title">🏭 Storage</div>
+        <button class="btn btn-primary" onclick="openNewStorage()">+ Add Location</button>
+      </div>
+      <!-- Depots -->
+      <div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">🏢 Depots</div>
+      <div id="storage-depots" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px"></div>
+      <!-- Rovers -->
+      <div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">🚗 Rovers</div>
+      <div id="storage-rovers" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:24px"></div>
+    </div>
+
     <div id="view-brands" style="display:none">
       <div class="section-head" style="margin-bottom:16px">
         <div class="section-title">🏷️ Brand Profiles</div>
@@ -642,6 +655,64 @@ select option{background:#1a1d27;color:#f0f2ff}
       <button class="btn btn-ghost" onclick="closeModal('customize-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="applyCustomize()">Apply</button>
     </div>
+  </div>
+</div>
+
+<!-- STORAGE MODAL -->
+<div class="overlay" id="storage-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head">
+      <div class="modal-title" id="storage-modal-title">Add Storage Location</div>
+      <button class="close-btn" onclick="closeModal('storage-modal')">&#10005;</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label>Name</label>
+        <input id="st-name" placeholder="e.g. Main Depot, Saleem's Rover">
+      </div>
+      <div class="form-group form-full">
+        <label>Type</label>
+        <select id="st-type" onchange="onStorageTypeChange()">
+          <option value="Depot">🏢 Depot</option>
+          <option value="Rover">🚗 Rover</option>
+        </select>
+      </div>
+      <div class="form-group form-full" id="st-driver-wrap" style="display:none">
+        <label>Driver</label>
+        <select id="st-driver">
+          <option value="">— Select Driver —</option>
+        </select>
+      </div>
+      <div class="form-group form-full">
+        <label>Notes</label>
+        <input id="st-notes" placeholder="Optional notes">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal('storage-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStorage()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- STORAGE INVENTORY MODAL -->
+<div class="overlay" id="storage-inv-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="storage-inv-title">Inventory</div>
+        <div id="storage-inv-subtitle" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal('storage-inv-modal')">&#10005;</button>
+    </div>
+    <div style="margin-bottom:12px;display:flex;gap:8px">
+      <select id="inv-product-sel" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none">
+        <option value="">— Select Product —</option>
+      </select>
+      <input id="inv-qty" type="number" min="0" step="0.01" placeholder="Qty" style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none;text-align:center">
+      <button class="btn btn-primary" onclick="saveInventoryItem()">Add</button>
+    </div>
+    <div id="storage-inv-list"></div>
   </div>
 </div>
 
@@ -1420,10 +1491,11 @@ async function initApp(){
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('clients')">Clients</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('brands')">Brand Profiles</button>`;
+    nav.innerHTML+=`<button class="tab-btn" onclick="showView('storage')">Storage</button>`;
     nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage()]);
   renderFilters();
   if(!isDispatcher) renderTable();
   showView('orders');subscribeRealtime();
@@ -1485,7 +1557,7 @@ async function loadProducts(){
 }
 
 function showView(v){
-  ['orders','products','directory','users','clients','warehouse','brands'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  ['orders','products','directory','users','clients','warehouse','brands','storage'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();}
   if(v==='users')renderUsers();
@@ -1501,6 +1573,7 @@ function showView(v){
     renderClients();
   }
   if(v==='brands') renderBrandProfiles();
+  if(v==='storage') renderStorage();
 }
 
 function renderFilters(){
@@ -2430,6 +2503,7 @@ function renderShopProducts() {
       ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
       <div class="shop-product-name">${p.name}</div>
+    ${(() => { const stock = getProductStock(p.id); if (!stock) return ''; return '<div style="font-size:9px;color:var(--green);font-family:var(--mono);margin-top:2px">' + stock.map(s => (s.driver||s.name) + ': ' + s.qty).join(' · ') + '</div>'; })()}
       <div class="shop-product-cat">${p.category||''}</div>
       <div>
         <span class="shop-product-price">${parseFloat(p.price).toFixed(2)} AED</span>
@@ -3325,6 +3399,189 @@ async function loadComponents() {
 async function loadProductComponents() {
   const { data } = await sb.from('product_components').select('*');
   productComponents = data || [];
+}
+
+// ─── STORAGE ─────────────────────────────────────────────────────
+
+let storageLocations = [];
+let storageInventory = [];
+
+async function loadStorage() {
+  const { data: locs } = await sb.from('storage_locations').select('*').order('name');
+  storageLocations = locs || [];
+  const { data: inv } = await sb.from('storage_inventory').select('*');
+  storageInventory = inv || [];
+}
+
+function renderStorage() {
+  const depots = storageLocations.filter(s => s.type === 'Depot' && s.active !== false);
+  const rovers = storageLocations.filter(s => s.type === 'Rover' && s.active !== false);
+  const renderCard = (s) => {
+    const inv = storageInventory.filter(i => i.storage_id === s.id);
+    const driver = s.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
+    const itemCount = inv.reduce((sum, i) => sum + parseFloat(i.quantity || 0), 0);
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:14px">${s.name}</div>
+          ${driver ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">🚗 ${driver.name}</div>` : ''}
+          ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${s.notes}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="act-btn" onclick="openInventory(${s.id})">📦 Inventory</button>
+          <button class="act-btn" onclick="editStorage(${s.id})">Edit</button>
+          <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
+        </div>
+      </div>
+      ${inv.length ? `<div style="border-top:1px solid var(--border);padding-top:8px">
+        ${inv.slice(0,3).map(i => {
+          const p = products.find(x => x.id === i.product_id);
+          return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+            <span style="color:var(--text)">${p ? p.name : '—'}</span>
+            <span style="font-family:var(--mono);color:var(--accent)">${i.quantity} ${p?.unit||''}</span>
+          </div>`;
+        }).join('')}
+        ${inv.length > 3 ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">+${inv.length-3} more items</div>` : ''}
+      </div>` : `<div style="font-size:12px;color:var(--muted)">No inventory</div>`}
+    </div>`;
+  };
+  const depotsEl = document.getElementById('storage-depots');
+  const roversEl = document.getElementById('storage-rovers');
+  depotsEl.innerHTML = depots.length ? depots.map(renderCard).join('') : '<div style="color:var(--muted);font-size:13px">No depots defined</div>';
+  roversEl.innerHTML = rovers.length ? rovers.map(renderCard).join('') : '<div style="color:var(--muted);font-size:13px">No rovers defined</div>';
+}
+
+let _editStorageId = null;
+
+function openNewStorage() {
+  _editStorageId = null;
+  document.getElementById('storage-modal-title').textContent = 'Add Storage Location';
+  document.getElementById('st-name').value = '';
+  document.getElementById('st-type').value = 'Depot';
+  document.getElementById('st-notes').value = '';
+  document.getElementById('st-driver-wrap').style.display = 'none';
+  const dsel = document.getElementById('st-driver');
+  dsel.innerHTML = '<option value="">— Select Driver —</option>' + drivers.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  document.getElementById('storage-modal').classList.add('open');
+}
+
+function editStorage(id) {
+  const s = storageLocations.find(x => x.id === id);
+  if (!s) return;
+  _editStorageId = id;
+  document.getElementById('storage-modal-title').textContent = 'Edit Storage Location';
+  document.getElementById('st-name').value = s.name;
+  document.getElementById('st-type').value = s.type;
+  document.getElementById('st-notes').value = s.notes || '';
+  const dsel = document.getElementById('st-driver');
+  dsel.innerHTML = '<option value="">— Select Driver —</option>' + drivers.map(d => `<option value="${d.id}" ${d.id===s.driver_id?'selected':''}>${d.name}</option>`).join('');
+  document.getElementById('st-driver-wrap').style.display = s.type === 'Rover' ? '' : 'none';
+  document.getElementById('storage-modal').classList.add('open');
+}
+
+function onStorageTypeChange() {
+  const type = document.getElementById('st-type').value;
+  document.getElementById('st-driver-wrap').style.display = type === 'Rover' ? '' : 'none';
+}
+
+async function saveStorage() {
+  const name = document.getElementById('st-name').value.trim();
+  if (!name) { toast('Please enter a name', true); return; }
+  const type = document.getElementById('st-type').value;
+  const driver_id = document.getElementById('st-driver').value || null;
+  const notes = document.getElementById('st-notes').value.trim() || null;
+  const payload = { name, type, driver_id: driver_id ? parseInt(driver_id) : null, notes };
+  if (_editStorageId) {
+    await sb.from('storage_locations').update(payload).eq('id', _editStorageId);
+  } else {
+    await sb.from('storage_locations').insert(payload);
+  }
+  await loadStorage();
+  closeModal('storage-modal');
+  renderStorage();
+  toast(_editStorageId ? 'Updated' : 'Storage location added');
+}
+
+async function deleteStorage(id) {
+  if (!confirm('Delete this storage location?')) return;
+  await sb.from('storage_locations').delete().eq('id', id);
+  await loadStorage();
+  renderStorage();
+  toast('Deleted');
+}
+
+// ── INVENTORY ─────────────────────────────────────────────────────
+
+let _invStorageId = null;
+
+function openInventory(storageId) {
+  _invStorageId = storageId;
+  const s = storageLocations.find(x => x.id === storageId);
+  document.getElementById('storage-inv-title').textContent = s ? s.name : 'Inventory';
+  document.getElementById('storage-inv-subtitle').textContent = s ? s.type : '';
+  document.getElementById('inv-product-sel').innerHTML =
+    '<option value="">— Select Product —</option>' +
+    products.filter(p => p.active !== false).sort((a,b) => a.name.localeCompare(b.name))
+      .map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('inv-qty').value = '';
+  renderInventoryList();
+  document.getElementById('storage-inv-modal').classList.add('open');
+}
+
+function renderInventoryList() {
+  const el = document.getElementById('storage-inv-list');
+  const inv = storageInventory.filter(i => i.storage_id === _invStorageId);
+  if (!inv.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No items in inventory</div>'; return; }
+  el.innerHTML = inv.map(i => {
+    const p = products.find(x => x.id === i.product_id);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px">${p ? p.name : '—'}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" min="0" step="0.01" value="${i.quantity}" onchange="updateInventoryQty(${i.id},this.value)"
+          style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;text-align:center">
+        <span style="font-size:12px;color:var(--muted)">${p?.unit||''}</span>
+        <button class="act-btn del" onclick="deleteInventoryItem(${i.id})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveInventoryItem() {
+  const product_id = document.getElementById('inv-product-sel').value;
+  const quantity = parseFloat(document.getElementById('inv-qty').value);
+  if (!product_id || isNaN(quantity)) { toast('Select product and enter quantity', true); return; }
+  await sb.from('storage_inventory').upsert(
+    { storage_id: _invStorageId, product_id: parseInt(product_id), quantity, updated_at: new Date().toISOString() },
+    { onConflict: 'storage_id,product_id' }
+  );
+  await loadStorage();
+  renderInventoryList();
+  document.getElementById('inv-qty').value = '';
+  toast('Inventory updated');
+}
+
+async function updateInventoryQty(invId, val) {
+  await sb.from('storage_inventory').update({ quantity: parseFloat(val), updated_at: new Date().toISOString() }).eq('id', invId);
+  await loadStorage();
+}
+
+async function deleteInventoryItem(invId) {
+  await sb.from('storage_inventory').delete().eq('id', invId);
+  await loadStorage();
+  renderInventoryList();
+  toast('Item removed');
+}
+
+// ── AVAILABILITY HINT IN CART ────────────────────────────────────
+
+function getProductStock(productId) {
+  const inv = storageInventory.filter(i => String(i.product_id) === String(productId));
+  if (!inv.length) return null;
+  return inv.map(i => {
+    const s = storageLocations.find(x => x.id === i.storage_id);
+    const driver = s?.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
+    return { name: s ? s.name : '?', type: s?.type || '?', qty: i.quantity, driver: driver?.name };
+  });
 }
 
 // ─── BRAND PROFILES ──────────────────────────────────────────────
