@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.9</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -2538,15 +2538,7 @@ function renderShopProducts() {
       ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
       <div class="shop-product-name">${p.name}</div>
-    ${(() => {
-      const stock = getProductStock(p.id);
-      if (!stock) return '';
-      const avColor = stock.available > 0 ? 'var(--green)' : 'var(--red)';
-      return '<div style="font-size:9px;font-family:var(--mono);margin-top:3px;display:flex;gap:6px">' +
-        '<span style="color:var(--muted)">Committed: ' + stock.committed + '</span>' +
-        '<span style="color:' + avColor + '">Available: ' + stock.available + '</span>' +
-        '</div>';
-    })()}
+
       <div class="shop-product-cat">${p.category||''}</div>
       <div>
         <span class="shop-product-price">${parseFloat(p.price).toFixed(2)} AED</span>
@@ -2589,7 +2581,11 @@ function renderCart() {
   
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
-      <div class="shop-cart-item-name">${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}<br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span></div>
+      <div class="shop-cart-item-name">
+        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}
+        <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
+        ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
+      </div>
       <div class="shop-cart-item-controls">
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${Math.max(0,getQty(item)-1)})">−</button>
         <span class="shop-qty-val">${getQty(item)}</span>
