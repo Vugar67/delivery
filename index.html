@@ -305,7 +305,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v5.9</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.0</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -3124,7 +3124,7 @@ async function warehouseAction(orderId, newStatus) {
 
 function addToCart(productId) {
   const p = products.find(x => x.id === productId); if (!p) return;
-  const existing = cart.find(item => item.product.id === productId);
+  const existing = cart.find(item => item.product && item.product.id === productId);
   if (existing) { existing.qty += 1; } else { cart.push({product: p, qty: 1}); }
   renderCart();
 }
