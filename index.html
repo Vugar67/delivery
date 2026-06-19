@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.1 -->
+<!-- v6.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -948,7 +948,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group" style="position:relative">
         <label>Client Name</label>
         <div style="position:relative">
-          <input id="f-client-name" placeholder="— Select Client —" autocomplete="off" readonly onclick="filterClientDropdown('')" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
+          <input id="f-client-name" placeholder="— Select Client —" autocomplete="off" readonly onclick="filterClientDropdown('')" style="width:100%;cursor:pointer;padding-right:56px;box-sizing:border-box">
+          <span id="client-clear-btn" onclick="clearClientField()" style="display:none;position:absolute;right:32px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;cursor:pointer;padding:0 4px;line-height:1" title="Clear client">✕</span>
           <span onclick="filterClientDropdown('')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none">▼</span>
         </div>
         <div id="client-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:220px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
@@ -2793,6 +2794,8 @@ function applyClientSuggest(clientId, type='client') {
   }
   // Client — fill all fields
   document.getElementById('f-client-name').value = c.name || '';
+  const ccb = document.getElementById('client-clear-btn');
+  if(ccb) ccb.style.display = '';
   if (c.phone) document.getElementById('f-client').value = c.phone;
   if (c.location_url) {
     document.getElementById('f-location-url').value = c.location_url;
@@ -2806,6 +2809,19 @@ function applyClientSuggest(clientId, type='client') {
   if (c.villa) document.getElementById('f-apt').value = c.villa;
   hideClientSuggest();
   toast('✅ ' + c.name + ' — fields filled');
+}
+
+function clearClientField() {
+  ['f-client-name','f-client','f-apt','f-location-url','f-location-raw'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
+  const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
+  const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display='none';
+  // Reset district
+  const ds=document.getElementById('f-district-search');if(ds)ds.value='';
+  const dh=document.getElementById('f-district');if(dh)dh.value='';
+  toast('Client cleared');
 }
 
 // ─── MQTT ────────────────────────────────────────────────────────
@@ -3223,6 +3239,9 @@ async function openNewOrder(){
 
   // Reset seller
   window._selectedSellerId = null;
+  // Hide clear buttons
+  const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display='none';
+  const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display='none';
 
   // Reset hidden/UI elements
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
@@ -3262,6 +3281,7 @@ async function editOrder(id){
   document.getElementById('f-apt').value=o.villa||o.apt||'';
   document.getElementById('f-client').value=o.client_number||'';
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
+  const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display=o.client_name?'':'none';
   const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
   const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display=o.seller_name?'':'none';
   window._selectedSellerId = o.seller_id || null;
