@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.2 -->
+<!-- v6.3 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -146,7 +146,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .shop-cart-item-controls{display:flex;align-items:center;gap:4px}
 .shop-qty-btn{background:var(--surface2);border:1px solid var(--border);border-radius:4px;width:22px;height:22px;cursor:pointer;color:var(--text);font-size:14px;display:flex;align-items:center;justify-content:center;transition:.1s;line-height:1}
 .shop-qty-btn:hover{border-color:var(--accent);color:var(--accent)}
-.shop-qty-val{font-family:var(--mono);font-size:12px;min-width:24px;text-align:center}
+.shop-qty-val{font-family:var(--mono);font-size:12px;min-width:24px;text-align:center;cursor:pointer;border-radius:3px;padding:1px 3px;transition:.1s}
+.shop-qty-val:hover{background:var(--surface2);color:var(--accent)}
+.shop-qty-inp{font-family:var(--mono);font-size:12px;width:38px;text-align:center;background:var(--bg);border:1px solid var(--accent);border-radius:4px;color:var(--accent);outline:none;padding:1px 3px}
 .shop-cart-item-price{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:70px;text-align:right}
 .shop-cart-item-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;transition:.1s}
 .shop-cart-item-del:hover{color:var(--red)}
@@ -305,7 +307,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.3</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -2634,7 +2636,7 @@ function renderCart() {
       </div>
       <div class="shop-cart-item-controls">
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${Math.max(0,getQty(item)-1)})">−</button>
-        <span class="shop-qty-val">${getQty(item)}</span>
+        <span class="shop-qty-val" title="Click to type quantity" onclick="startQtyEdit(this,${i})">${getQty(item)}</span>
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${getQty(item)+1})">+</button>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
@@ -2657,6 +2659,28 @@ function updateCartQty(i, val) {
   else if (cart[i].is_custom) { cart[i].quantity = qty; }
   else { cart[i].qty = qty; }
   renderCart();
+}
+
+function startQtyEdit(span, i) {
+  const cur = span.textContent;
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.min = '0';
+  inp.step = '1';
+  inp.value = cur;
+  inp.className = 'shop-qty-inp';
+  span.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  const commit = () => {
+    const v = parseInt(inp.value) || 0;
+    updateCartQty(i, v);
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { renderCart(); }
+  });
 }
 
 function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
