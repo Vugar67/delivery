@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.4 -->
+<!-- v6.4.1 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -307,7 +307,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.4.1</div>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1583,7 +1583,7 @@ async function initApp(){
 async function loadRefs(){
   const{data}=await sb.from('refs').select('*').order('sort_order',{ascending:true}).order('value',{ascending:true});
   if(!data)return;
-  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[]};
+  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[]};
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
