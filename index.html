@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v5 -->
+<!-- v6.1 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -534,10 +534,16 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div id="view-clients" style="display:none">
       <div class="section-head">
         <div class="section-title">👥 Client Library</div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="client-search" placeholder="Search name, phone..." oninput="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
           <select id="client-cat-filter" onchange="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             <option value="">All Categories</option>
+          </select>
+          <select id="client-type-filter" onchange="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Types</option>
+            <option value="client">Clients only</option>
+            <option value="seller">Sellers only</option>
+            <option value="both">Both (Client + Seller)</option>
           </select>
           <button class="btn btn-primary" onclick="openNewClient()">+ Add Client</button>
         </div>
@@ -545,7 +551,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr>
-            <th>Name</th><th>Category</th><th>Phone</th><th>Emirate</th><th>District</th><th>Villa</th><th>Notes</th><th></th>
+            <th>Name</th><th>Category</th><th style="text-align:center">Client</th><th style="text-align:center">Seller</th><th>Phone</th><th>Emirate</th><th>District</th><th>Villa</th><th>Notes</th><th></th>
           </tr></thead>
           <tbody id="clients-tbody"></tbody>
         </table>
@@ -926,11 +932,17 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="">— Select City —</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group" style="position:relative">
         <label>District / Area</label>
-        <select id="f-district" onchange="onDistrictChange()">
-          <option value="">— Select District —</option>
-        </select>
+        <input id="f-district-search" placeholder="Type to search district..." autocomplete="off"
+          oninput="onDistrictSearch(this.value)"
+          onfocus="onDistrictSearch(this.value)"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;transition:.15s;box-sizing:border-box"
+          onkeydown="onDistrictSearchKey(event)">
+        <input type="hidden" id="f-district">
+        <div id="district-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <div id="district-dropdown-list"></div>
+        </div>
       </div>
       <div class="form-group"><label>Villa / Apt #</label><input id="f-apt" placeholder="e.g. Villa 12"></div>
       <div class="form-group" style="position:relative">
@@ -949,7 +961,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group" style="position:relative">
         <label>Seller</label>
         <div style="position:relative">
-        <input id="f-seller-name" placeholder="— Select Seller —" autocomplete="off" readonly onclick="filterSellerDropdown('')" style="width:100%;cursor:pointer;padding-right:32px;box-sizing:border-box">
+          <input id="f-seller-name" placeholder="— Select Seller —" autocomplete="off" readonly onclick="filterSellerDropdown('')" style="width:100%;cursor:pointer;padding-right:56px;box-sizing:border-box">
+          <span id="seller-clear-btn" onclick="clearSellerField()" style="display:none;position:absolute;right:32px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;cursor:pointer;padding:0 4px;line-height:1" title="Clear seller">✕</span>
           <span onclick="filterSellerDropdown('')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none">▼</span>
         </div>
         <div id="seller-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
@@ -1057,7 +1070,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Auto-filled by emirate — edit if needed, set 0 for free delivery</span>
         </div>
       </div>
-      <div class="form-group form-full"><label>Notes</label><input id="f-notes" placeholder="Any additional notes..."></div>
+      <div class="form-group form-full"><label>Notes <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Shift+Enter for new line)</span></label><textarea id="f-notes" placeholder="Any additional notes..." rows="2" onkeydown="if((event.shiftKey||event.altKey)&&event.key==='Enter'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd,v=this.value;this.value=v.slice(0,s)+'\n'+v.slice(e);this.selectionStart=this.selectionEnd=s+1;}" style="resize:vertical;min-height:52px"></textarea></div>
       <div class="form-group form-full">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="f-wa-show-items" style="width:16px;height:16px;cursor:pointer">
@@ -2036,26 +2049,25 @@ function onEmirateChange() {
   const rate = getDeliveryRate(emirateName);
   const dcEl = document.getElementById('f-delivery-charge');
   if (dcEl && emirateName) dcEl.value = rate;
-  const el = document.getElementById('f-emirate');
-  const selected = el.options[el.selectedIndex];
+  const selected = emirateEl.options[emirateEl.selectedIndex];
   const emirateId = selected?.dataset?.lid;
 
-  const cityGroup = document.getElementById('f-city-group');
   const cityEl = document.getElementById('f-city');
-  const distEl = document.getElementById('f-district');
-  const distCustom = document.getElementById('f-district-custom');
+  // Clear district
+  const ds = document.getElementById('f-district-search');
+  const dh = document.getElementById('f-district');
+  if(ds) ds.value = '';
+  if(dh) dh.value = '';
+  hideDistrictDropdown();
+  _setDistrictOptions([]);
 
   cityEl.innerHTML = '<option value="">— Select City —</option>';
-  distEl.innerHTML = '<option value="">— Select District —</option>';
-  if (distCustom) distCustom.value = '';
 
-  if (!emirateId) { return; }
+  if (!emirateId) return;
 
   const cities = getLocs('city', parseInt(emirateId));
   if (cities.length > 0) {
-    // Has cities — show city select
-    cityEl.innerHTML = '<option value="">— Select City —</option>';
-    cities.forEach((c, i) => {
+    cities.forEach(c => {
       const o = new Option(c.name, c.name);
       o.dataset.lid = c.id;
       if (cities.length === 1) o.selected = true;
@@ -2068,62 +2080,111 @@ function onEmirateChange() {
     const co = new Option(emirateName, emirateName);
     co.selected = true;
     cityEl.appendChild(co);
-    const districts = getLocs('district', parseInt(emirateId));
-    if (districts.length) {
-      districts.forEach(d => {
-        const o = new Option(d.name, d.name);
-        o.dataset.lid = d.id;
-        distEl.appendChild(o);
-      });
-      distEl.appendChild(new Option('+ Custom...', '__custom'));
-    }
+    _setDistrictOptions(getLocs('district', parseInt(emirateId)));
   }
+}
+
+// District fuzzy search state
+let _districtOptions = []; // [{name, id}]
+
+function _setDistrictOptions(districts) {
+  _districtOptions = districts;
+  const searchEl = document.getElementById('f-district-search');
+  // If current value still valid, keep it; otherwise clear
+  const cur = document.getElementById('f-district').value;
+  if (cur && !districts.find(d => d.name === cur)) {
+    document.getElementById('f-district').value = '';
+    if(searchEl) searchEl.value = '';
+  }
+  // Re-filter with current search term
+  onDistrictSearch(searchEl ? searchEl.value : '');
+}
+
+function onDistrictSearch(q) {
+  const dd = document.getElementById('district-dropdown');
+  const list = document.getElementById('district-dropdown-list');
+  if (!dd || !list) return;
+
+  // Normalize: remove 'al ', 'al-', lowercase
+  const norm = s => s.toLowerCase().replace(/^al[\s-]/,'').replace(/\s+/g,' ').trim();
+  const nq = norm(q || '');
+
+  let matches;
+  if (!nq) {
+    matches = _districtOptions;
+  } else {
+    matches = _districtOptions.filter(d => {
+      const dn = norm(d.name);
+      return dn.includes(nq) || d.name.toLowerCase().includes(nq);
+    });
+    // Sort: starts-with first
+    matches.sort((a,b) => {
+      const an = norm(a.name), bn = norm(b.name);
+      const aStarts = an.startsWith(nq) ? 0 : 1;
+      const bStarts = bn.startsWith(nq) ? 0 : 1;
+      return aStarts - bStarts || a.name.localeCompare(b.name);
+    });
+  }
+
+  if (!matches.length && nq) {
+    // Allow custom entry
+    list.innerHTML = `<div onmousedown="selectDistrict('${q.replace(/'/g,"\\'")}',true)" style="padding:9px 14px;cursor:pointer;font-size:13px;color:var(--muted);font-family:var(--mono)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">+ Use "${q}" (custom)</div>`;
+    dd.style.display = '';
+  } else if (matches.length) {
+    list.innerHTML = matches.map(d =>
+      `<div onmousedown="selectDistrict('${d.name.replace(/'/g,"\\'")}',false)" style="padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${d.name}</div>`
+    ).join('');
+    dd.style.display = '';
+  } else {
+    dd.style.display = 'none';
+  }
+}
+
+function selectDistrict(name, isCustom) {
+  document.getElementById('f-district').value = name;
+  document.getElementById('f-district-search').value = name;
+  document.getElementById('district-dropdown').style.display = 'none';
+}
+
+function onDistrictSearchKey(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('district-dropdown').style.display = 'none';
+  } else if (e.key === 'Enter') {
+    const list = document.getElementById('district-dropdown-list');
+    const first = list?.querySelector('div');
+    if (first) first.dispatchEvent(new MouseEvent('mousedown'));
+  }
+}
+
+function hideDistrictDropdown() {
+  const dd = document.getElementById('district-dropdown');
+  if(dd) dd.style.display = 'none';
 }
 
 function onCityChange() {
   const el = document.getElementById('f-city');
   const selected = el.options[el.selectedIndex];
   const cityId = selected?.dataset?.lid;
-  const distEl = document.getElementById('f-district');
-  const distCustom = document.getElementById('f-district-custom');
-  if (distCustom) distCustom.value = '';
 
-  distEl.innerHTML = '<option value="">— Select District —</option>';
-  if (!cityId) return;
+  // Clear district search
+  const ds = document.getElementById('f-district-search');
+  const dh = document.getElementById('f-district');
+  if(ds) ds.value = '';
+  if(dh) dh.value = '';
+  hideDistrictDropdown();
 
-  const districts = getLocs('district', parseInt(cityId));
-  districts.forEach(d => {
-    const o = new Option(d.name, d.name);
-    o.dataset.lid = d.id;
-    distEl.appendChild(o);
-  });
-  distEl.appendChild(new Option('+ Custom...', '__custom'));
+  if (!cityId) { _setDistrictOptions([]); return; }
+
+  _setDistrictOptions(getLocs('district', parseInt(cityId)));
 }
 
-function onDistrictChange() {
-  const el = document.getElementById('f-district');
-  const distCustom = document.getElementById('f-district-custom');
-  if (el.value === '__custom') {
-    if (distCustom) { distCustom.style.display='block'; distCustom.focus(); }
-  } else {
-    if (distCustom) distCustom.value = '';
-  }
-}
+function onDistrictChange() {} // kept for compatibility
 
-function onCustomDistrict(val) {
-  // When typing custom, deselect dropdown
-  if (val) {
-    const distEl = document.getElementById('f-district');
-    distEl.value = '__custom';
-  }
-}
+function onCustomDistrict(val) {} // kept for compatibility
 
 function getDistrictValue() {
-  const distEl = document.getElementById('f-district');
-  const distCustom = document.getElementById('f-district-custom');
-  if (distCustom && distCustom.value.trim()) return distCustom.value.trim();
-  if (distEl.value && distEl.value !== '__custom') return distEl.value;
-  return '';
+  const v = document.getElementById('f-district')?.value?.trim();
+  return v || '';
 }
 
 function populateLocationSelects(emirateName, cityName, districtName) {
@@ -2139,19 +2200,13 @@ function populateLocationSelects(emirateName, cityName, districtName) {
 
   if (!emirateName) return;
 
-  // Trigger emirate change logic manually
   const emirate = locations.find(l => l.type === 'emirate' && l.name === emirateName);
   if (!emirate) return;
 
-  const cityGroup = document.getElementById('f-city-group');
   const cityEl = document.getElementById('f-city');
-  
-  const distEl = document.getElementById('f-district');
-  const distCustom = document.getElementById('f-district-custom');
 
   const cities = getLocs('city', emirate.id);
   if (cities.length >= 1) {
-    
     cityEl.innerHTML = '<option value="">— Select City —</option>';
     cities.forEach(c => {
       const o = new Option(c.name, c.name);
@@ -2161,31 +2216,21 @@ function populateLocationSelects(emirateName, cityName, districtName) {
     });
     const city = locations.find(l => l.type === 'city' && (l.name === cityName || cities.length === 1) && l.parent_id === emirate.id);
     if (city) {
-      distEl.innerHTML = '<option value="">— Select District —</option>';
-      getLocs('district', city.id).forEach(d => {
-        const o = new Option(d.name, d.name);
-        o.dataset.lid = d.id;
-        if (d.name === districtName) o.selected = true;
-        distEl.appendChild(o);
-      });
-      distEl.appendChild(new Option('+ Custom...', '__custom'));
+      _setDistrictOptions(getLocs('district', city.id));
     }
   } else {
-    
-    const districts = getLocs('district', emirate.id);
-    distEl.innerHTML = '<option value="">— Select District —</option>';
-    districts.forEach(d => {
-      const o = new Option(d.name, d.name);
-      o.dataset.lid = d.id;
-      if (d.name === districtName) o.selected = true;
-      distEl.appendChild(o);
-    });
-    distEl.appendChild(new Option('+ Custom...', '__custom'));
+    // No cities — load districts from emirate
+    cityEl.innerHTML = '';
+    const co = new Option(emirateName, emirateName);
+    co.selected = true;
+    cityEl.appendChild(co);
+    _setDistrictOptions(getLocs('district', emirate.id));
   }
 
-  // Handle custom district
-  if (districtName && !locations.find(l => l.type === 'district' && l.name === districtName)) {
-    if (distCustom) { distCustom.value = districtName; distEl.value = '__custom'; }
+  // Set the district value
+  if (districtName) {
+    document.getElementById('f-district').value = districtName;
+    document.getElementById('f-district-search').value = districtName;
   }
 }
 
@@ -2695,8 +2740,18 @@ function selectSeller(clientId) {
   if (!c) return;
   document.getElementById('f-seller-name').value = c.name;
   window._selectedSellerId = c.id;
+  const cb = document.getElementById('seller-clear-btn');
+  if(cb) cb.style.display = '';
   hideSellerSuggest();
   renderCart(); // refresh alias display
+}
+
+function clearSellerField() {
+  document.getElementById('f-seller-name').value = '';
+  window._selectedSellerId = null;
+  const cb = document.getElementById('seller-clear-btn');
+  if(cb) cb.style.display = 'none';
+  renderCart();
 }
 
 function filterClientDropdown(q) {
@@ -3141,7 +3196,7 @@ async function openNewOrder(){
   if(currentRole==='dispatcher') return;
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
-  // Hide driver field for dispatcher
+  // Hide driver field for non-admin
   const dg=document.getElementById('f-driver-group');
   if(dg) dg.style.display=(currentRole==='admin')?'':'none';
   populateFormRefs(null);
@@ -3153,28 +3208,43 @@ async function openNewOrder(){
     o.dataset.lid = e.id;
     emirateEl.appendChild(o);
   });
-  // Default to Dubai
   emirateEl.value = 'Dubai';
-  
-  document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';// Load Dubai districts
+  document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';
   onEmirateChange();
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  ['f-apt','f-client','f-client-name','f-seller-name','f-notes'].forEach(id=>document.getElementById(id).value='');
-  window._selectedSellerId = '';
-  ['f-location-raw','f-location-url','f-raw-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+
+  // Clear all text fields
+  ['f-apt','f-client','f-client-name','f-seller-name','f-notes',
+   'f-location-raw','f-location-url','f-raw-message',
+   'shop-search','client-search-input','seller-search-input'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+
+  // Reset seller
+  window._selectedSellerId = null;
+
+  // Reset hidden/UI elements
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
   const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
   const cmd=document.getElementById('client-msg-text');if(cmd)cmd.textContent='';
+  const cme=document.getElementById('client-msg-extracted');if(cme)cme.style.display='none';
   const ws=document.getElementById('f-wa-show-items');if(ws)ws.checked=false;
-  // district-custom removed
+  const cif=document.getElementById('custom-item-form');if(cif)cif.style.display='none';
+  hideClientSuggest();
+  hideSellerSuggest();
+
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='50';
   renderCart();
-  // district-custom removed
   initShop();
-  document.getElementById('order-modal').classList.add('open');
+
+  const modal = document.getElementById('order-modal');
+  modal.classList.add('open');
+  // Scroll modal content to top
+  const modalEl = modal.querySelector('.modal');
+  if(modalEl) modalEl.scrollTop = 0;
 }
 
 async function editOrder(id){
@@ -3193,6 +3263,8 @@ async function editOrder(id){
   document.getElementById('f-client').value=o.client_number||'';
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
   const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
+  const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display=o.seller_name?'':'none';
+  window._selectedSellerId = o.seller_id || null;
   document.getElementById('f-confirmed').value=o.confirmed||'No';
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
@@ -3234,7 +3306,10 @@ async function editOrder(id){
     return{product:p,qty:parseFloat(item.quantity),customPrice};
   });
   initShop();
-  document.getElementById('order-modal').classList.add('open');
+  const modal = document.getElementById('order-modal');
+  modal.classList.add('open');
+  const modalEl = modal.querySelector('.modal');
+  if(modalEl) modalEl.scrollTop = 0;
 }
 
 async function saveOrder(){
@@ -4836,11 +4911,15 @@ async function loadClients() {
 function renderClients() {
   const q = (document.getElementById('client-search')?.value || '').toLowerCase();
   const cat = document.getElementById('client-cat-filter')?.value || '';
+  const typeF = document.getElementById('client-type-filter')?.value || '';
   const tbody = document.getElementById('clients-tbody');
   if (!tbody) return;
 
   let filtered = clients.filter(c => {
     if (cat && c.category !== cat) return false;
+    if (typeF === 'client' && !c.is_client) return false;
+    if (typeF === 'seller' && !c.is_seller) return false;
+    if (typeF === 'both' && !(c.is_client && c.is_seller)) return false;
     if (q) {
       const hay = [c.name, c.phone, c.emirate, c.district, c.villa, c.notes].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
@@ -4849,14 +4928,19 @@ function renderClients() {
   });
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><div>No clients found</div></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👥</div><div>No clients found</div></div></td></tr>`;
     return;
   }
 
+  const tick = `<span style="color:var(--green);font-size:15px">✓</span>`;
+  const dash = `<span style="color:var(--border);font-size:13px">—</span>`;
+
   tbody.innerHTML = filtered.map(c => `
     <tr>
-      <td style="font-weight:600">${c.name} ${c.is_seller?'<span style="font-size:10px;background:rgba(96,165,250,.2);color:var(--blue);padding:1px 6px;border-radius:8px;font-family:var(--mono)">seller</span>':''}</td>
+      <td style="font-weight:600">${c.name}</td>
       <td><span style="font-size:11px;background:rgba(255,200,0,.15);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--mono)">${c.category||'—'}</span></td>
+      <td style="text-align:center">${c.is_client !== false ? tick : dash}</td>
+      <td style="text-align:center">${c.is_seller ? tick : dash}</td>
       <td style="font-family:var(--mono);font-size:12px">${c.phone||'—'}</td>
       <td style="font-size:12px">${c.emirate||'—'}</td>
       <td style="font-size:12px">${c.district||'—'}</td>
@@ -5601,6 +5685,9 @@ document.addEventListener('click', e => {
   }
   if (!e.target.closest('#f-seller-name') && !e.target.closest('#seller-suggest')) {
     hideSellerSuggest();
+  }
+  if (!e.target.closest('#f-district-search') && !e.target.closest('#district-dropdown')) {
+    hideDistrictDropdown();
   }
 });
 
