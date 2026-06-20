@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.5 -->
+<!-- v6.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -307,7 +307,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.6</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -353,6 +353,13 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="Mixed">Mixed</option>
         </select>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
+        <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px">
+          <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">FROM</span>
+          <input type="date" id="filter-date-from" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+          <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">TO</span>
+          <input type="date" id="filter-date-to" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+          <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';renderTable()" title="Clear dates" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">✕</button>
+        </div>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
           <option value="date_desc">📅 Newest First</option>
           <option value="priority">🔴 By Priority</option>
@@ -1785,14 +1792,17 @@ function getFiltered(){
   const conf=document.getElementById('filter-confirmed')?.value||'';
   const contentFilter=document.getElementById('filter-content')?.value||'';
   const sortVal=document.getElementById('sort-select')?.value||'priority';
+  const dateFrom=document.getElementById('filter-date-from')?.value||'';
+  const dateTo=document.getElementById('filter-date-to')?.value||'';
   const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
     if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
     if(conf&&(o.confirmed||'No')!==conf)return false;
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
+    if(dateFrom&&(o.order_date||'')<dateFrom)return false;
+    if(dateTo&&(o.order_date||'')>dateTo)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
-    // dispatch mode: show all orders, dimming handled in row render
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
