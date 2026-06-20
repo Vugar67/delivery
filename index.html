@@ -308,6 +308,7 @@ select option{background:#1a1d27;color:#f0f2ff}
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.5</div>
+    <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -364,7 +365,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
-        <button class="btn btn-ghost" onclick="exportCSV()">&#8595; CSV</button>
+        <button class="btn btn-ghost" onclick="openCSVExport()">&#8595; CSV</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
       <div id="dispatch-panel" style="display:none;margin-bottom:12px">
@@ -434,7 +435,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <table class="tbl">
             <thead><tr>
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
-              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Emirate</th><th>City</th>
+              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Emirate</th><th>City</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
               <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
             </tr></thead>
@@ -467,6 +468,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             <option value="">All Kinds</option>
           </select>
         </div>
+        <button class="btn btn-ghost" onclick="exportProductsCSV()">&#8595; CSV</button>
         <button class="btn btn-primary" onclick="openNewProduct()">+ Add Product</button>
       </div>
       <div id="prod-stats-row" class="stats" style="display:flex;margin-bottom:16px"></div>
@@ -551,6 +553,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             <option value="seller">Sellers only</option>
             <option value="both">Both (Client + Seller)</option>
           </select>
+          <button class="btn btn-ghost" onclick="exportClientsCSV()">&#8595; CSV</button>
           <button class="btn btn-primary" onclick="openNewClient()">+ Add Client</button>
         </div>
       </div>
@@ -1869,6 +1872,7 @@ function renderTable(){
         <td style="font-size:12px;color:var(--blue)">${o.seller_name||'&mdash;'}</td>
         <td style="font-size:12px;color:var(--text)">${o.client_name||'&mdash;'}</td>
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${o.created_at?o.created_at.slice(11,16):'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.city||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
@@ -4356,15 +4360,131 @@ async function deleteProduct(id){
 }
 
 // EXPORT
+function openCSVExport(){
+  // Build modal HTML inline
+  const existing = document.getElementById('csv-export-modal');
+  if(existing) existing.remove();
+  const today = new Date().toISOString().split('T')[0];
+  const modal = document.createElement('div');
+  modal.id = 'csv-export-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:340px;box-shadow:0 16px 48px rgba(0,0,0,.5)">
+      <div style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:20px">Export Orders CSV</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Date From</label>
+          <input type="date" id="csv-date-from" value="" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Date To</label>
+          <input type="date" id="csv-date-to" value="${today}" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box">
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Leave "Date From" empty to export all orders</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:20px">
+        <button onclick="document.getElementById('csv-export-modal').remove()" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:13px">Cancel</button>
+        <button onclick="exportCSV()" style="flex:2;padding:9px;background:var(--accent);border:none;border-radius:8px;color:#000;cursor:pointer;font-size:13px;font-weight:600">↓ Export</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+}
+
+function _csvCell(v){
+  const s = (v||'').toString().replace(/"/g,'""');
+  return `"${s}"`;
+}
+function _phoneCell(v){
+  if(!v) return '""';
+  return `"=""${(v||'').replace(/"/g,'""')}"""`;
+}
+
 function exportCSV(){
-  const headers=['Order #','Date','Emirate','City','Villa/Apt','Client','Items','Driver','Payment','Delivery','Confirmed','Notes'];
-  const rows=orders.map(o=>{
-    const items=(orderItems[o.id]||[]).map(i=>`${i.product_name}x${i.quantity}`).join('; ');
-    return[o.order_num,o.order_date,o.emirate,o.city,o.apt,o.client_number,items,o.driver,o.payment_status,o.delivery_status,o.confirmed,o.notes].map(v=>`"${(v||'').replace(/"/g,'""')}"`);
+  const fromEl = document.getElementById('csv-date-from');
+  const toEl = document.getElementById('csv-date-to');
+  const from = fromEl ? fromEl.value : '';
+  const to = toEl ? toEl.value : '';
+  document.getElementById('csv-export-modal')?.remove();
+
+  let filtered = orders;
+  if(from) filtered = filtered.filter(o => (o.order_date||'') >= from);
+  if(to)   filtered = filtered.filter(o => (o.order_date||'') <= to);
+
+  const BOM = '\uFEFF';
+  const headers = ['Order #','Date','Time','Emirate','City','Villa/Apt','Client Name','Client #','Seller','Items','Driver','Payment','Delivery','Confirmed','Notes'];
+  const rows = filtered.map(o => {
+    const items = (orderItems[o.id]||[]).map(i=>`${i.product_name} x${i.quantity}`).join('; ');
+    const time = o.created_at ? o.created_at.slice(11,16) : '';
+    return [
+      _csvCell(o.order_num),
+      _csvCell(o.order_date),
+      _csvCell(time),
+      _csvCell(o.emirate),
+      _csvCell(o.city),
+      _csvCell(o.apt),
+      _csvCell(o.client_name),
+      _phoneCell(o.client_number),
+      _csvCell(o.seller_name),
+      _csvCell(items),
+      _csvCell(o.driver),
+      _csvCell(o.payment_status),
+      _csvCell(o.delivery_status),
+      _csvCell(o.confirmed),
+      _csvCell(o.notes)
+    ].join(',');
   });
-  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
-  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='orders-'+new Date().toISOString().split('T')[0]+'.csv';a.click();
-  toast('CSV exported');
+  const csv = BOM + [headers.map(_csvCell).join(','), ...rows].join('\n');
+  const fname = 'orders' + (from?'_'+from:'') + (to?'_to_'+to:'') + '.csv';
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = fname;
+  a.click();
+  toast(`✅ Exported ${filtered.length} orders`);
+}
+
+function exportProductsCSV(){
+  const BOM = '\uFEFF';
+  const headers = ['Name','Category','Type','Kind','Unit','Price','Shelf Position','Barcode','Description'];
+  const rows = products.map(p => [
+    _csvCell(p.name),
+    _csvCell(p.category),
+    _csvCell(p.product_type||'Regular'),
+    _csvCell(p.type),
+    _csvCell(p.unit),
+    _csvCell(p.price),
+    _csvCell(p.shelf_position),
+    _csvCell(p.barcode),
+    _csvCell(p.description)
+  ].join(','));
+  const csv = BOM + [headers.map(_csvCell).join(','), ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'products-' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  toast(`✅ Exported ${products.length} products`);
+}
+
+function exportClientsCSV(){
+  const BOM = '\uFEFF';
+  const headers = ['Name','Category','Is Client','Is Seller','Phone','Emirate','District','Villa','Notes'];
+  const rows = clients.map(c => [
+    _csvCell(c.name),
+    _csvCell(c.category),
+    _csvCell(c.is_client !== false ? 'Yes' : 'No'),
+    _csvCell(c.is_seller ? 'Yes' : 'No'),
+    _phoneCell(c.phone),
+    _csvCell(c.emirate),
+    _csvCell(c.district),
+    _csvCell(c.villa),
+    _csvCell(c.notes)
+  ].join(','));
+  const csv = BOM + [headers.map(_csvCell).join(','), ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'clients-' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  toast(`✅ Exported ${clients.length} clients`);
 }
 
 // DIRECTORY
