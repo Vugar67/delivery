@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.6 -->
+<!-- v6.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -51,7 +51,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   #app-header{padding:8px 12px}
 }
 .topnav{display:flex;gap:4px;flex-wrap:wrap}
-.tab-btn{background:none;border:none;color:var(--muted);font-family:var(--font);font-size:13px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:.15s}
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.6;cursor:pointer}
+input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+.tab-btn{background:none;border:none;color:var(--muted);font-family:var(--font);font-size:13px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:.15s;text-decoration:none;display:inline-block}
 .tab-btn.active{background:var(--surface2);color:var(--text);font-weight:600}
 .tab-btn:hover:not(.active){color:var(--text)}
 .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--muted);font-family:var(--mono);font-size:12px;cursor:pointer;transition:.15s}
@@ -307,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1568,20 +1570,24 @@ async function initApp(){
     return;
   }
 
-  nav.innerHTML=`<button class="tab-btn active" onclick="showView('orders')">Orders</button>`;
+  nav.innerHTML=`<a class="tab-btn active" href="#orders" onclick="showView('orders');return false;">Orders</a>`;
   if(isAdmin){
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('products')">Products</button>`;
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('clients')">Clients</button>`;
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('directory')">Directory</button>`;
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('brands')">Brand Profiles</button>`;
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('storage')">Storage</button>`;
-    nav.innerHTML+=`<button class="tab-btn" onclick="showView('users')">Users</button>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#directory" onclick="showView('directory');return false;">Directory</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#brands" onclick="showView('brands');return false;">Brand Profiles</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#storage" onclick="showView('storage');return false;">Storage</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#users" onclick="showView('users');return false;">Users</a>`;
   }
 
   await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage()]);
   renderFilters();
+  // Check URL hash for initial view
+  const hash = window.location.hash.replace('#','');
+  const validViews = ['orders','products','clients','directory','brands','storage','users'];
+  const initView = validViews.includes(hash) ? hash : 'orders';
   if(!isDispatcher) renderTable();
-  showView('orders');subscribeRealtime();
+  showView(initView);subscribeRealtime();
 
   // Apply dispatcher restrictions after render
   if(isDispatcher){
@@ -1641,7 +1647,8 @@ async function loadProducts(){
 
 function showView(v){
   ['orders','products','directory','users','clients','warehouse','brands','storage'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase().startsWith(v)));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
+  history.replaceState(null,'','#'+v);
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();}
   if(v==='users')renderUsers();
   if(v==='products'){
@@ -3257,6 +3264,9 @@ function addToCart(productId) {
   const p = products.find(x => x.id === productId); if (!p) return;
   const existing = cart.find(item => item.product && item.product.id === productId);
   if (existing) { existing.qty += 1; } else { cart.push({product: p, qty: 1}); }
+  // Clear search after adding
+  const ss = document.getElementById('shop-search');
+  if(ss){ ss.value=''; renderShopProducts(); ss.focus(); }
   renderCart();
 }
 
@@ -3321,6 +3331,11 @@ async function openNewOrder(){
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='50';
+  // Reset payment and delivery status to defaults
+  const payEl=document.getElementById('f-payment');
+  if(payEl) payEl.value=refs.paymentStatus?.[0]?.value||'';
+  const delEl=document.getElementById('f-delivery');
+  if(delEl) delEl.value=refs.deliveryStatus?.[0]?.value||'';
   renderCart();
   initShop();
 
@@ -4332,7 +4347,7 @@ async function saveProduct(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
-  const payload={name,category:get('p-category'),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null};
+  const payload={name,category:get('p-category'),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true};
   if(_productCurrentImageUrl!==undefined) payload.image_url = _productCurrentImageUrl;
 
   let error, productId = editProductId;
