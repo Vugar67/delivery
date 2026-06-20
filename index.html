@@ -1058,7 +1058,12 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
       </div>
 
-      <div class="form-group" id="f-driver-group"><label>Driver</label><select id="f-driver"></select></div>
+      <div class="form-group" id="f-driver-group"><label>Driver</label>
+        <div style="position:relative;display:flex;gap:6px;align-items:center">
+          <select id="f-driver" style="flex:1"></select>
+          <button type="button" onclick="document.getElementById('f-driver').value=''" title="Clear driver" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;padding:4px 8px;font-size:13px;line-height:1">✕</button>
+        </div>
+      </div>
       <div class="form-group"><label>Payment Status</label><select id="f-payment"></select></div>
       <div class="form-group"><label>Delivery Status</label><select id="f-delivery"></select></div>
       <div class="form-group"><label>Confirmed</label><select id="f-confirmed"><option value="No">No</option><option value="Yes">Yes</option></select></div>
@@ -3265,9 +3270,14 @@ async function openNewOrder(){
     o.dataset.lid = e.id;
     emirateEl.appendChild(o);
   });
-  emirateEl.value = 'Dubai';
+  emirateEl.value = '';
   document.getElementById('f-city').innerHTML = '<option value="">— Select City —</option>';
-  onEmirateChange();
+  // Clear district
+  const ds = document.getElementById('f-district-search');
+  const dh = document.getElementById('f-district');
+  if(ds) ds.value = '';
+  if(dh) dh.value = '';
+  _setDistrictOptions([]);
   document.getElementById('f-num').value=await genOrderNum();
   document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
 
