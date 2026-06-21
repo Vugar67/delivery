@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6.7 -->
+<!-- v6.8 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v6.8</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -580,7 +580,53 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="warehouse-queue"></div>
     </div>
 
-    <div id="view-users" style="display:none">
+    <div id="view-logs" style="display:none">
+      <div class="section-head">
+        <div class="section-title">📋 Activity Logs</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="log-search" placeholder="Search email, order#..." oninput="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
+          <select id="log-action-filter" onchange="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Actions</option>
+            <option value="LOGIN">Login</option>
+            <option value="LOGOUT">Logout</option>
+            <option value="CREATE">Create</option>
+            <option value="UPDATE">Update</option>
+            <option value="DELETE">Delete</option>
+          </select>
+          <select id="log-entity-filter" onchange="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Types</option>
+            <option value="order">Orders</option>
+            <option value="product">Products</option>
+            <option value="session">Sessions</option>
+          </select>
+          <select id="log-role-filter" onchange="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="operator">Operator</option>
+            <option value="dispatcher">Dispatcher</option>
+            <option value="warehouse">Warehouse</option>
+          </select>
+          <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 8px">
+            <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">FROM</span>
+            <input type="date" id="log-date-from" oninput="renderLogs()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+            <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">TO</span>
+            <input type="date" id="log-date-to" oninput="renderLogs()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+            <button onclick="document.getElementById('log-date-from').value='';document.getElementById('log-date-to').value='';renderLogs()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px">✕</button>
+          </div>
+          <button class="btn btn-ghost" onclick="loadLogs()">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="logs-stats" style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap"></div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Type</th><th>Entity ID</th><th>Details</th>
+          </tr></thead>
+          <tbody id="logs-tbody"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+      <div id="logs-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:12px"></div>
+    </div>
       <div class="section-head">
         <div class="section-title">Team Members</div>
         <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
@@ -1515,7 +1561,11 @@ async function doLogin(){
   const{error}=await sb.auth.signInWithPassword({email,password:pass});
   if(error){err.textContent=error.message;err.classList.add('show');btn.disabled=false;btn.textContent='Sign In';}
 }
-async function doLogout(){if(realtimeSub)sb.removeChannel(realtimeSub);await sb.auth.signOut();}
+async function doLogout(){
+  logEvent('LOGOUT','session',currentUser?.id||'',{email:currentUser?.email});
+  if(realtimeSub)sb.removeChannel(realtimeSub);
+  await sb.auth.signOut();
+}
 
 sb.auth.onAuthStateChange(async(event,session)=>{
   if(session?.user){
@@ -1544,6 +1594,7 @@ async function loadProfile(){
   const{data}=await sb.from('profiles').select('role,name').eq('id',currentUser.id).single();
   currentRole=data?.role||'operator';
   document.title = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
+  logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRole});
 }
 
 async function initApp(){
@@ -1578,13 +1629,14 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#brands" onclick="showView('brands');return false;">Brand Profiles</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#storage" onclick="showView('storage');return false;">Storage</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#users" onclick="showView('users');return false;">Users</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
   await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage()]);
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
-  const validViews = ['orders','products','clients','directory','brands','storage','users'];
+  const validViews = ['orders','products','clients','directory','brands','storage','users','logs'];
   const initView = validViews.includes(hash) ? hash : 'orders';
   if(!isDispatcher) renderTable();
   showView(initView);subscribeRealtime();
@@ -1646,10 +1698,11 @@ async function loadProducts(){
 }
 
 function showView(v){
-  ['orders','products','directory','users','clients','warehouse','brands','storage'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  ['orders','products','directory','users','clients','warehouse','brands','storage','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();}
+  if(v==='logs'){loadLogs();}
   if(v==='users')renderUsers();
   if(v==='products'){
     renderProducts();
@@ -3412,6 +3465,106 @@ async function editOrder(id){
   if(modalEl) modalEl.scrollTop = 0;
 }
 
+// ─── LOGS ────────────────────────────────────────────────────────
+let _logs = [], _logsPage = 1;
+const LOGS_PER_PAGE = 50;
+
+async function loadLogs() {
+  document.getElementById('logs-tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)"><span class="spinner"></span> Loading...</td></tr>';
+  const { data } = await sb.from('logs').select('*').order('created_at', { ascending: false }).limit(2000);
+  _logs = data || [];
+  _logsPage = 1;
+  renderLogs();
+}
+
+function renderLogs() {
+  const q = (document.getElementById('log-search')?.value || '').toLowerCase();
+  const actionF = document.getElementById('log-action-filter')?.value || '';
+  const entityF = document.getElementById('log-entity-filter')?.value || '';
+  const roleF = document.getElementById('log-role-filter')?.value || '';
+  const dateFrom = document.getElementById('log-date-from')?.value || '';
+  const dateTo = document.getElementById('log-date-to')?.value || '';
+
+  let filtered = _logs.filter(l => {
+    if (actionF && l.action !== actionF) return false;
+    if (entityF && l.entity_type !== entityF) return false;
+    if (roleF && l.role !== roleF) return false;
+    if (dateFrom && (l.created_at||'').slice(0,10) < dateFrom) return false;
+    if (dateTo && (l.created_at||'').slice(0,10) > dateTo) return false;
+    if (q) {
+      const hay = [l.user_email, l.entity_id, JSON.stringify(l.details||{})].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Stats
+  const statsEl = document.getElementById('logs-stats');
+  if (statsEl) {
+    const counts = {};
+    filtered.forEach(l => { counts[l.action] = (counts[l.action]||0)+1; });
+    const actionColors = {CREATE:'var(--green)',UPDATE:'var(--blue)',DELETE:'var(--red)',LOGIN:'var(--muted)',LOGOUT:'var(--muted)'};
+    statsEl.innerHTML = Object.entries(counts).map(([a,c]) =>
+      `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-family:var(--mono);font-size:12px">
+        <span style="color:${actionColors[a]||'var(--text)'}">${a}</span>
+        <span style="color:var(--accent);margin-left:8px;font-weight:700">${c}</span>
+      </div>`
+    ).join('') + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-family:var(--mono);font-size:12px;color:var(--muted)">Total <span style="color:var(--text);font-weight:700">${filtered.length}</span></div>`;
+  }
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / LOGS_PER_PAGE));
+  if (_logsPage > totalPages) _logsPage = totalPages;
+  const start = (_logsPage-1)*LOGS_PER_PAGE;
+  const page = filtered.slice(start, start+LOGS_PER_PAGE);
+
+  const actionColors = {CREATE:'var(--green)',UPDATE:'var(--blue)',DELETE:'var(--red)',LOGIN:'rgba(255,200,0,.8)',LOGOUT:'var(--muted)'};
+  const entityIcons = {order:'📦',product:'🏷️',session:'👤'};
+
+  const tbody = document.getElementById('logs-tbody');
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">No logs found</td></tr>';
+  } else {
+    tbody.innerHTML = page.map(l => {
+      const t = l.created_at ? l.created_at.slice(0,10)+' '+l.created_at.slice(11,16) : '—';
+      const ac = actionColors[l.action] || 'var(--text)';
+      const det = l.details ? Object.entries(l.details).filter(([,v])=>v).map(([k,v])=>`<span style="color:var(--muted);font-size:10px">${k}:</span> ${v}`).join(' · ') : '—';
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:11px;white-space:nowrap;color:var(--muted)">${t}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text)">${l.user_email||'—'}</td>
+        <td><span style="font-size:10px;padding:2px 7px;border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--mono)">${l.role||'—'}</span></td>
+        <td><span style="font-size:11px;font-weight:700;font-family:var(--mono);color:${ac}">${l.action||'—'}</span></td>
+        <td style="font-size:12px">${entityIcons[l.entity_type]||''} ${l.entity_type||'—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${l.entity_id||'—'}</td>
+        <td style="font-size:11px;color:var(--text);max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${det}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagination controls
+  const pgEl = document.getElementById('logs-pagination');
+  if (pgEl && totalPages > 1) {
+    pgEl.innerHTML = Array.from({length:totalPages},(_,i)=>i+1).map(p=>
+      `<button onclick="_logsPage=${p};renderLogs()" style="padding:4px 10px;border-radius:6px;border:1px solid ${p===_logsPage?'var(--accent)':'var(--border)'};background:${p===_logsPage?'var(--accent)':'var(--surface)'};color:${p===_logsPage?'#000':'var(--text)'};cursor:pointer;font-family:var(--mono);font-size:12px">${p}</button>`
+    ).join('');
+  } else if (pgEl) pgEl.innerHTML='';
+}
+
+
+async function logEvent(action, entityType, entityId, details={}) {
+  try {
+    await sb.from('logs').insert({
+      user_id: currentUser?.id || null,
+      user_email: currentUser?.email || null,
+      role: currentRole || null,
+      action,
+      entity_type: entityType,
+      entity_id: String(entityId||''),
+      details
+    });
+  } catch(e) { console.warn('Log failed:', e); }
+}
+
 async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
@@ -3483,6 +3636,8 @@ async function saveOrder(){
     }
   }
   toast(editId?'Order updated':'Order created');
+  const _logAction = editId ? 'UPDATE' : 'CREATE';
+  logEvent(_logAction, 'order', orderId, {order_num: payload.order_num, client: payload.client_name, delivery_status: payload.delivery_status, driver: payload.driver});
   closeModal('order-modal');await loadOrders();renderTable();
 }
 
@@ -3492,6 +3647,7 @@ async function deleteOrder(id){
   await sb.from('order_items').delete().eq('order_id',id);
   const{error}=await sb.from('orders').delete().eq('id',id);
   if(error){toast('Error: '+error.message,true);return;}
+  logEvent('DELETE', 'order', id, {});
   toast('Order deleted');await loadOrders();renderTable();
 }
 
@@ -4372,8 +4528,8 @@ async function saveProduct(){
   
   btn.disabled=false;btn.textContent='Save Product';
   if(error){toast('Error: '+error.message,true);return;}
-  // Save components
   if (productId) await saveProductComponents(productId);
+  logEvent(editProductId?'UPDATE':'CREATE', 'product', productId||'', {name: payload.name, category: payload.category});
   toast(editProductId?'Product updated':'Product added');
   closeModal('product-modal');await loadProducts();renderProducts();
 }
@@ -4381,6 +4537,7 @@ async function saveProduct(){
 async function deleteProduct(id){
   if(!confirm('Delete this product?'))return;
   await sb.from('products').update({active:false}).eq('id',id);
+  logEvent('DELETE', 'product', id, {});
   toast('Product removed');await loadProducts();renderProducts();
 }
 
