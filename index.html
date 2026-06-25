@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.5.4 -->
+<!-- v7.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1569,6 +1569,28 @@ let dirCategory=null;
 let cart=[]; // [{product, qty}]
 let realtimeSub=null;
 
+function toUAE(utcStr) {
+  if (!utcStr) return '—';
+  const d = new Date(utcStr);
+  // UAE is UTC+4
+  const uae = new Date(d.getTime() + 4 * 60 * 60 * 1000);
+  return uae.toISOString().slice(11, 16);
+}
+
+function toUAEDateTime(utcStr) {
+  if (!utcStr) return '—';
+  const d = new Date(utcStr);
+  const uae = new Date(d.getTime() + 4 * 60 * 60 * 1000);
+  return uae.toISOString().slice(0, 10) + ' ' + uae.toISOString().slice(11, 16);
+}
+
+function toUAEDate(utcStr) {
+  if (!utcStr) return '—';
+  const d = new Date(utcStr);
+  const uae = new Date(d.getTime() + 4 * 60 * 60 * 1000);
+  return uae.toISOString().slice(0, 10);
+}
+
 function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';setTimeout(()=>t.classList.remove('show'),2400);}
 async function genOrderNum(){
   const {data} = await sb.from('orders').select('order_num').order('created_at', {ascending:false});
@@ -2032,7 +2054,7 @@ function renderTable(){
         <td style="font-size:12px;color:var(--blue)">${o.seller_name||'&mdash;'}</td>
         <td style="font-size:12px;color:var(--text)">${o.client_name||'&mdash;'}</td>
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${o.created_at?o.created_at.slice(11,16):'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${toUAE(o.created_at)}</td>
         <td style="font-size:11px;color:var(--muted);font-family:var(--mono);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.created_by||''}">${o.created_by?o.created_by.split('@')[0]:'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.city||'&mdash;'}</td>
@@ -3645,7 +3667,7 @@ function renderLogs() {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">No logs found</td></tr>';
   } else {
     tbody.innerHTML = page.map(l => {
-      const t = l.created_at ? l.created_at.slice(0,10)+' '+l.created_at.slice(11,16) : '—';
+      const t = l.created_at ? toUAEDateTime(l.created_at) : '—';
       const ac = actionColors[l.action] || 'var(--text)';
       const det = l.details ? Object.entries(l.details).filter(([,v])=>v).map(([k,v])=>`<span style="color:var(--muted);font-size:10px">${k}:</span> ${v}`).join(' · ') : '—';
       return `<tr>
@@ -4781,7 +4803,7 @@ async function exportXLSX(){
 
   const data = [headers];
   filtered.forEach(o => {
-    const time = o.created_at ? o.created_at.slice(11,16) : '';
+    const time = o.created_at ? toUAE(o.created_at) : '';
     const items = orderItems[o.id] || [];
     const deliveryCharge = parseFloat(o.delivery_charge)||0;
     const subTotal = items.reduce((sum,i)=> sum + (parseFloat(i.price)||0)*(parseFloat(i.quantity)||0), 0);
@@ -5872,7 +5894,7 @@ function renderDispatchQueue() {
   const el = document.getElementById('dcol-queue');
   const countEl = document.getElementById('dcol-queue-count');
   if (!el) return;
-  const queue = orders.filter(o => o.delivery_status === 'Ready for Pick-up' && !o.wa_sent);
+  const queue = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
   if (countEl) countEl.textContent = queue.length;
   if (!queue.length) {
     el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No orders in queue</div>';
@@ -6014,7 +6036,7 @@ function renderDispatchSent() {
   if (!el) return;
   // Today's sent orders — wa_sent=true, has driver
   const today = new Date().toISOString().split('T')[0];
-  const sent = orders.filter(o => o.wa_sent && o.driver && (o.wa_sent_at||'').startsWith(today) && o.delivery_status !== 'Delivered' && o.delivery_status !== 'Cancelled');
+  const sent = orders.filter(o => o.delivery_status === 'En Route' && o.driver);
   if (countEl) countEl.textContent = sent.length;
   if (!sent.length) {
     el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No dispatched orders yet</div>';
@@ -6251,9 +6273,9 @@ async function dispatchSendOne(id) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
   const now = new Date().toISOString();
-  await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, wa_sent_at: now, wa_sent_by: currentUser.email, updated_by: currentUser.email }).eq('id', id);
+  await sb.from('orders').update({ driver: dispatchDriverName, delivery_status: 'En Route', wa_sent: true, wa_sent_at: now, wa_sent_by: currentUser.email, updated_by: currentUser.email }).eq('id', id);
   const localOrder = orders.find(x => x.id === id);
-  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; localOrder.wa_sent_at = now; localOrder.wa_sent_by = currentUser.email; }
+  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.delivery_status = 'En Route'; localOrder.wa_sent = true; localOrder.wa_sent_at = now; localOrder.wa_sent_by = currentUser.email; }
 
   await sendToDriver(id);
 
@@ -6286,9 +6308,9 @@ async function dispatchSend() {
     const statusEl = document.getElementById('dsm-status-' + id);
 
     // Assign driver in DB
-    await sb.from('orders').update({ driver: dispatchDriverName, wa_sent: true, updated_by: currentUser.email }).eq('id', id);
+    await sb.from('orders').update({ driver: dispatchDriverName, delivery_status: 'En Route', wa_sent: true, updated_by: currentUser.email }).eq('id', id);
     const localOrder = orders.find(x => x.id === id);
-    if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.wa_sent = true; }
+    if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.delivery_status = 'En Route'; localOrder.wa_sent = true; }
 
     if (statusEl) { statusEl.textContent = '⏳ Opening...'; statusEl.style.color = '#ffcc00'; }
 
