@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.0.3 -->
+<!-- v7.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -144,8 +144,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .shop-cart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .shop-cart-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
 .shop-cart-item:last-child{border-bottom:none}
-.shop-cart-item-name{flex:1;font-size:12px;line-height:1.3}
-.shop-cart-item-controls{display:flex;align-items:center;gap:4px}
+.shop-cart-item-name{flex:1;font-size:12px;line-height:1.3;min-width:0}
+.shop-cart-item-controls{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .shop-qty-btn{background:var(--surface2);border:1px solid var(--border);border-radius:4px;width:22px;height:22px;cursor:pointer;color:var(--text);font-size:14px;display:flex;align-items:center;justify-content:center;transition:.1s;line-height:1}
 .shop-qty-btn:hover{border-color:var(--accent);color:var(--accent)}
 .shop-qty-val{font-family:var(--mono);font-size:12px;min-width:24px;text-align:center;cursor:pointer;border-radius:3px;padding:1px 3px;transition:.1s}
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.0.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -998,11 +998,14 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group" style="position:relative">
         <label>District / Area</label>
-        <input id="f-district-search" placeholder="Type to search district..." autocomplete="off"
-          oninput="onDistrictSearch(this.value)"
-          onfocus="onDistrictSearch(this.value)"
-          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;transition:.15s;box-sizing:border-box"
-          onkeydown="onDistrictSearchKey(event)">
+        <div style="position:relative">
+          <input id="f-district-search" placeholder="Type to search district..." autocomplete="off"
+            oninput="onDistrictSearch(this.value)"
+            onfocus="onDistrictSearch(this.value)"
+            style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 36px 9px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;transition:.15s;box-sizing:border-box"
+            onkeydown="onDistrictSearchKey(event)">
+          <span id="district-clear-btn" onclick="clearDistrictField()" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;cursor:pointer;padding:0 4px;line-height:1" title="Clear district">✕</span>
+        </div>
         <input type="hidden" id="f-district">
         <div id="district-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;max-height:200px;overflow-y:auto;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
           <div id="district-dropdown-list"></div>
@@ -1035,6 +1038,13 @@ select option{background:#1a1d27;color:#f0f2ff}
             <input id="seller-search-input" placeholder="Search..." oninput="filterSellerDropdown(this.value)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box" onclick="event.stopPropagation()">
           </div>
           <div id="seller-suggest-list"></div>
+        </div>
+      </div>
+      <div class="form-group" id="f-invoice-group">
+        <label>Invoice #</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="f-invoice-display" readonly placeholder="—" style="flex:1;background:var(--bg);color:var(--muted);cursor:default;font-family:var(--mono);font-size:13px">
+          <button type="button" onclick="const v=document.getElementById('f-invoice-display').value;if(v&&v!=='—'){navigator.clipboard.writeText(v);toast('✅ Copied: '+v);}" title="Copy invoice number" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;padding:6px 10px;font-size:13px;white-space:nowrap">⎘ Copy</button>
         </div>
       </div>
       <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
@@ -1778,7 +1788,7 @@ function clearDeliveryFilter() {
 function populateFormRefs(o){
   const sel=(id,arr,val)=>{document.getElementById(id).innerHTML=arr.map(r=>`<option value="${r.value}" ${val===r.value?'selected':''}>${r.value}</option>`).join('');};
   sel('f-payment',refs.paymentStatus,o?.payment_status||refs.paymentStatus[0]?.value||'');
-  sel('f-delivery',refs.deliveryStatus,o?.delivery_status||'In Progress');
+  sel('f-delivery',refs.deliveryStatus,o?.delivery_status||refs.deliveryStatus[0]?.value||'');
   // Populate drivers from drivers table
   const driverEl = document.getElementById('f-driver');
   driverEl.innerHTML = '<option value="">— Select Driver —</option>' + 
@@ -1866,7 +1876,7 @@ function getFiltered(){
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_num,o.emirate,o.confirmed,o.order_date,o.district].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
@@ -2248,6 +2258,14 @@ function selectDistrict(name, isCustom) {
   document.getElementById('f-district').value = name;
   document.getElementById('f-district-search').value = name;
   document.getElementById('district-dropdown').style.display = 'none';
+  const dcb=document.getElementById('district-clear-btn');if(dcb)dcb.style.display=name?'':'none';
+}
+
+function clearDistrictField() {
+  document.getElementById('f-district').value = '';
+  document.getElementById('f-district-search').value = '';
+  document.getElementById('district-dropdown').style.display = 'none';
+  const dcb=document.getElementById('district-clear-btn');if(dcb)dcb.style.display='none';
 }
 
 function onDistrictSearchKey(e) {
@@ -2335,6 +2353,7 @@ function populateLocationSelects(emirateName, cityName, districtName) {
   if (districtName) {
     document.getElementById('f-district').value = districtName;
     document.getElementById('f-district-search').value = districtName;
+    const dcb=document.getElementById('district-clear-btn');if(dcb)dcb.style.display=districtName?'':'none';
   }
 }
 
@@ -2742,6 +2761,8 @@ function renderCart() {
       </div>
       <div style="display:flex;align-items:center;gap:4px">
         <input type="number" min="0" step="0.01" value="${getPrice(item)}" 
+          onfocus="if(parseFloat(this.value)===0)this.value=''"
+          onblur="if(this.value==='')this.value='0'"
           onchange="updateCartPrice(${i}, this.value)"
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;color:var(--accent);font-family:var(--mono);font-size:12px;outline:none;text-align:center">
         <span style="font-size:10px;color:var(--muted)">AED</span>
@@ -2756,8 +2777,8 @@ function renderCart() {
 
 function updateCartQty(i, val) {
   const qty = parseInt(val) || 0;
-  if (qty <= 0) { cart.splice(i, 1); }
-  else if (cart[i].is_custom) { cart[i].quantity = qty; }
+  if (qty < 0) return; // no negative
+  if (cart[i].is_custom) { cart[i].quantity = qty; }
   else { cart[i].qty = qty; }
   renderCart();
 }
@@ -2946,6 +2967,7 @@ function clearClientField() {
   // Reset district
   const ds=document.getElementById('f-district-search');if(ds)ds.value='';
   const dh=document.getElementById('f-district');if(dh)dh.value='';
+  const dcb=document.getElementById('district-clear-btn');if(dcb)dcb.style.display='none';
   toast('Client cleared');
 }
 
@@ -3045,12 +3067,17 @@ function renderWarehouseQueue() {
   const container = document.getElementById('warehouse-queue');
   if (!container) return;
 
+  const today = new Date().toISOString().split('T')[0];
+
   const queue = orders.filter(o => {
     const ds = o.delivery_status || '';
-    return ds !== 'Delivered' && ds !== 'Cancelled' && ds !== 'Ready for Pick-up';
-  }).sort((a,b) => (a.priority||3) - (b.priority||3) || new Date(a.created_at) - new Date(b.created_at));
+    if (ds === 'Delivered' || ds === 'Cancelled' || ds === 'Ready for Pick-up') return false;
+    // Show today's orders only by default
+    const orderDate = (o.order_date || '').slice(0,10);
+    return orderDate === today;
+  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
 
-  const done = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
+  const done = orders.filter(o => o.delivery_status === 'Ready for Pick-up' && (o.order_date||'').slice(0,10) === today);
 
   const pc = p => p===1?'#ff2222':p===2?'#ffcc00':'#00ee44';
 
@@ -3375,6 +3402,9 @@ async function openNewOrder(){
   // Hide clear buttons
   const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display='none';
   const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display='none';
+  // Hide invoice field for new orders
+  const invGrp=document.getElementById('f-invoice-group');if(invGrp)invGrp.style.display='none';
+  const invDisp=document.getElementById('f-invoice-display');if(invDisp)invDisp.value='';
 
   // Reset hidden/UI elements
   const lp=document.getElementById('f-location-preview');if(lp)lp.style.display='none';
@@ -3388,12 +3418,7 @@ async function openNewOrder(){
 
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
-  document.getElementById('f-delivery-charge').value='50';
-  // Reset payment and delivery status to defaults
-  const payEl=document.getElementById('f-payment');
-  if(payEl) payEl.value=refs.paymentStatus?.[0]?.value||'';
-  const delEl=document.getElementById('f-delivery');
-  if(delEl) delEl.value=refs.deliveryStatus?.[0]?.value||'';
+  document.getElementById('f-delivery-charge').value='0';
   renderCart();
   initShop();
 
@@ -3423,6 +3448,8 @@ async function editOrder(id){
   const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
   const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display=o.seller_name?'':'none';
   window._selectedSellerId = o.seller_id || null;
+  const invDisp=document.getElementById('f-invoice-display');if(invDisp)invDisp.value=o.invoice_number||'—';
+  const invGrp=document.getElementById('f-invoice-group');if(invGrp)invGrp.style.display=o.invoice_number?'':'none';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
@@ -3591,7 +3618,10 @@ async function saveOrder(){
   await sb.from('order_items').delete().eq('order_id',orderId);
   if(cart.length){
     const _sId = window._selectedSellerId || '';
-    const items=cart.map(item=> {
+    const items=cart.filter(item => {
+      const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
+      return qty > 0;
+    }).map(item=> {
       if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
       const alias = _sId ? getAlias(_sId, item.product.id) : null;
       const hasCustomComp = item.customComponents && item.customComponents.length > 0;
@@ -4604,12 +4634,15 @@ async function exportXLSX(){
   const XL = await _loadXLSX();
 
   // Build rows — one row per order item, order info repeated
-  const headers = ['Order #','Date','Time','Created By','Emirate','City','Villa/Apt','Client Name','Client #','Seller','Product','Qty','Unit','Driver','Payment','Delivery','Confirmed','Notes'];
+  const headers = ['Order #','Date','Time','Created By','Emirate','City','Villa/Apt','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Notes'];
 
   const data = [headers];
   filtered.forEach(o => {
     const time = o.created_at ? o.created_at.slice(11,16) : '';
     const items = orderItems[o.id] || [];
+    const deliveryCharge = parseFloat(o.delivery_charge)||0;
+    const subTotal = items.reduce((sum,i)=> sum + (parseFloat(i.price)||0)*(parseFloat(i.quantity)||0), 0);
+    const grandTotal = subTotal + deliveryCharge;
     const base = [
       o.order_num, o.order_date, time, o.created_by||'',
       o.emirate, o.city, o.apt, o.client_name||'',
@@ -4617,10 +4650,17 @@ async function exportXLSX(){
     ];
     const tail = [o.driver||'', o.payment_status||'', o.delivery_status||'', o.confirmed||'', o.notes||''];
     if(items.length === 0){
-      data.push([...base, '','','', ...tail]);
+      data.push([...base, '','','','','',deliveryCharge,grandTotal, ...tail]);
     } else {
-      items.forEach(item => {
-        data.push([...base, item.product_name||'', item.quantity||'', item.unit||'', ...tail]);
+      items.forEach((item, idx) => {
+        const unitPrice = parseFloat(item.price)||0;
+        const qty = parseFloat(item.quantity)||0;
+        const lineTotal = unitPrice * qty;
+        if(idx === 0){
+          data.push([...base, item.product_name||'', qty, item.unit||'', unitPrice, lineTotal, deliveryCharge, grandTotal, ...tail]);
+        } else {
+          data.push([...base, item.product_name||'', qty, item.unit||'', unitPrice, lineTotal, '','', ...tail]);
+        }
       });
     }
   });
@@ -4631,6 +4671,7 @@ async function exportXLSX(){
   ws['!cols'] = [
     {wch:14},{wch:11},{wch:6},{wch:18},{wch:12},{wch:14},{wch:22},
     {wch:20},{wch:16},{wch:20},{wch:28},{wch:5},{wch:6},
+    {wch:10},{wch:10},{wch:14},{wch:12},
     {wch:14},{wch:12},{wch:16},{wch:10},{wch:28}
   ];
 
