@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.4.2 -->
+<!-- v7.5 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.4.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -627,8 +627,10 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div id="logs-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:12px"></div>
     </div>
+
+    <div id="view-users" style="display:none">
       <div class="section-head">
-        <div class="section-title">Team Members</div>
+        <div class="section-title">👥 Team Members</div>
         <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
       </div>
       <div class="users-wrap" id="users-wrap"></div>
@@ -698,6 +700,10 @@ select option{background:#1a1d27;color:#f0f2ff}
         </thead>
         <tbody id="wh-items-table"></tbody>
       </table>
+    </div>
+    <div id="wh-notes-section" style="display:none;padding:10px 20px;background:rgba(245,166,35,.08);border-top:1px solid rgba(245,166,35,.2)">
+      <div style="font-size:10px;color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📝 Notes</div>
+      <div id="wh-notes-text" style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5"></div>
     </div>
     <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;position:sticky;bottom:0;background:var(--surface)">
       <button id="wh-complete-btn" onclick="whComplete()" style="flex:1;padding:14px;font-size:15px;font-weight:700;background:#00cc66;color:#fff;border:none;border-radius:10px;cursor:pointer;display:none">✅ Mark Ready for Pick-up</button>
@@ -1249,22 +1255,27 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div class="overlay" id="user-modal">
   <div class="modal" style="max-width:380px">
     <div class="modal-head">
-      <div class="modal-title">Add Team Member</div>
+      <div class="modal-title" id="user-modal-title">Add Team Member</div>
       <button class="close-btn" onclick="closeModal('user-modal')">&#10005;</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
+      <input type="hidden" id="u-id">
       <div class="form-group"><label>Full Name</label><input id="u-name" placeholder="e.g. Ahmed Al Rashid"></div>
       <div class="form-group"><label>Email</label><input id="u-email" type="email" placeholder="email@example.com"></div>
-      <div class="form-group"><label>Password</label><input id="u-pass" type="password" placeholder="min 6 characters"></div>
+      <div class="form-group" id="u-pass-group"><label>Password</label><input id="u-pass" type="password" placeholder="min 6 characters"></div>
       <div class="form-group"><label>System Role</label>
         <select id="u-role"><option value="operator">Operator</option><option value="dispatcher">Dispatcher</option><option value="warehouse">Warehouse</option><option value="admin">Admin</option></select>
       </div>
       <div class="form-group"><label>Staff Role / Position</label>
         <select id="u-staff-role"><option value="">— Select position —</option></select>
       </div>
+      <div id="u-reset-section" style="display:none;border-top:1px solid var(--border);padding-top:12px">
+        <button type="button" onclick="resetUserPassword()" class="btn btn-ghost" style="width:100%">📧 Send Password Reset Email</button>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('user-modal')">Cancel</button>
+      <button id="u-deactivate-btn" style="display:none" class="btn" onclick="toggleUserActive()" style="background:rgba(239,68,68,.15);border:1px solid var(--red);color:var(--red)">Deactivate</button>
       <button class="btn btn-primary" id="save-user-btn" onclick="saveUser()">Create User</button>
     </div>
   </div>
@@ -1611,6 +1622,12 @@ async function loadProfile(){
   const{data}=await sb.from('profiles').select('role,name').eq('id',currentUser.id).single();
   currentRole=data?.role||'operator';
   document.title = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
+  // Block inactive users
+  if(data?.active===false){
+    toast('❌ Your account has been deactivated',true);
+    await sb.auth.signOut();
+    return;
+  }
   logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRole});
 }
 
@@ -3235,6 +3252,15 @@ async function openWarehouseOrder(orderId, sendMqtt = true) {
   document.getElementById('wh-items-table').innerHTML = rows;
   document.getElementById('wh-complete-btn').style.display = (collected >= totalQty && totalQty > 0) ? '' : 'none';
   document.getElementById('wh-problem-btn').style.display = '';
+  // Show notes if present
+  const notesSection = document.getElementById('wh-notes-section');
+  const notesText = document.getElementById('wh-notes-text');
+  if(o.notes && o.notes.trim()){
+    notesText.textContent = o.notes;
+    notesSection.style.display = '';
+  } else {
+    notesSection.style.display = 'none';
+  }
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
   // Write current_picker_id to DB — Edge Function handles MQTT
@@ -5002,48 +5028,113 @@ async function renderUsers(){
   const wrap=document.getElementById('users-wrap');
   if(!data||!data.length){wrap.innerHTML='<div style="color:var(--muted)">No users yet.</div>';return;}
   wrap.innerHTML=data.map(u=>`
-    <div class="user-card">
+    <div class="user-card" style="${u.active===false?'opacity:.5;':''}">
       <div class="user-info">
-        <div class="avatar">${(u.name||u.email||'?').slice(0,2).toUpperCase()}</div>
+        <div class="avatar" style="${u.active===false?'background:var(--muted);':''}">${(u.name||u.email||'?').slice(0,2).toUpperCase()}</div>
         <div>
-          <div class="user-name">${u.name||'&mdash;'}</div>
+          <div class="user-name">${u.name||'&mdash;'} ${u.active===false?'<span style="font-size:10px;color:var(--red);font-family:var(--mono);padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15)">INACTIVE</span>':''}</div>
           <div class="user-email">${u.email||''}</div>
           ${u.staff_role?`<div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:2px">${u.staff_role}</div>`:''}
         </div>
       </div>
-      <span class="role-badge role-${u.role}">${u.role}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="role-badge role-${u.role}">${u.role}</span>
+        <button class="act-btn" onclick="editUser('${u.id}')">Edit</button>
+      </div>
     </div>`).join('');
 }
 
 function openNewUser(){
+  document.getElementById('u-id').value='';
+  document.getElementById('user-modal-title').textContent='Add Team Member';
   ['u-name','u-email','u-pass'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('u-role').value='operator';
+  document.getElementById('u-email').readOnly=false;
   const sr=document.getElementById('u-staff-role');
   sr.innerHTML='<option value="">— Select position —</option>'+(refs.staffRoles||[]).map(r=>`<option value="${r.value}">${r.value}</option>`).join('');
+  document.getElementById('u-pass-group').style.display='';
+  document.getElementById('u-reset-section').style.display='none';
+  document.getElementById('u-deactivate-btn').style.display='none';
+  document.getElementById('save-user-btn').textContent='Create User';
   document.getElementById('user-modal').classList.add('open');
 }
 
+async function editUser(userId){
+  const{data:u}=await sb.from('profiles').select('*').eq('id',userId).single();
+  if(!u)return;
+  document.getElementById('u-id').value=u.id;
+  document.getElementById('user-modal-title').textContent='Edit User';
+  document.getElementById('u-name').value=u.name||'';
+  document.getElementById('u-email').value=u.email||'';
+  document.getElementById('u-email').readOnly=true;
+  document.getElementById('u-pass').value='';
+  document.getElementById('u-role').value=u.role||'operator';
+  const sr=document.getElementById('u-staff-role');
+  sr.innerHTML='<option value="">— Select position —</option>'+(refs.staffRoles||[]).map(r=>`<option value="${r.value}" ${r.value===u.staff_role?'selected':''}>${r.value}</option>`).join('');
+  document.getElementById('u-pass-group').style.display='none';
+  document.getElementById('u-reset-section').style.display='';
+  const deactBtn=document.getElementById('u-deactivate-btn');
+  deactBtn.style.display='';
+  deactBtn.textContent=u.active===false?'Activate':'Deactivate';
+  deactBtn.style.cssText=`background:${u.active===false?'rgba(74,222,128,.15)':'rgba(239,68,68,.15)'};border:1px solid ${u.active===false?'var(--green)':'var(--red)'};color:${u.active===false?'var(--green)':'var(--red)'};padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px`;
+  document.getElementById('save-user-btn').textContent='Save Changes';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+async function toggleUserActive(){
+  const userId=document.getElementById('u-id').value;
+  if(!userId)return;
+  const{data:u}=await sb.from('profiles').select('active').eq('id',userId).single();
+  const newActive=u?.active===false?true:false;
+  await sb.from('profiles').update({active:newActive}).eq('id',userId);
+  toast(newActive?'✅ User activated':'User deactivated');
+  closeModal('user-modal');
+  await renderUsers();
+}
+
+async function resetUserPassword(){
+  const email=document.getElementById('u-email').value;
+  if(!email){toast('No email',true);return;}
+  const{error}=await sb.auth.resetPasswordForEmail(email);
+  if(error){toast('Error: '+error.message,true);return;}
+  toast('✅ Password reset email sent to '+email);
+}
+
 async function saveUser(){
+  const userId=document.getElementById('u-id').value;
   const name=document.getElementById('u-name').value.trim();
   const email=document.getElementById('u-email').value.trim();
   const pass=document.getElementById('u-pass').value;
   const role=document.getElementById('u-role').value;
   const staffRole=document.getElementById('u-staff-role').value;
+  const btn=document.getElementById('save-user-btn');
+
+  // EDIT mode
+  if(userId){
+    btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+    const{error}=await sb.from('profiles').update({name,role,staff_role:staffRole}).eq('id',userId);
+    btn.disabled=false;btn.textContent='Save Changes';
+    if(error){toast('Error: '+error.message,true);return;}
+    toast('✅ User updated');
+    closeModal('user-modal');
+    await renderUsers();
+    return;
+  }
+
+  // CREATE mode
   if(!email||!pass){toast('Email and password required',true);return;}
   if(pass.length<6){toast('Password must be at least 6 characters',true);return;}
-  const btn=document.getElementById('save-user-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   const{data:su,error:se}=await sb.auth.signUp({email,password:pass,options:{data:{name,role,staff_role:staffRole}}});
   if(se){toast('Error: '+se.message,true);btn.disabled=false;btn.textContent='Create User';return;}
   if(su?.user){
-    await sb.from('profiles').upsert({id:su.user.id,email,name,role,staff_role:staffRole});
+    await sb.from('profiles').upsert({id:su.user.id,email,name,role,staff_role:staffRole,active:true});
   } else {
-    // signUp returned no user — email may need confirmation or already exists
-    toast('Check Supabase: user may need email confirmation', true);
+    toast('Check Supabase: user may need email confirmation',true);
     btn.disabled=false;btn.textContent='Create User';return;
   }
   btn.disabled=false;btn.textContent='Create User';
-  toast('User created: '+email);
+  toast('✅ User created: '+email);
   closeModal('user-modal');
   await new Promise(r=>setTimeout(r,500));
   await renderUsers();
