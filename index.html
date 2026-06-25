@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.5 -->
+<!-- v7.5.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1928,7 +1928,6 @@ function getFiltered(){
 
 function renderStats(){
   const total = orders.length;
-  // Count by delivery status dynamically
   const statusColors = {
     'Delivered':               'green',
     'En Route':                'blue',
@@ -1947,12 +1946,19 @@ function renderStats(){
     const s = o.delivery_status || 'Unknown';
     statusCounts[s] = (statusCounts[s] || 0) + 1;
   });
-  // Sort by count desc
-  const statuses = Object.entries(statusCounts).sort((a,b) => b[1]-a[1]);
-  const statusHtml = statuses.map(([s,n]) => {
+
+  // Use fixed order from refs, show all even if count=0
+  const fixedOrder = (refs.deliveryStatus||[]).map(r=>r.value);
+  // Add any statuses from orders not in refs
+  Object.keys(statusCounts).forEach(s => { if(!fixedOrder.includes(s)) fixedOrder.push(s); });
+
+  const statusHtml = fixedOrder.map(s => {
+    const n = statusCounts[s] || 0;
     const col = statusColors[s] || 'muted';
-    return `<div class="stat"><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
+    const dimmed = n === 0 ? 'opacity:.4;' : '';
+    return `<div class="stat" style="${dimmed}"><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
   }).join('');
+
   document.getElementById('stats-row').innerHTML=`
     <div class="stat"><div class="stat-label">Total Orders</div><div class="stat-val accent">${total}</div></div>
     ${statusHtml}`;
@@ -5511,7 +5517,7 @@ async function sendToDriver(orderId) {
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveDirItem();});
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el && el.id !== 'order-modal')el.classList.remove('open');}));
+document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el && el.id !== 'order-modal' && el.id !== 'wh-modal')el.classList.remove('open');}));
 
 
 async function loadClients() {
