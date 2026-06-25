@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.6 -->
+<!-- v7.6.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1495,6 +1495,8 @@ _authListeners.push((event, session) => {
 function subscribeRealtime() {
   setInterval(async () => {
     if (!_authToken) return;
+    // Don't reload while order modal is open — prevents cart corruption
+    if (document.getElementById('order-modal')?.classList.contains('open')) return;
     await loadOrders();
     if (currentRole === 'warehouse') renderWarehouseQueue();
     else {
@@ -1504,7 +1506,7 @@ function subscribeRealtime() {
         renderDispatchSent();
       }
     }
-  }, 15000); // poll every 15s
+  }, 15000);
 }
 
 
@@ -1974,18 +1976,19 @@ function renderStats(){
   // Delivered period filter
   const delivPeriod = window._delivPeriod || 'all';
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const yest = new Date(now); yest.setDate(yest.getDate()-1);
-  const yesterdayStr = yest.toISOString().split('T')[0];
-  const weekStart = new Date(now); weekStart.setDate(weekStart.getDate()-weekStart.getDay());
-  const weekStr = weekStart.toISOString().split('T')[0];
-  const monthStr = now.toISOString().slice(0,7);
-  const yearStr = now.getFullYear().toString();
+  const uaeNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+  const todayStr = uaeNow.toISOString().slice(0,10);
+  const yest = new Date(uaeNow); yest.setDate(yest.getDate()-1);
+  const yesterdayStr = yest.toISOString().slice(0,10);
+  const weekStart = new Date(uaeNow); weekStart.setDate(weekStart.getDate()-weekStart.getDay());
+  const weekStr = weekStart.toISOString().slice(0,10);
+  const monthStr = uaeNow.toISOString().slice(0,7);
+  const yearStr = uaeNow.getFullYear().toString();
 
   function delivCount(period){
     return orders.filter(o=>{
       if(o.delivery_status!=='Delivered')return false;
-      const d=(o.order_date||'').slice(0,10);
+      const d=toUAEDate(o.updated_at||o.order_date||'');
       if(period==='today') return d===todayStr;
       if(period==='yesterday') return d===yesterdayStr;
       if(period==='week') return d>=weekStr;
@@ -3539,7 +3542,10 @@ async function openNewOrder(){
 
 async function editOrder(id){
   const o=orders.find(x=>x.id===id);if(!o)return;
+  // Prevent double-open
+  if(document.getElementById('order-modal').classList.contains('open') && editId === id) return;
   editId=id;
+  cart=[]; // always reset cart before loading
   document.getElementById('modal-title').textContent='Edit Order';
   const mdb=document.getElementById('modal-delete-order-btn');if(mdb)mdb.style.display='';
   const dg=document.getElementById('f-driver-group');
@@ -3710,7 +3716,7 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
