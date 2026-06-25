@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.5.3 -->
+<!-- v7.5.4 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.5.4</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1927,7 +1927,6 @@ function getFiltered(){
 }
 
 function renderStats(){
-  const total = orders.length;
   const statusColors = {
     'Delivered':               'green',
     'En Route':                'blue',
@@ -1950,9 +1949,50 @@ function renderStats(){
   const fixedOrder = (refs.deliveryStatus||[]).map(r=>r.value);
   Object.keys(statusCounts).forEach(s => { if(!fixedOrder.includes(s)) fixedOrder.push(s); });
 
+  // Delivered period filter
+  const delivPeriod = window._delivPeriod || 'all';
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const yest = new Date(now); yest.setDate(yest.getDate()-1);
+  const yesterdayStr = yest.toISOString().split('T')[0];
+  const weekStart = new Date(now); weekStart.setDate(weekStart.getDate()-weekStart.getDay());
+  const weekStr = weekStart.toISOString().split('T')[0];
+  const monthStr = now.toISOString().slice(0,7);
+  const yearStr = now.getFullYear().toString();
+
+  function delivCount(period){
+    return orders.filter(o=>{
+      if(o.delivery_status!=='Delivered')return false;
+      const d=(o.order_date||'').slice(0,10);
+      if(period==='today') return d===todayStr;
+      if(period==='yesterday') return d===yesterdayStr;
+      if(period==='week') return d>=weekStr;
+      if(period==='month') return d.startsWith(monthStr);
+      if(period==='year') return d.startsWith(yearStr);
+      return true;
+    }).length;
+  }
+
+  const periodLabels = {today:'Today',yesterday:'Yesterday',week:'This Week',month:'This Month',year:'This Year',all:'All Time'};
+
   const statusHtml = fixedOrder.map(s => {
     const n = statusCounts[s] || 0;
     const col = statusColors[s] || 'muted';
+
+    if(s === 'Delivered'){
+      const dn = delivCount(delivPeriod);
+      return `<div class="stat" style="position:relative;cursor:default">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="stat-label">Delivered</div>
+          <select onchange="window._delivPeriod=this.value;renderStats()" onclick="event.stopPropagation()"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:9px;font-family:var(--mono);padding:1px 3px;outline:none;cursor:pointer">
+            ${Object.entries(periodLabels).map(([v,l])=>`<option value="${v}" ${v===delivPeriod?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="stat-val green">${dn}</div>
+      </div>`;
+    }
+
     if(n === 0) {
       return `<div class="stat" style="opacity:.35;padding:10px 12px;min-width:unset">
         <div class="stat-label" style="font-size:9px">${s}</div>
@@ -1962,9 +2002,7 @@ function renderStats(){
     return `<div class="stat"><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
   }).join('');
 
-  document.getElementById('stats-row').innerHTML=`
-    <div class="stat"><div class="stat-label">Total Orders</div><div class="stat-val accent">${total}</div></div>
-    ${statusHtml}`;
+  document.getElementById('stats-row').innerHTML = statusHtml;
 }
 
 function renderTable(){
