@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.3 -->
+<!-- v7.4 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.4</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -363,7 +363,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';renderTable()" title="Clear dates" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">✕</button>
         </div>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
-          <option value="date_desc">📅 Newest First</option>
+          <option value="date_desc">🔢 Newest First</option>
           <option value="priority">🔴 By Priority</option>
           <option value="date_asc">📅 Oldest First</option>
           <option value="delivery">🚚 By Delivery Status</option>
@@ -1880,7 +1880,7 @@ function getFiltered(){
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_num,o.emirate,o.confirmed,o.order_date,o.district].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
-  const dOrd={'In Progress':0,'Shipped':1,'Delivered':2,'Canceled':3,'Delivery fail/reschedule':4};
+  const dOrd={'Not Confirmed':0,'Processing in Lab':1,'Ready in Lab':2,'In the Warehouse':3,'Ready for Pick-up':4,'En Route':5,'Delivered':6,'Cancelled':7,'Delivery fail/reschedule':8};
   filtered.sort((a,b)=>{
     // Dispatcher only: Ready for Pick-up always first
     if (currentRole === 'dispatcher') {
@@ -1890,8 +1890,8 @@ function getFiltered(){
     }
     switch(sortVal){
       case 'priority': return (a.priority||3)-(b.priority||3);
-      case 'date_desc': return new Date(b.created_at||0)-new Date(a.created_at||0);
-      case 'date_asc': return new Date(a.created_at||0)-new Date(b.created_at||0);
+      case 'date_desc': return (b.order_num||'').localeCompare(a.order_num||'', undefined, {numeric:true});
+      case 'date_asc': return (a.order_num||'').localeCompare(b.order_num||'', undefined, {numeric:true});
       case 'delivery': return (dOrd[a.delivery_status]??9)-(dOrd[b.delivery_status]??9);
       case 'driver': return (a.driver||'').localeCompare(b.driver||'');
       case 'emirate': return (a.emirate||'').localeCompare(b.emirate||'');
@@ -1907,12 +1907,17 @@ function renderStats(){
   const total = orders.length;
   // Count by delivery status dynamically
   const statusColors = {
-    'Delivered':        'green',
-    'In Progress':      'blue',
-    'Ready for Pick-up':'accent',
-    'Cancelled':        'red',
-    'Returned':         'red',
-    'On Hold':          'muted',
+    'Delivered':               'green',
+    'En Route':                'blue',
+    'Ready for Pick-up':       'accent',
+    'Ready in Lab':            'accent',
+    'In the Warehouse':        'accent',
+    'Processing in Lab':       'blue',
+    'Not Confirmed':           'muted',
+    'Cancelled':               'red',
+    'Delivery fail/reschedule':'red',
+    'Returned':                'red',
+    'On Hold':                 'muted',
   };
   const statusCounts = {};
   orders.forEach(o => {
@@ -3660,7 +3665,7 @@ async function saveOrder(){
     await sb.from('orders').update({subtotal:parseFloat(subtotal.toFixed(2)),delivery_charge:deliveryCharge,total:parseFloat(total.toFixed(2))}).eq('id',orderId);
   }
   btn.disabled=false;btn.textContent='Save Order';
-  // Check if status changed to En Route - trigger stock deduction
+  // Check if status changed to Out for Delivery - trigger stock deduction
   if (payload.delivery_status === 'En Route') {
     const prevOrder = orders.find(x => x.id === orderId);
     const wasAlreadyEnRoute = prevOrder?.delivery_status === 'En Route';
@@ -3735,9 +3740,13 @@ async function confirmDeleteOrder(id){
 function copyOrderDetails(orderId){
   const o = orders.find(x=>x.id===orderId);
   if(!o) return;
-  const items = (orderItems[orderId]||[]).map(i=>`· ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
-  const address = [o.apt, o.city, o.emirate].filter(Boolean).join(', ');
-  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${o.client_number||o.client_name||'—'}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}`;
+  const items = (orderItems[orderId]||[]).map(i=>`· ${i.product_name} x${i.quantity}`).join('\n');
+  const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
+  const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
+  const waItems = orderItems[orderId]||[];
+  const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0);
+  const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
+  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${[o.client_name,o.client_number].filter(Boolean).join(' — ')||'—'}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}${codLine}`;
   navigator.clipboard.writeText(text).then(()=>toast('✅ Copied to clipboard')).catch(()=>toast('❌ Copy failed',true));
 }
 
@@ -4173,7 +4182,7 @@ function skipStockDeduction() {
 
 function getCommittedQty(productId) {
   // Count qty in orders with status before En Route (Roaming, Ready for Pick-up, Picking, etc.)
-  const preShipStatuses = ['Roaming', 'Ready for Pick-up', 'Stand By', 'Processing'];
+  const preShipStatuses = ['Not Confirmed', 'Ready for Pick-up', 'In the Warehouse', 'Processing in Lab'];
   let committed = 0;
   orders.forEach(o => {
     if (!preShipStatuses.includes(o.delivery_status)) return;
@@ -4966,7 +4975,7 @@ async function saveDirItem(){
   if(error){toast('Error: '+error.message,true);return;}
   toast('Added: '+v);closeModal('dir-modal');await loadRefs();renderDirectory();renderFilters();
 }
-const PROTECTED_REFS = ['Roaming','Ready for Pick-up','Delivered','En Route','Processing','Delivery fail/reschedule','Cancelled'];
+const PROTECTED_REFS = ['Not Confirmed','Processing in Lab','Ready in Lab','In the Warehouse','Ready for Pick-up','En Route','Delivered','Delivery fail/reschedule','Cancelled'];
 
 async function delDirItem(id){
   // Find the ref item
