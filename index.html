@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.6.4 -->
+<!-- v7.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1492,21 +1492,30 @@ _authListeners.push((event, session) => {
 });
 
 // Realtime via polling (no WebSocket eval issues)
+let isFetchingOrders = false;
+
 function subscribeRealtime() {
   setInterval(async () => {
-    if (!_authToken) return;
-    // Don't reload while order modal is open — prevents cart corruption
+    if (!_authToken || isFetchingOrders) return;
     if (document.getElementById('order-modal')?.classList.contains('open')) return;
-    await loadOrders();
-    if (currentRole === 'warehouse') renderWarehouseQueue();
-    else {
-      renderTable();
-      if (dispatchMode || currentRole === 'dispatcher') {
-        renderDispatchQueue();
-        renderDispatchSent();
+
+    isFetchingOrders = true;
+    try {
+      await loadOrders();
+      if (currentRole === 'warehouse') renderWarehouseQueue();
+      else {
+        renderTable();
+        if (dispatchMode || currentRole === 'dispatcher') {
+          renderDispatchQueue();
+          renderDispatchSent();
+        }
       }
+    } catch(e) {
+      console.error('Update error:', e);
+    } finally {
+      isFetchingOrders = false;
     }
-  }, 15000);
+  }, 5000);
 }
 
 
@@ -5460,11 +5469,15 @@ let tooltipTimer = null;
 function showOrderTooltip(e, orderId) {
   clearTimeout(tooltipTimer);
   tooltipTimer = setTimeout(async () => {
-    if (!orderItems[orderId] || !orderItems[orderId].length) {
+    let items = orderItems[orderId];
+    if (!items || !items.length) {
       const {data} = await sb.from('order_items').select('*').eq('order_id', orderId);
-      if (data) orderItems[orderId] = data;
+      items = data || [];
+      // Only write to orderItems if polling isn't currently running
+      if (!isFetchingOrders) {
+        orderItems[orderId] = items;
+      }
     }
-    const items = orderItems[orderId] || [];
     const o = orders.find(x => x.id === orderId);
     const tooltip = document.getElementById('order-tooltip');
     
@@ -5485,7 +5498,6 @@ function showOrderTooltip(e, orderId) {
     
     tooltip.innerHTML = content;
     
-    // Position tooltip
     const x = Math.min(e.clientX + 12, window.innerWidth - 400);
     const y = Math.min(e.clientY + 12, window.innerHeight - 200);
     tooltip.style.left = x + 'px';
