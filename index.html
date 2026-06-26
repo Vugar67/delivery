@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.6.2 -->
+<!-- v7.6.4 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.6.4</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -3168,17 +3168,15 @@ function renderWarehouseQueue() {
   const container = document.getElementById('warehouse-queue');
   if (!container) return;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0];
 
   const queue = orders.filter(o => {
     const ds = o.delivery_status || '';
     if (ds === 'Delivered' || ds === 'Cancelled' || ds === 'Ready for Pick-up') return false;
-    // Show today's orders only by default
-    const orderDate = (o.order_date || '').slice(0,10);
-    return orderDate === today;
+    return true;
   }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
 
-  const done = orders.filter(o => o.delivery_status === 'Ready for Pick-up' && (o.order_date||'').slice(0,10) === today);
+  const done = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
 
   const pc = p => p===1?'#ff2222':p===2?'#ffcc00':'#00ee44';
 
