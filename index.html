@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v9.7 -->
+<!-- v10.0 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.0</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1501,7 +1501,7 @@ async function pollIncrementalOrders() {
   const since = _lastFetchAt;
   if (!since) return; // safety: skip if initial load hasn't run yet
 
-  const url = SUPABASE_URL + '/rest/v1/orders?select=*&updated_at=gt.' +
+  const url = SUPABASE_URL + '/rest/v1/orders?select=*&deleted=is.null&updated_at=gt.' +
     encodeURIComponent(since) + '&order=updated_at.asc&limit=500';
   const res = await fetch(url, {
     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
@@ -1780,7 +1780,7 @@ async function loadOrders(){
   // Capture timestamp BEFORE fetching so we don't miss concurrent updates
   const fetchStart = new Date().toISOString();
   while(true) {
-    const _url = SUPABASE_URL + '/rest/v1/orders?select=*&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
+    const _url = SUPABASE_URL + '/rest/v1/orders?select=*&deleted=is.null&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
     const _res = await fetch(_url, {
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
     });
@@ -3800,9 +3800,17 @@ async function saveOrder(){
     payload.created_by=currentUser.email;
     const{data,error}=await sb.from('orders').insert(payload).select('id,order_num').single();
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
-    orderId=data?.id;
-    payload.order_num=data?.order_num;
+    // RLS may prevent .select() after INSERT from returning data — fetch separately
+    let orderId = data?.id;
+    let orderNum = data?.order_num;
+    if (!orderId) {
+      // Fetch the just-created order by created_by + most recent created_at
+      const {data: newRow} = await sb.from('orders').select('id,order_num').eq('created_by', currentUser.email).order('created_at', {ascending: false}).limit(1).single();
+      orderId = newRow?.id;
+      orderNum = newRow?.order_num;
+    }
     if (!orderId) { toast('Error: failed to get order ID', true); btn.disabled=false; btn.textContent='Save Order'; return; }
+    payload.order_num = orderNum;
   }
   // save cart items
   await sb.from('order_items').delete().eq('order_id',orderId);
@@ -3924,11 +3932,13 @@ async function saveOrder(){
 
 async function deleteOrder(id){
   if(!confirm('Delete this order?'))return;
-  await sb.from('invoices').delete().eq('order_id',id);
-  await sb.from('order_items').delete().eq('order_id',id);
-  const{error}=await sb.from('orders').delete().eq('id',id);
+  const o = orders.find(x=>x.id===id);
+  const now = new Date().toISOString();
+  const{error}=await sb.from('orders').update({
+    deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: 'Deleted via context menu'
+  }).eq('id',id);
   if(error){toast('Error: '+error.message,true);return;}
-  logEvent('DELETE', 'order', id, {order_num: orders.find(x=>x.id===id)?.order_num, deleted_by: currentUser.email});
+  logEvent('DELETE', 'order', id, {order_num: o?.order_num, deleted_by: currentUser.email, reason: 'Deleted via context menu'});
   toast('Order deleted');await loadOrders();renderTable();
 }
 
@@ -3936,17 +3946,19 @@ function deleteOrderWithPassword(){
   const id = editId;
   if(!id){toast('No order selected',true);return;}
   const o = orders.find(x=>x.id===id);
-  // Show password confirmation modal
   const existing = document.getElementById('delete-confirm-modal');
   if(existing) existing.remove();
   const modal = document.createElement('div');
   modal.id = 'delete-confirm-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
   modal.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--red);border-radius:12px;padding:28px;width:320px;box-shadow:0 16px 48px rgba(0,0,0,.5)">
+    <div style="background:var(--surface);border:1px solid var(--red);border-radius:12px;padding:28px;width:340px;box-shadow:0 16px 48px rgba(0,0,0,.5)">
       <div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:6px">🗑 Delete Order</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:18px">Enter your password to confirm deletion of <span style="color:var(--accent);font-family:var(--mono)">${o?.order_num||''}</span></div>
-      <input type="password" id="delete-confirm-pass" placeholder="Your password..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box;margin-bottom:16px"
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Soft-delete <span style="color:var(--accent);font-family:var(--mono)">${o?.order_num||''}</span> — the order will be hidden but kept in the database.</div>
+      <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Reason for deletion</label>
+      <textarea id="delete-confirm-reason" placeholder="Enter reason..." rows="2" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px;margin-bottom:12px;resize:none;font-family:var(--font)"></textarea>
+      <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Your password</label>
+      <input type="password" id="delete-confirm-pass" placeholder="Your password..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px;margin-bottom:16px"
         onkeydown="if(event.key==='Enter')document.getElementById('delete-confirm-exec').click()">
       <div style="display:flex;gap:8px">
         <button onclick="document.getElementById('delete-confirm-modal').remove()" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:13px">Cancel</button>
@@ -3955,23 +3967,25 @@ function deleteOrderWithPassword(){
     </div>`;
   document.body.appendChild(modal);
   modal.addEventListener('click', e=>{if(e.target===modal)modal.remove();});
-  setTimeout(()=>document.getElementById('delete-confirm-pass')?.focus(),100);
+  setTimeout(()=>document.getElementById('delete-confirm-reason')?.focus(),100);
 }
 
 async function confirmDeleteOrder(id){
   const pass = document.getElementById('delete-confirm-pass')?.value;
+  const reason = document.getElementById('delete-confirm-reason')?.value.trim();
   if(!pass){toast('Enter password',true);return;}
-  // Re-authenticate with Supabase
+  if(!reason){toast('Enter reason for deletion',true);return;}
   const{error:authErr} = await sb.auth.signInWithPassword({email:currentUser.email, password:pass});
   if(authErr){toast('❌ Wrong password',true);return;}
   document.getElementById('delete-confirm-modal')?.remove();
   closeModal('order-modal');
-  await sb.from('invoices').delete().eq('order_id',id);
-  await sb.from('order_items').delete().eq('order_id',id);
-  const{error}=await sb.from('orders').delete().eq('id',id);
+  const o = orders.find(x=>x.id===id);
+  const now = new Date().toISOString();
+  const{error}=await sb.from('orders').update({
+    deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: reason
+  }).eq('id',id);
   if(error){toast('Error: '+error.message,true);return;}
-  const o=orders.find(x=>x.id===id);
-  logEvent('DELETE','order',id,{order_num:o?.order_num,deleted_by:currentUser.email});
+  logEvent('DELETE','order',id,{order_num:o?.order_num, deleted_by:currentUser.email, reason});
   toast('✅ Order deleted');await loadOrders();renderTable();
 }
 
@@ -5601,10 +5615,7 @@ function showOrderTooltip(e, orderId) {
     if (!items || !items.length) {
       const {data} = await sb.from('order_items').select('*').eq('order_id', orderId);
       items = data || [];
-      // Only write to orderItems if polling isn't currently running
-      if (!isFetchingOrders) {
-        orderItems[orderId] = items;
-      }
+      orderItems[orderId] = items; // always cache — polling will overwrite with fresh data anyway
     }
     const o = orders.find(x => x.id === orderId);
     const tooltip = document.getElementById('order-tooltip');
