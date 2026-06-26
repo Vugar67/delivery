@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v9.5 -->
+<!-- v9.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.6</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -3798,7 +3798,8 @@ async function saveOrder(){
     const{data,error}=await sb.from('orders').insert(payload).select('id,order_num').single();
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
     orderId=data?.id;
-    payload.order_num=data?.order_num; // use DB-assigned order_num for logging
+    payload.order_num=data?.order_num;
+    if (!orderId) { toast('Error: failed to get order ID', true); btn.disabled=false; btn.textContent='Save Order'; return; }
   }
   // save cart items
   await sb.from('order_items').delete().eq('order_id',orderId);
@@ -3856,20 +3857,6 @@ async function saveOrder(){
   const localOrder = orders.find(x => x.id === orderId);
   if (localOrder) localOrder.content_type = contentType;
   btn.disabled=false;btn.textContent='Save Order';
-  // Check if status changed to Out for Delivery - trigger stock deduction
-  if (payload.delivery_status === 'En Route') {
-    const prevOrder = orders.find(x => x.id === orderId);
-    const wasAlreadyEnRoute = prevOrder?.delivery_status === 'En Route';
-    if (!wasAlreadyEnRoute) {
-      closeModal('order-modal');
-      await loadOrders();
-      renderTable();
-      toast(editId?'Order updated':'Order created');
-      await openStockDeduction(orderId);
-      return;
-    }
-  }
-  toast(editId?'Order updated':'Order created');
   // ── Detailed order log ──────────────────────────────────────────
   const _logAction = editId ? 'UPDATE' : 'CREATE';
   const _prevItems = editId ? (orderItems[orderId] || []) : [];
@@ -3879,7 +3866,6 @@ async function saveOrder(){
     qty:          i.is_custom ? i.quantity : i.qty,
     price:        i.is_custom ? i.price : (i.customPrice !== undefined ? i.customPrice : i.product.price)
   }));
-  // Build diff for UPDATE: added / removed / changed qty
   let itemDiff = null;
   if (editId) {
     const added   = _newItems.filter(n => !_prevItems.find(p => p.product_id && p.product_id === n.product_id && p.product_name === n.product_name));
@@ -3893,7 +3879,6 @@ async function saveOrder(){
     });
     itemDiff = { added, removed, changed };
   }
-  // Field-level diff for UPDATE
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
@@ -3917,6 +3902,20 @@ async function saveOrder(){
     item_changes:    _logAction === 'UPDATE' ? itemDiff : undefined,
   });
   // ────────────────────────────────────────────────────────────────
+  // Check if status changed to En Route - trigger stock deduction
+  if (payload.delivery_status === 'En Route') {
+    const prevOrder = orders.find(x => x.id === orderId);
+    const wasAlreadyEnRoute = prevOrder?.delivery_status === 'En Route';
+    if (!wasAlreadyEnRoute) {
+      closeModal('order-modal');
+      await loadOrders();
+      renderTable();
+      toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
+      await openStockDeduction(orderId);
+      return;
+    }
+  }
+  toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
   closeModal('order-modal');await loadOrders();renderTable();
 }
 
