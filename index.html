@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v8.8 -->
+<!-- v8.9 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v8.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v8.9</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -690,7 +690,6 @@ select option{background:#1a1d27;color:#f0f2ff}
         <thead>
           <tr style="border-bottom:1px solid var(--border)">
             <th style="padding:8px;text-align:left;font-size:11px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
-            <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">POS</th>
             <th style="padding:8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">QTY</th>
           </tr>
         </thead>
@@ -3299,7 +3298,7 @@ function renderWarehouseQueue() {
     const allProds = window._allProducts || products;
     const itemList = items.slice(0,3).map(i => {
       const p = allProds.find(x => x.id === i.product_id);
-      return `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p?.shelf_position?`<span style="color:#ffaa00;font-weight:700">[${p.shelf_position}]</span> `:''}`+`${i.product_name||p?.name||'—'} ×${i.quantity||1}</div>`;
+      return `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.product_name||p?.name||'—'} ×${i.quantity||1}</div>`;
     }).join('') + (items.length>3?`<div style="font-size:10px;color:var(--muted);font-family:var(--mono)">+${items.length-3} more</div>`:'');
 
     return `<div onclick="whCardClick('${o.id}',${dimmed})" style="
@@ -3418,7 +3417,6 @@ async function openWarehouseOrder(orderId, sendMqtt = true) {
         ${item.product_name}
         ${barcode ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">▪ ${barcode}</div>` : ''}
       </td>
-      <td style="padding:12px 8px;text-align:center;font-family:var(--mono);font-size:13px;font-weight:700;color:#ffaa00">${shelf}</td>
       <td style="padding:12px 8px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">${item.quantity || 1}</td>
     </tr>`;
   }).join('');
