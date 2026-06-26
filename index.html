@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v9.6 -->
+<!-- v9.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1117,7 +1117,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
-              <input id="custom-item-qty" type="number" min="1" value="1" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
@@ -1896,7 +1896,10 @@ function clearDeliveryFilter() {
 
 function populateFormRefs(o){
   const sel=(id,arr,val)=>{document.getElementById(id).innerHTML=arr.map(r=>`<option value="${r.value}" ${val===r.value?'selected':''}>${r.value}</option>`).join('');};
-  sel('f-payment',refs.paymentStatus,o?.payment_status||refs.paymentStatus[0]?.value||'');
+  // Payment status — empty option first so new orders have no default
+  document.getElementById('f-payment').innerHTML =
+    '<option value="">— Select —</option>' +
+    refs.paymentStatus.map(r => `<option value="${r.value}" ${o?.payment_status === r.value ? 'selected' : ''}>${r.value}</option>`).join('');
 
   // ── Delivery status — role-based restrictions ──────────────────
   const currentStatus = o?.delivery_status || '';
@@ -3369,9 +3372,9 @@ function whCopyBlock(btn) {
   const lines = [];
   if (o) {
     lines.push(o.order_num);
+    if (o.client_name && o.client_name.trim()) lines.push(o.client_name);
     const loc = [o.district, o.city, o.emirate].filter(Boolean).join(', ');
     if (loc) lines.push(loc);
-    if (o.client_name && o.client_name.trim()) lines.push(o.client_name);
     if (o.payment_status && o.payment_status.toLowerCase() === 'cash on delivery' && o.total) lines.push('COD: ' + o.total + ' AED');
     if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + o.total + ' AED');
   }
