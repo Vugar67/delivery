@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v9.4 -->
+<!-- v9.5 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.4</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.5</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -3784,8 +3784,9 @@ async function saveOrder(){
   //            on UPDATE — keep existing number from form
   const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
-    // On update keep the existing order_num
-    payload.order_num = get('f-num');
+    // Keep existing order_num — take from local state, not from disabled field
+    const existingOrder = orders.find(x => x.id === editId);
+    payload.order_num = existingOrder?.order_num || get('f-num');
   }
   // On create: order_num is intentionally omitted — DB trigger assigns it
   let orderId=editId;
@@ -3829,11 +3830,21 @@ async function saveOrder(){
       };
     });
     await sb.from('order_items').insert(items);
-  // Compute content_type, subtotal, total — merge into single UPDATE
-  const hasCustom = items.some(i => i.item_type === 'Custom');
-  const hasRegular = items.some(i => i.item_type === 'Regular');
+  }
+  // Compute content_type, subtotal, total — always update regardless of cart
+  const hasCustom = (cart||[]).some(i => {
+    if (i.is_custom) return true;
+    const stdComps = productComponents.filter(pc => String(pc.product_id) === String(i.product?.id));
+    const hasCustomComp = i.customComponents && i.customComponents.length > 0;
+    const isDifferent = hasCustomComp && (
+      i.customComponents.length !== stdComps.length ||
+      i.customComponents.some((c,ci) => !stdComps[ci] || String(c.component_id) !== String(stdComps[ci].component_id) || String(c.quantity) !== String(stdComps[ci].quantity))
+    );
+    return i.product?.product_type === 'Custom' || isDifferent;
+  });
+  const hasRegular = (cart||[]).some(i => !i.is_custom && i.product?.product_type !== 'Custom');
   const contentType = hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular';
-  const subtotal = cart.reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price))*item.qty), 0);
+  const subtotal = (cart||[]).reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product?.price||0))*(item.qty||0)), 0);
   const deliveryCharge = parseFloat(document.getElementById('f-delivery-charge').value) || 0;
   const total = subtotal + deliveryCharge;
   await sb.from('orders').update({
@@ -3844,7 +3855,6 @@ async function saveOrder(){
   }).eq('id', orderId);
   const localOrder = orders.find(x => x.id === orderId);
   if (localOrder) localOrder.content_type = contentType;
-  }
   btn.disabled=false;btn.textContent='Save Order';
   // Check if status changed to Out for Delivery - trigger stock deduction
   if (payload.delivery_status === 'En Route') {
@@ -3901,7 +3911,7 @@ async function saveOrder(){
     payment_status:  payload.payment_status,
     driver:          payload.driver,
     emirate:         payload.emirate,
-    total:           payload.total,
+    total:           total,
     items:           _logAction === 'CREATE' ? _newItems : undefined,
     field_changes:   _logAction === 'UPDATE' && Object.keys(_fieldDiff).length ? _fieldDiff : undefined,
     item_changes:    _logAction === 'UPDATE' ? itemDiff : undefined,
