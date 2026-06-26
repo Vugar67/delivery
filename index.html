@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v7.7 -->
+<!-- v7.8 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v7.8</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1491,8 +1491,62 @@ _authListeners.push((event, session) => {
   }
 });
 
-// Realtime via polling (no WebSocket eval issues)
+// ─── INCREMENTAL POLLING ─────────────────────────────────────────
+// _lastFetchAt: ISO timestamp of the last completed full or incremental fetch.
+// On each poll tick we only request orders where updated_at > _lastFetchAt,
+// merge them into the in-memory `orders` array, and reload order_items only
+// for those changed orders. Full loadOrders() is still called on first load
+// and after saveOrder / deleteOrder so the local state stays authoritative.
+
 let isFetchingOrders = false;
+let _lastFetchAt = null; // set after every successful load
+
+async function pollIncrementalOrders() {
+  // Fetch only rows updated since the last known timestamp
+  const since = _lastFetchAt;
+  if (!since) return; // safety: skip if initial load hasn't run yet
+
+  const url = SUPABASE_URL + '/rest/v1/orders?select=*&updated_at=gt.' +
+    encodeURIComponent(since) + '&order=updated_at.asc&limit=500';
+  const res = await fetch(url, {
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
+  });
+  const text = await res.text();
+  const changed = text ? JSON.parse(text) : [];
+  if (!Array.isArray(changed) || changed.length === 0) return; // nothing new
+
+  // Track the latest updated_at seen in this batch
+  let newLastFetch = _lastFetchAt;
+  changed.forEach(o => {
+    if (o.updated_at > newLastFetch) newLastFetch = o.updated_at;
+  });
+
+  // Merge changed orders into the local array
+  changed.forEach(incoming => {
+    const idx = orders.findIndex(x => x.id === incoming.id);
+    if (idx >= 0) {
+      orders[idx] = incoming; // update existing
+    } else {
+      orders.unshift(incoming); // new order — prepend (newest first)
+    }
+  });
+
+  // Reload order_items only for the changed order IDs
+  const changedIds = changed.map(o => o.id);
+  const BATCH = 200;
+  for (let i = 0; i < changedIds.length; i += BATCH) {
+    const batch = changedIds.slice(i, i + BATCH);
+    const { data } = await sb.from('order_items').select('*').in('order_id', batch);
+    // Replace entries for these orders (clear old, insert fresh)
+    batch.forEach(id => { orderItems[id] = []; });
+    (data || []).forEach(item => {
+      if (!orderItems[item.order_id]) orderItems[item.order_id] = [];
+      orderItems[item.order_id].push(item);
+    });
+  }
+
+  _lastFetchAt = newLastFetch;
+}
 
 function subscribeRealtime() {
   setInterval(async () => {
@@ -1501,7 +1555,7 @@ function subscribeRealtime() {
 
     isFetchingOrders = true;
     try {
-      await loadOrders();
+      await pollIncrementalOrders();
       if (currentRole === 'warehouse') renderWarehouseQueue();
       else {
         renderTable();
@@ -1511,7 +1565,7 @@ function subscribeRealtime() {
         }
       }
     } catch(e) {
-      console.error('Update error:', e);
+      console.error('Incremental poll error:', e);
     } finally {
       isFetchingOrders = false;
     }
@@ -1727,10 +1781,14 @@ async function loadRefs(){
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
-  // Fetch all orders in batches of 1000
+  // Full load — fetches all orders in batches of 1000.
+  // Called on initial app load and after any write (save/delete).
+  // Records _lastFetchAt so the incremental poller knows where to start from.
   let allOrders = [];
   let offset = 0;
   const batchSize = 1000;
+  // Capture timestamp BEFORE fetching so we don't miss concurrent updates
+  const fetchStart = new Date().toISOString();
   while(true) {
     const _url = SUPABASE_URL + '/rest/v1/orders?select=*&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
     const _res = await fetch(_url, {
@@ -1744,6 +1802,10 @@ async function loadOrders(){
     offset += batchSize;
   }
   orders = allOrders;
+  // Use the most recent updated_at from the dataset as the baseline;
+  // fall back to fetch start time so we never miss updates.
+  const maxUpdated = orders.reduce((m, o) => o.updated_at > m ? o.updated_at : m, fetchStart);
+  _lastFetchAt = maxUpdated;
   await loadOrderItems();
 }
 async function loadOrderItems(){
