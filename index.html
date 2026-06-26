@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v9.2 -->
+<!-- v9.3 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v9.3</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1652,12 +1652,7 @@ function toUAEDate(utcStr) {
 }
 
 function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';setTimeout(()=>t.classList.remove('show'),2400);}
-async function genOrderNum(){
-  const {data} = await sb.from('orders').select('order_num').order('created_at', {ascending:false});
-  const nums = (data||[]).map(o => parseInt((o.order_num||'').replace('ORD-',''))).filter(n => n >= 110100);
-  const max = nums.length ? Math.max(...nums) : 110099;
-  return 'ORD-' + (max + 1).toString();
-}
+// Order numbers are assigned by DB trigger (order_num_seq sequence)
 
 // AUTH
 async function doLogin(){
@@ -3783,18 +3778,24 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_num:get('f-num')||genOrderNum(),order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
+  //            on UPDATE — keep existing number from form
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  if (editId) {
+    // On update keep the existing order_num
+    payload.order_num = get('f-num');
+  }
+  // On create: order_num is intentionally omitted — DB trigger assigns it
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
   }else{
     payload.created_by=currentUser.email;
-    const{data,error}=await sb.from('orders').insert(payload);
+    const{data,error}=await sb.from('orders').insert(payload).select('id,order_num').single();
     if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
-    // Get the inserted order by order_num
-    const{data:newOrder}=await sb.from('orders').select('id').eq('order_num',payload.order_num).single();
-    orderId=newOrder?.id;
+    orderId=data?.id;
+    payload.order_num=data?.order_num; // use DB-assigned order_num for logging
   }
   // save cart items
   await sb.from('order_items').delete().eq('order_id',orderId);
