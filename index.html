@@ -3390,13 +3390,13 @@ async function whComplete() {
   const { error } = await sb.from('orders').update({
     delivery_status: 'Ready for Pick-up',
     warehouse_status: 'packed',
-    picking_done_at: new Date().toISOString()
+    picking_done_at: new Date().toISOString(),
+    current_picker_id: null
   }).eq('id', orderId);
   if (error) { toast('Error: ' + error.message, true); return; }
   const o = orders.find(x => x.id === orderId);
-  if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; }
+  if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; o.current_picker_id = null; }
   whBeep(880, 500);
-  await sb.from('orders').update({ current_picker_id: null }).eq('id', orderId);
   logEvent('UPDATE', 'order', orderId, { order_num: o?.order_num, action: 'warehouse_packed', delivery_status: 'Ready for Pick-up' });
   closeModal('wh-modal');
   await loadOrders();
@@ -3755,17 +3755,21 @@ async function saveOrder(){
       };
     });
     await sb.from('order_items').insert(items);
-  // Update content_type on order
+  // Compute content_type, subtotal, total — merge into single UPDATE
   const hasCustom = items.some(i => i.item_type === 'Custom');
   const hasRegular = items.some(i => i.item_type === 'Regular');
   const contentType = hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular';
-  await sb.from('orders').update({ content_type: contentType }).eq('id', orderId);
+  const subtotal = cart.reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price))*item.qty), 0);
+  const deliveryCharge = parseFloat(document.getElementById('f-delivery-charge').value) || 0;
+  const total = subtotal + deliveryCharge;
+  await sb.from('orders').update({
+    content_type: contentType,
+    subtotal: parseFloat(subtotal.toFixed(2)),
+    delivery_charge: deliveryCharge,
+    total: parseFloat(total.toFixed(2))
+  }).eq('id', orderId);
   const localOrder = orders.find(x => x.id === orderId);
   if (localOrder) localOrder.content_type = contentType;
-    const subtotal=cart.reduce((s,item)=>s+(item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined?parseFloat(item.customPrice):parseFloat(item.product.price))*item.qty),0);
-    const deliveryCharge=parseFloat(document.getElementById('f-delivery-charge').value)||0;
-    const total=subtotal+deliveryCharge;
-    await sb.from('orders').update({subtotal:parseFloat(subtotal.toFixed(2)),delivery_charge:deliveryCharge,total:parseFloat(total.toFixed(2))}).eq('id',orderId);
   }
   btn.disabled=false;btn.textContent='Save Order';
   // Check if status changed to Out for Delivery - trigger stock deduction
@@ -5622,16 +5626,6 @@ async function sendToDriver(orderId) {
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
   const webUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg);
   window.open(waUrl, '_blank');
-  // Fallback to web after 2s if app doesn't open
-  // setTimeout(() => { window.open(webUrl, '_blank'); }, 2000);
-  // Save sent timestamp
-  await sb.from('orders').update({
-    wa_sent_at: new Date().toISOString(),
-    wa_sent_by: currentUser.email,
-    wa_sent_count: (o.wa_sent_count||0) + 1
-  }).eq('id', orderId);
-  await loadOrders();
-  renderTable();
 }
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -6336,9 +6330,24 @@ async function dispatchSendOne(id) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
   const now = new Date().toISOString();
-  await sb.from('orders').update({ driver: dispatchDriverName, delivery_status: 'En Route', wa_sent: true, wa_sent_at: now, wa_sent_by: currentUser.email, updated_by: currentUser.email }).eq('id', id);
   const localOrder = orders.find(x => x.id === id);
-  if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.delivery_status = 'En Route'; localOrder.wa_sent = true; localOrder.wa_sent_at = now; localOrder.wa_sent_by = currentUser.email; }
+  await sb.from('orders').update({
+    driver: dispatchDriverName,
+    delivery_status: 'En Route',
+    wa_sent: true,
+    wa_sent_at: now,
+    wa_sent_by: currentUser.email,
+    wa_sent_count: (localOrder?.wa_sent_count || 0) + 1,
+    updated_by: currentUser.email
+  }).eq('id', id);
+  if (localOrder) {
+    localOrder.driver = dispatchDriverName;
+    localOrder.delivery_status = 'En Route';
+    localOrder.wa_sent = true;
+    localOrder.wa_sent_at = now;
+    localOrder.wa_sent_by = currentUser.email;
+    localOrder.wa_sent_count = (localOrder.wa_sent_count || 0) + 1;
+  }
 
   await sendToDriver(id);
 
@@ -6370,22 +6379,35 @@ async function dispatchSend() {
   for (let i = 0; i < total; i++) {
     const { id } = dispatchSelected[i];
     const statusEl = document.getElementById('dsm-status-' + id);
-
-    // Assign driver in DB
-    await sb.from('orders').update({ driver: dispatchDriverName, delivery_status: 'En Route', wa_sent: true, updated_by: currentUser.email }).eq('id', id);
     const localOrder = orders.find(x => x.id === id);
-    if (localOrder) { localOrder.driver = dispatchDriverName; localOrder.delivery_status = 'En Route'; localOrder.wa_sent = true; }
+    const now = new Date().toISOString();
+
+    // Single UPDATE with all fields
+    await sb.from('orders').update({
+      driver: dispatchDriverName,
+      delivery_status: 'En Route',
+      wa_sent: true,
+      wa_sent_at: now,
+      wa_sent_by: currentUser.email,
+      wa_sent_count: (localOrder?.wa_sent_count || 0) + 1,
+      updated_by: currentUser.email
+    }).eq('id', id);
+    if (localOrder) {
+      localOrder.driver = dispatchDriverName;
+      localOrder.delivery_status = 'En Route';
+      localOrder.wa_sent = true;
+      localOrder.wa_sent_at = now;
+      localOrder.wa_sent_by = currentUser.email;
+      localOrder.wa_sent_count = (localOrder.wa_sent_count || 0) + 1;
+    }
 
     if (statusEl) { statusEl.textContent = '⏳ Opening...'; statusEl.style.color = '#ffcc00'; }
 
-    // Open WA - wait for user to return before next
     await sendToDriver(id);
-    const _lo = orders.find(x => x.id === id);
-    logEvent('UPDATE', 'order', id, { order_num: _lo?.order_num, action: 'dispatch_sent', driver: dispatchDriverName, delivery_status: 'En Route' });
+    logEvent('UPDATE', 'order', id, { order_num: localOrder?.order_num, action: 'dispatch_sent', driver: dispatchDriverName, delivery_status: 'En Route' });
 
     if (statusEl) { statusEl.textContent = '✓ Sent'; statusEl.style.color = '#00ee88'; }
 
-    // Wait for user to come back to page before opening next
     if (i < total - 1) {
       await waitForPageVisible();
       await new Promise(r => setTimeout(r, 800));
