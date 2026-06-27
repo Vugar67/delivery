@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.5 -->
+<!-- v10.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1474,7 +1474,24 @@ const sb = {
     }
   },
 
-  removeChannel: () => {}
+  removeChannel: () => {},
+
+  // Call a Postgres function (RPC) via PostgREST: POST /rest/v1/rpc/<fn>
+  // Returns { data, error } just like the query builder.
+  rpc: async (fn, params) => {
+    try {
+      const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+        method: 'POST',
+        headers: _headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(params || {})
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
+      if (!res.ok) return { data: null, error: { message: (data && (data.message || data.error || data.hint)) || text } };
+      return { data, error: null };
+    } catch(e) { return { data: null, error: { message: e.message } }; }
+  }
 };
 
 // Save session to sessionStorage when auth changes
@@ -5382,10 +5399,26 @@ let ctxOrderId = null;
 let ctxSeller = null;
 let invoiceCounter = 1111000000;
 
-// Load last invoice number from DB
-async function loadInvoiceCounter() {
-  const {data} = await sb.from('invoices').select('invoice_number').order('invoice_number', {ascending: false}).single();
-  if (data && data.invoice_number >= 1111000000) invoiceCounter = data.invoice_number + 1;
+// Get the next invoice number ATOMICALLY from the DB sequence via RPC.
+// Primary: next_invoice_num() — a Postgres function returning nextval('invoice_num_seq').
+//          This is concurrency-safe: two users can never get the same number.
+// Fallback: if the RPC is unavailable for any reason, fall back to the old
+//           client-side max+1 method so invoices can still be generated.
+// Returns the integer invoice number to use.
+async function getNextInvoiceNumber() {
+  // Try atomic sequence first
+  const { data, error } = await sb.rpc('next_invoice_num');
+  // PostgREST returns a bare scalar for a function returning bigint
+  const rpcNum = Array.isArray(data) ? data[0] : data;
+  if (!error && rpcNum != null && !isNaN(parseInt(rpcNum))) {
+    invoiceCounter = parseInt(rpcNum);
+    return invoiceCounter;
+  }
+  // Fallback: client-side max+1 (non-atomic, but better than failing)
+  console.warn('next_invoice_num RPC unavailable, falling back to max+1:', error?.message);
+  const { data: row } = await sb.from('invoices').select('invoice_number').order('invoice_number', { ascending: false }).single();
+  if (row && row.invoice_number >= 1111000000) invoiceCounter = row.invoice_number + 1;
+  return invoiceCounter;
 }
 
 function openCtxMenu(e, orderId) {
@@ -5425,9 +5458,8 @@ async function generateInvoice(seller) {
   const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', ctxOrderId);
   const items = freshItems || orderItems[ctxOrderId] || [];
   
-  // Get next invoice number
-  await loadInvoiceCounter();
-  const invNum = invoiceCounter;
+  // Get next invoice number (atomic via DB sequence, with fallback)
+  const invNum = await getNextInvoiceNumber();
   
   document.getElementById('inv-delivery').value = order.delivery_charge || 0;
   document.getElementById('inv-discount').value = order.discount || 0;
