@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.2 -->
+<!-- v10.3 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,8 +309,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.2</div>
-    <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.3</div>
+    <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1068,7 +1068,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
         <div id="f-location-preview" style="display:none;align-items:center;gap:8px;margin-top:6px">
           <span style="font-size:11px;color:var(--green);font-family:var(--mono)">📍 Location detected:</span>
-          <a id="f-location-link" href="#" target="_blank" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
+          <a id="f-location-link" href="#" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
           <button onclick="clearLocation()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>
         </div>
         <input type="hidden" id="f-location-url">
@@ -2165,7 +2165,7 @@ function renderTable(){
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.city||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
-        <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${o.location_url}" target="_blank" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
+        <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
         <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
@@ -2269,7 +2269,7 @@ function renderDriversGrid() {
         </div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
-        ${d.phone ? `<a href="https://wa.me/${d.phone.replace(/[^0-9]/g,'')}" target="_blank" style="background:rgba(37,211,102,.15);border:1px solid rgba(37,211,102,.3);border-radius:6px;padding:4px 8px;font-size:11px;color:#25d366;text-decoration:none;font-family:var(--mono)">WA</a>` : ''}
+        ${d.phone ? `<a href="https://wa.me/${d.phone.replace(/[^0-9]/g,'')}" target="_blank" rel="noopener noreferrer" style="background:rgba(37,211,102,.15);border:1px solid rgba(37,211,102,.3);border-radius:6px;padding:4px 8px;font-size:11px;color:#25d366;text-decoration:none;font-family:var(--mono)">WA</a>` : ''}
         <button class="act-btn" onclick="openEditDriver(${d.id})">Edit</button>
         <button class="act-btn del" onclick="deleteDriver(${d.id})">&#10005;</button>
       </div>
@@ -2309,7 +2309,7 @@ async function saveDriver() {
     ({error} = await sb.from('drivers').insert(payload));
   }
   btn.disabled = false; btn.textContent = 'Save';
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   logEvent(editDriverId ? 'UPDATE' : 'CREATE', 'driver', editDriverId || '', { name, phone: phone || null });
   toast(editDriverId ? 'Driver updated' : 'Driver added');
   closeModal('driver-modal');
@@ -2605,6 +2605,11 @@ function showClientMessage(text) {
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Escape for use inside HTML attribute values (href, title, etc.) — includes quotes
+function escAttr(s) {
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function clearClientMessage() {
@@ -3461,7 +3466,7 @@ async function whComplete() {
     picking_done_at: new Date().toISOString(),
     current_picker_id: null
   }).eq('id', orderId);
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   const o = orders.find(x => x.id === orderId);
   if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; o.current_picker_id = null; }
   whBeep(880, 500);
@@ -3510,7 +3515,7 @@ async function warehouseAction(orderId, newStatus) {
   if (newStatus === 'handed')  update.handed_at = now;
 
   const { error } = await sb.from('orders').update(update).eq('id', orderId);
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
 
   const o = orders.find(x => x.id === orderId);
   if (o) Object.assign(o, update);
@@ -3796,11 +3801,11 @@ async function saveOrder(){
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
-    if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
+    if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));btn.disabled=false;btn.textContent='Save Order';return;}
   }else{
     payload.created_by=currentUser.email;
     const{data,error}=await sb.from('orders').insert(payload).select('id,order_num').single();
-    if(error){toast('Error: '+error.message,true);btn.disabled=false;btn.textContent='Save Order';return;}
+    if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));btn.disabled=false;btn.textContent='Save Order';return;}
     // RLS may prevent .select() after INSERT from returning data — fetch separately
     orderId = data?.id;
     let orderNum = data?.order_num;
@@ -3937,7 +3942,7 @@ async function deleteOrder(id){
   const{error}=await sb.from('orders').update({
     deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: 'Deleted via context menu'
   }).eq('id',id);
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   logEvent('DELETE', 'order', id, {order_num: o?.order_num, deleted_by: currentUser.email, reason: 'Deleted via context menu'});
   toast('Order deleted');await loadOrders();renderTable();
 }
@@ -3984,7 +3989,7 @@ async function confirmDeleteOrder(id){
   const{error}=await sb.from('orders').update({
     deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: reason
   }).eq('id',id);
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   logEvent('DELETE','order',id,{order_num:o?.order_num, deleted_by:currentUser.email, reason});
   toast('✅ Order deleted');await loadOrders();renderTable();
 }
@@ -4547,7 +4552,7 @@ async function saveAlias() {
     { seller_id, product_id: parseInt(product_id), alias_name },
     { onConflict: 'seller_id,product_id' }
   );
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   await loadAliases();
   closeModal('alias-modal');
   renderBrandProfiles();
@@ -4878,7 +4883,7 @@ async function saveProduct(){
   }
   
   btn.disabled=false;btn.textContent='Save Product';
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   if (productId) await saveProductComponents(productId);
   logEvent(editProductId?'UPDATE':'CREATE', 'product', productId||'', { name: payload.name, category: payload.category, price: payload.price, unit: payload.unit, product_type: payload.product_type, shelf_position: payload.shelf_position });
   toast(editProductId?'Product updated':'Product added');
@@ -4925,6 +4930,11 @@ function openCSVExport(){
 }
 
 function _xlsxPhone(v){ return v ? String(v).trim().replace(/\s+/g,'') : ''; }
+// Excel formula-injection guard: prefix risky leading chars with apostrophe
+function _xlsxSafe(v){
+  if (typeof v !== 'string') return v;
+  return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+}
 
 async function _loadXLSX(){
   if(window.XLSX) return window.XLSX;
@@ -4982,7 +4992,7 @@ async function exportXLSX(){
     }
   });
 
-  const ws = XL.utils.aoa_to_sheet(data);
+  const ws = XL.utils.aoa_to_sheet(data.map((row,ri) => ri===0 ? row : row.map(_xlsxSafe)));
 
   // Column widths
   ws['!cols'] = [
@@ -5016,7 +5026,7 @@ async function exportProductsCSV(){
     p.name, p.category, p.product_type||'Regular', p.type||'',
     p.unit, p.price, p.shelf_position||'', p.barcode||'', p.description||''
   ])];
-  const ws = XL.utils.aoa_to_sheet(data);
+  const ws = XL.utils.aoa_to_sheet(data.map((row,ri)=> ri===0?row:row.map(_xlsxSafe)));
   ws['!cols'] = [{wch:30},{wch:16},{wch:10},{wch:14},{wch:8},{wch:8},{wch:6},{wch:14},{wch:40}];
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Products');
@@ -5035,7 +5045,7 @@ async function exportClientsCSV(){
     _xlsxPhone(c.phone),
     c.emirate||'', c.district||'', c.villa||'', c.notes||''
   ])];
-  const ws = XL.utils.aoa_to_sheet(data);
+  const ws = XL.utils.aoa_to_sheet(data.map((row,ri)=> ri===0?row:row.map(_xlsxSafe)));
   ws['!cols'] = [{wch:28},{wch:16},{wch:10},{wch:10},{wch:18},{wch:12},{wch:18},{wch:24},{wch:30}];
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Clients');
@@ -5106,7 +5116,7 @@ async function saveLocItem(){
   const v=document.getElementById('dir-input').value.trim();
   if(!v)return;
   const {error}=await sb.from('locations').insert({type:locAddType,name:v,parent_id:locAddParentId||null});
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   toast('Added: '+v);
   closeModal('dir-modal');
   await loadLocations();
@@ -5228,7 +5238,7 @@ async function saveDirItem(){
   const v=document.getElementById('dir-input').value.trim();
   if(!v||!dirCategory)return;
   const{error}=await sb.from('refs').insert({category:dirCategory,value:v});
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   toast('Added: '+v);closeModal('dir-modal');await loadRefs();renderDirectory();renderFilters();
 }
 const PROTECTED_REFS = ['Not Confirmed','Processing in Lab','Ready in Lab','In the Warehouse','Ready for Pick-up','En Route','Delivered','Delivery fail/reschedule','Cancelled'];
@@ -5320,7 +5330,7 @@ async function resetUserPassword(){
   const email=document.getElementById('u-email').value;
   if(!email){toast('No email',true);return;}
   const{error}=await sb.auth.resetPasswordForEmail(email);
-  if(error){toast('Error: '+error.message,true);return;}
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   toast('✅ Password reset email sent to '+email);
 }
 
@@ -5338,7 +5348,7 @@ async function saveUser(){
     btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
     const{error}=await sb.from('profiles').update({name,role,staff_role:staffRole}).eq('id',userId);
     btn.disabled=false;btn.textContent='Save Changes';
-    if(error){toast('Error: '+error.message,true);return;}
+    if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
     toast('✅ User updated');
     closeModal('user-modal');
     await renderUsers();
@@ -5922,7 +5932,7 @@ async function saveClient() {
   }
 
   btn.disabled = false; btn.textContent = 'Save Client';
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   const _clientId = editClientId || (await sb.from('clients').select('id').eq('name', name).single()).data?.id;
   logEvent(editClientId ? 'UPDATE' : 'CREATE', 'client', _clientId || '', { name, phone: payload.phone, category: payload.category, is_client: payload.is_client, is_seller: payload.is_seller });
   toast(editClientId ? '✅ Client updated' : '✅ Client added');
@@ -5935,7 +5945,7 @@ async function deleteClient(id) {
   if (!confirm('Delete this client?')) return;
   const c = clients.find(x => x.id === id);
   const { error } = await sb.from('clients').delete().eq('id', id);
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   logEvent('DELETE', 'client', id, { name: c?.name, phone: c?.phone });
   toast('Client deleted');
   await loadClients();
@@ -6369,7 +6379,7 @@ async function saveDispatchNewDriver() {
   const phone = document.getElementById('dispatch-new-drv-phone').value.trim();
   if (!name) { toast('Name required', true); return; }
   const { error } = await sb.from('drivers').insert({ name, phone: phone || null });
-  if (error) { toast('Error: ' + error.message, true); return; }
+  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   toast('✅ Driver added: ' + name);
   await loadDrivers();
   renderFilters();
