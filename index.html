@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.3 -->
+<!-- v10.4 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.4</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -2027,7 +2027,7 @@ function getFiltered(){
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.notes,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_num,o.emirate,o.confirmed,o.order_date,o.district].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'Not Confirmed':0,'Processing in Lab':1,'Ready in Lab':2,'In the Warehouse':3,'Ready for Pick-up':4,'En Route':5,'Delivered':6,'Cancelled':7,'Delivery fail/reschedule':8};
@@ -4377,7 +4377,7 @@ async function openStockDeduction(orderId) {
 
   // Subtitle
   document.getElementById('stock-deduct-subtitle').textContent =
-    'Order ' + order.order_num + (driver ? ' · Driver: ' + driver : '');
+    'Order ' + order.order_num + (order.driver ? ' · Driver: ' + order.driver : '');
 
   // Load order items
   const { data: items } = await sb.from('order_items').select('*').eq('order_id', orderId);
@@ -5443,7 +5443,7 @@ async function generateInvoice(seller) {
     invoice_number: invNum,
     order_id: order.id,
     seller: seller,
-    bill_to_name: order.client_number || '',
+    bill_to_name: order.client_name || order.client_number || '',
     bill_to_address: [order.emirate, order.city, order.apt].filter(Boolean).join(', '),
     bill_to_phone: order.client_number || '',
     delivery_charge: 0,
