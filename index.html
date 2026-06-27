@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.1 -->
+<!-- v10.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.1</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1676,8 +1676,8 @@ sb.auth.onAuthStateChange(async(event,session)=>{
   if(session?.user){
     currentUser=session.user;
     try {
-      await loadProfile();
-      await initApp();
+      const ok = await loadProfile();
+      if (ok) await initApp();
     } catch(e) {
       console.error('initApp error:', e);
       document.getElementById('loading').style.display='none';
@@ -1696,16 +1696,17 @@ function _populateProductTypeSelect(selectedVal) {
 }
 
 async function loadProfile(){
-  const{data}=await sb.from('profiles').select('role,name').eq('id',currentUser.id).single();
-  currentRole=data?.role||'operator';
-  document.title = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
-  // Block inactive users
+  const{data}=await sb.from('profiles').select('role,name,active').eq('id',currentUser.id).single();
+  // Block inactive users before granting any access
   if(data?.active===false){
     toast('❌ Your account has been deactivated',true);
     await sb.auth.signOut();
-    return;
+    return false;
   }
+  currentRole=data?.role||'operator';
+  document.title = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
   logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRole});
+  return true;
 }
 
 async function initApp(){
