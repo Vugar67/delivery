@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.6 -->
+<!-- v10.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -128,6 +128,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .shop-cat-btn{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11px;font-family:var(--mono);cursor:pointer;color:var(--muted);transition:.15s;white-space:nowrap}
 .shop-cat-btn.active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700}
 .shop-cat-btn:hover:not(.active){color:var(--text);border-color:var(--muted)}
+.delivery-preset-btn{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:12px;font-family:var(--mono);cursor:pointer;color:var(--muted);transition:.15s;white-space:nowrap}
+.delivery-preset-btn.active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700}
+.delivery-preset-btn:hover:not(.active){color:var(--text);border-color:var(--accent)}
 .shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:220px;overflow-y:auto}
 .shop-product-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;transition:.15s;position:relative}
 .shop-product-img{width:100%;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
@@ -309,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1145,10 +1148,21 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group form-full">
         <label>Delivery Charge (AED)</label>
+        <!-- Quick-pick delivery buttons. The actual value lives in the hidden
+             #f-delivery-charge input (read by saveOrder/editOrder/payload).
+             Buttons set that value; "Manual" reveals the number field. -->
+        <div id="delivery-presets" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <button type="button" class="delivery-preset-btn" data-val="50" onclick="pickDelivery(50,this)">50 AED</button>
+          <button type="button" class="delivery-preset-btn" data-val="60" onclick="pickDelivery(60,this)">60 AED</button>
+          <button type="button" class="delivery-preset-btn" data-val="150" onclick="pickDelivery(150,this)">150 AED</button>
+          <button type="button" class="delivery-preset-btn" data-val="200" onclick="pickDelivery(200,this)">200 AED</button>
+          <button type="button" class="delivery-preset-btn" data-val="250" onclick="pickDelivery(250,this)">250 AED</button>
+          <button type="button" class="delivery-preset-btn" id="delivery-manual-btn" onclick="pickDeliveryManual(this)">Manual</button>
+        </div>
         <div style="display:flex;align-items:center;gap:10px">
           <input id="f-delivery-charge" type="number" step="0.01" min="0" placeholder="0.00"
-            style="width:160px;border-color:var(--accent)">
-          <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Auto-filled by emirate — edit if needed, set 0 for free delivery</span>
+            style="width:160px;border-color:var(--accent)" oninput="onManualDeliveryInput()">
+          <span id="delivery-hint" style="font-size:12px;color:var(--muted);font-family:var(--mono)">Pick a preset or choose Manual to type a custom amount</span>
         </div>
       </div>
       <div class="form-group form-full"><label>Notes <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Shift+Enter for new line)</span></label><textarea id="f-notes" placeholder="Any additional notes..." rows="2" onkeydown="if((event.shiftKey||event.altKey)&&event.key==='Enter'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd,v=this.value;this.value=v.slice(0,s)+'\n'+v.slice(e);this.selectionStart=this.selectionEnd=s+1;}" style="resize:vertical;min-height:52px"></textarea></div>
@@ -2365,6 +2379,76 @@ function getDeliveryRate(emirate) {
   return rate ? parseFloat(rate.rate) : 50;
 }
 
+// ── Delivery preset buttons ─────────────────────────────────────────
+// The real value always lives in #f-delivery-charge (hidden-ish number input).
+// Presets set it directly and hide the manual field. "Manual" reveals the
+// field for a custom amount. Only one button is highlighted at a time (3A).
+function _clearDeliveryActive() {
+  document.querySelectorAll('#delivery-presets .delivery-preset-btn').forEach(b => b.classList.remove('active'));
+}
+function pickDelivery(val, btn) {
+  const dc = document.getElementById('f-delivery-charge');
+  if (dc) dc.value = val;
+  _clearDeliveryActive();
+  if (btn) btn.classList.add('active');
+  // Hide the manual number field when a preset is chosen
+  const dcWrap = document.getElementById('f-delivery-charge');
+  if (dcWrap) dcWrap.style.display = 'none';
+  const hint = document.getElementById('delivery-hint');
+  if (hint) hint.textContent = val + ' AED selected';
+}
+function pickDeliveryManual(btn) {
+  _clearDeliveryActive();
+  if (btn) btn.classList.add('active');
+  const dc = document.getElementById('f-delivery-charge');
+  if (dc) {
+    dc.style.display = '';
+    dc.value = '';
+    dc.focus();
+  }
+  const hint = document.getElementById('delivery-hint');
+  if (hint) hint.textContent = 'Type a custom amount';
+}
+// When user types in the manual field, keep "Manual" highlighted
+function onManualDeliveryInput() {
+  const manualBtn = document.getElementById('delivery-manual-btn');
+  if (manualBtn && !manualBtn.classList.contains('active')) {
+    _clearDeliveryActive();
+    manualBtn.classList.add('active');
+  }
+}
+// Reset preset UI to a known state. mode 'new' = nothing selected, field hidden.
+// If an explicit value is given (editing an order), show it: highlight a matching
+// preset, or fall back to Manual with the value shown.
+function resetDeliveryPresets(value) {
+  _clearDeliveryActive();
+  const dc = document.getElementById('f-delivery-charge');
+  const hint = document.getElementById('delivery-hint');
+  const presets = [50, 60, 150, 200, 250];
+  if (value === undefined || value === null || value === '') {
+    // New order: nothing chosen yet, hide field
+    if (dc) { dc.value = '0'; dc.style.display = 'none'; }
+    if (hint) hint.textContent = 'Pick a preset or choose Manual to type a custom amount';
+    return;
+  }
+  const num = parseFloat(value) || 0;
+  if (dc) dc.value = num;
+  const match = presets.indexOf(num);
+  if (match !== -1) {
+    // Highlight the matching preset, hide field
+    const btn = document.querySelector('#delivery-presets .delivery-preset-btn[data-val="' + num + '"]');
+    if (btn) btn.classList.add('active');
+    if (dc) dc.style.display = 'none';
+    if (hint) hint.textContent = num + ' AED selected';
+  } else {
+    // Custom value → Manual mode, show field
+    const manualBtn = document.getElementById('delivery-manual-btn');
+    if (manualBtn) manualBtn.classList.add('active');
+    if (dc) dc.style.display = '';
+    if (hint) hint.textContent = 'Custom amount';
+  }
+}
+
 async function loadDrivers() {
   const {data} = await sb.from('drivers').select('*').eq('active', true).order('name');
   drivers = data || [];
@@ -2381,12 +2465,9 @@ function getLocs(type, parentId) {
 }
 
 function onEmirateChange() {
-  // Auto-fill delivery charge
+  // Delivery charge is NOT auto-filled anymore — operator picks a preset
+  // button or types a manual amount. (Audit #3 / delivery presets change.)
   const emirateEl = document.getElementById('f-emirate');
-  const emirateName = emirateEl.options[emirateEl.selectedIndex]?.value;
-  const rate = getDeliveryRate(emirateName);
-  const dcEl = document.getElementById('f-delivery-charge');
-  if (dcEl && emirateName) dcEl.value = rate;
   const selected = emirateEl.options[emirateEl.selectedIndex];
   const emirateId = selected?.dataset?.lid;
 
@@ -2878,9 +2959,8 @@ async function reverseGeocode(lat, lng) {
 
     populateLocationSelects(emirateName, '', matchedDistrict);
 
-    const rate = getDeliveryRate(emirateName);
-    const dcEl = document.getElementById('f-delivery-charge');
-    if (dcEl) dcEl.value = rate;
+    // Delivery charge intentionally NOT auto-filled here either — operator picks
+    // a preset/manual amount. (1A: never auto-insert delivery.)
 
     toast('📍 ' + emirateName + (matchedDistrict ? ' — ' + matchedDistrict : ''));
   } catch(e) {
@@ -3619,6 +3699,7 @@ async function openNewOrder(){
   document.getElementById('f-confirmed').value='No';
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='0';
+  resetDeliveryPresets(); // new order: no preset selected, manual field hidden
   renderCart();
   initShop();
 
@@ -3658,6 +3739,7 @@ async function editOrder(id){
   document.getElementById('f-confirmed').value=o.confirmed||'No';
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
+  resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
   document.getElementById('f-notes').value=o.notes||'';
   const locUrlEl=document.getElementById('f-location-url');
   const locRawEl=document.getElementById('f-location-raw');
