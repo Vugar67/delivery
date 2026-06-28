@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v11.5 -->
+<!-- v11.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.5</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.6</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -640,7 +640,10 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div id="view-users" style="display:none">
       <div class="section-head">
         <div class="section-title">👥 Team Members</div>
-        <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
+        <div style="display:flex;align-items:center;gap:14px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none"><input type="checkbox" id="u-show-deleted" onchange="renderUsers()" style="cursor:pointer">Show deleted</label>
+          <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
+        </div>
       </div>
       <div class="users-wrap" id="users-wrap"></div>
     </div>
@@ -1731,8 +1734,13 @@ function _populateProductTypeSelect(selectedVal) {
 }
 
 async function loadProfile(){
-  const{data}=await sb.from('profiles').select('role,name,active').eq('id',currentUser.id).single();
-  // Block inactive users before granting any access
+  const{data}=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
+  // Block deleted or deactivated users before granting any access
+  if(data?.deleted_at){
+    toast('❌ Your account no longer exists',true);
+    await sb.auth.signOut();
+    return false;
+  }
   if(data?.active===false){
     toast('❌ Your account has been deactivated',true);
     await sb.auth.signOut();
@@ -5353,22 +5361,32 @@ async function delDirItem(id){
 async function renderUsers(){
   const{data}=await sb.from('profiles').select('*').order('created_at');
   const wrap=document.getElementById('users-wrap');
-  if(!data||!data.length){wrap.innerHTML='<div style="color:var(--muted)">No users yet.</div>';return;}
-  wrap.innerHTML=data.map(u=>`
-    <div class="user-card" style="${u.active===false?'opacity:.5;':''}">
+  const showDeleted=document.getElementById('u-show-deleted')?.checked;
+  const rows=(data||[]).filter(u=>showDeleted?u.deleted_at:!u.deleted_at);
+  if(!rows.length){wrap.innerHTML='<div style="color:var(--muted)">'+(showDeleted?'No deleted users.':'No users yet.')+'</div>';return;}
+  const tag='font-size:10px;color:var(--red);font-family:var(--mono);padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15)';
+  wrap.innerHTML=rows.map(u=>{
+    const del=!!u.deleted_at, off=(u.active===false||del);
+    const badge=del?`<span style="${tag}">DELETED</span>`:(u.active===false?`<span style="${tag}">INACTIVE</span>`:'');
+    const actions=del
+      ?`<button class="act-btn" onclick="restoreUser('${u.id}')">Restore</button>`
+      :`<button class="act-btn" onclick="editUser('${u.id}')">Edit</button><button class="act-btn del" onclick="softDeleteUser('${u.id}')" title="Delete user">&#10005;</button>`;
+    return `
+    <div class="user-card" style="${off?'opacity:.5;':''}">
       <div class="user-info">
-        <div class="avatar" style="${u.active===false?'background:var(--muted);':''}">${(u.name||u.email||'?').slice(0,2).toUpperCase()}</div>
+        <div class="avatar" style="${off?'background:var(--muted);':''}">${(u.name||u.email||'?').slice(0,2).toUpperCase()}</div>
         <div>
-          <div class="user-name">${u.name||'&mdash;'} ${u.active===false?'<span style="font-size:10px;color:var(--red);font-family:var(--mono);padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15)">INACTIVE</span>':''}</div>
+          <div class="user-name">${u.name||'&mdash;'} ${badge}</div>
           <div class="user-email">${u.email||''}</div>
           ${u.staff_role?`<div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:2px">${u.staff_role}</div>`:''}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="role-badge role-${u.role}">${u.role}</span>
-        <button class="act-btn" onclick="editUser('${u.id}')">Edit</button>
+        ${actions}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function openNewUser(){
@@ -5416,6 +5434,23 @@ async function toggleUserActive(){
   await sb.from('profiles').update({active:newActive}).eq('id',userId);
   toast(newActive?'✅ User activated':'User deactivated');
   closeModal('user-modal');
+  await renderUsers();
+}
+
+async function softDeleteUser(userId){
+  if(!userId)return;
+  if(!confirm('Delete this user? They will be removed from the team and blocked from logging in. You can restore them later from "Show deleted".'))return;
+  const{error}=await sb.from('profiles').update({deleted_at:new Date().toISOString()}).eq('id',userId);
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
+  toast('User deleted');
+  await renderUsers();
+}
+
+async function restoreUser(userId){
+  if(!userId)return;
+  const{error}=await sb.from('profiles').update({deleted_at:null}).eq('id',userId);
+  if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
+  toast('✅ User restored');
   await renderUsers();
 }
 
