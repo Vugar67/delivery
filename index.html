@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.8 -->
+<!-- v10.9 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.9</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1152,6 +1152,7 @@ select option{background:#1a1d27;color:#f0f2ff}
              #f-delivery-charge input (read by saveOrder/editOrder/payload).
              Buttons set that value; "Manual" reveals the number field. -->
         <div id="delivery-presets" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <button type="button" class="delivery-preset-btn" data-val="0" onclick="pickDelivery(0,this)">Free</button>
           <button type="button" class="delivery-preset-btn" data-val="50" onclick="pickDelivery(50,this)">50 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="60" onclick="pickDelivery(60,this)">60 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="150" onclick="pickDelivery(150,this)">150 AED</button>
@@ -2395,7 +2396,7 @@ function pickDelivery(val, btn) {
   const dcWrap = document.getElementById('f-delivery-charge');
   if (dcWrap) dcWrap.style.display = 'none';
   const hint = document.getElementById('delivery-hint');
-  if (hint) hint.textContent = val + ' AED selected';
+  if (hint) hint.textContent = (parseFloat(val) === 0) ? 'Free delivery' : (val + ' AED selected');
 }
 function pickDeliveryManual(btn) {
   _clearDeliveryActive();
@@ -2424,7 +2425,7 @@ function resetDeliveryPresets(value) {
   _clearDeliveryActive();
   const dc = document.getElementById('f-delivery-charge');
   const hint = document.getElementById('delivery-hint');
-  const presets = [50, 60, 150, 200, 250];
+  const presets = [0, 50, 60, 150, 200, 250];
   if (value === undefined || value === null || value === '') {
     // New order: nothing chosen yet, hide field
     if (dc) { dc.value = '0'; dc.style.display = 'none'; }
@@ -2439,7 +2440,7 @@ function resetDeliveryPresets(value) {
     const btn = document.querySelector('#delivery-presets .delivery-preset-btn[data-val="' + num + '"]');
     if (btn) btn.classList.add('active');
     if (dc) dc.style.display = 'none';
-    if (hint) hint.textContent = num + ' AED selected';
+    if (hint) hint.textContent = (num === 0) ? 'Free delivery' : (num + ' AED selected');
   } else {
     // Custom value → Manual mode, show field
     const manualBtn = document.getElementById('delivery-manual-btn');
