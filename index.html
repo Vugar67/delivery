@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v11.3 -->
+<!-- v11.5 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.5</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -930,9 +930,6 @@ select option{background:#1a1d27;color:#f0f2ff}
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctx-menu">
   <div class="ctx-menu-item" onclick="ctxInvoice()">&#128203; Generate Invoice</div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-menu-item" onclick="ctxEdit()">&#9998; Edit Order</div>
-  <div class="ctx-menu-item" onclick="ctxDelete()" style="color:var(--red)">&#10005; Delete Order</div>
 </div>
 
 <!-- SELLER SELECT MODAL -->
@@ -2233,6 +2230,7 @@ function renderTable(){
           })() : ''}
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
           <button class="act-btn" onclick="copyOrderDetails('${o.id}')" title="Copy order details" style="color:#25d366;border-color:rgba(37,211,102,.3)">⎘</button>
+          ${!window._dispatcherMode ? `<button class="act-btn del" onclick="deleteOrder('${o.id}')" title="Delete order">&#10005;</button>` : ''}
         </div></td>
       </tr>`;
     }).join('');
@@ -3383,6 +3381,7 @@ function mqttAllOff(orderId) {
 function renderWarehouseQueue() {
   const container = document.getElementById('warehouse-queue');
   if (!container) return;
+  const prevScroll = container.querySelector('.wh-scroll')?.scrollLeft || 0;
 
   // "Show Not Confirmed" toggle — defaults to on if the control is absent.
   const ncEl = document.getElementById('wh-show-nc');
@@ -3448,7 +3447,9 @@ function renderWarehouseQueue() {
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div style="display:flex;gap:12px;overflow-x:auto;padding:12px;align-items:flex-start">${cols}</div>`;
+  container.innerHTML = `<div class="wh-scroll" style="display:flex;gap:12px;overflow-x:auto;padding:12px;align-items:flex-start">${cols}</div>`;
+  const sc = container.querySelector('.wh-scroll');
+  if (sc) sc.scrollLeft = prevScroll;
 }
 
 function whCardClick(orderId, dimmed) {
@@ -4032,10 +4033,10 @@ async function deleteOrder(id){
   const o = orders.find(x=>x.id===id);
   const now = new Date().toISOString();
   const{error}=await sb.from('orders').update({
-    deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: 'Deleted via context menu'
+    deleted: true, deleted_at: now, deleted_by: currentUser.email, deleted_reason: 'Deleted from order list'
   }).eq('id',id);
   if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
-  logEvent('DELETE', 'order', id, {order_num: o?.order_num, deleted_by: currentUser.email, reason: 'Deleted via context menu'});
+  logEvent('DELETE', 'order', id, {order_num: o?.order_num, deleted_by: currentUser.email, reason: 'Deleted from order list'});
   toast('Order deleted');await loadOrders();renderTable();
 }
 
@@ -5512,16 +5513,6 @@ document.addEventListener('contextmenu', e => { if (!e.target.closest('#order-tb
 function ctxInvoice() {
   document.getElementById('ctx-menu').classList.remove('open');
   document.getElementById('seller-modal').classList.add('open');
-}
-
-function ctxEdit() {
-  document.getElementById('ctx-menu').classList.remove('open');
-  if (ctxOrderId) editOrder(ctxOrderId);
-}
-
-function ctxDelete() {
-  document.getElementById('ctx-menu').classList.remove('open');
-  if (ctxOrderId) deleteOrder(ctxOrderId);
 }
 
 async function generateInvoice(seller) {
