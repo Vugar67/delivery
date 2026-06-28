@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v11.6 -->
+<!-- v11.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v11.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -645,7 +645,14 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button class="btn btn-primary" onclick="openNewUser()">+ Add User</button>
         </div>
       </div>
-      <div class="users-wrap" id="users-wrap"></div>
+      <div class="table-wrap">
+        <table class="tbl" style="min-width:760px">
+          <thead><tr>
+            <th>Name</th><th>Email</th><th>Role</th><th>Position</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
     </div>
 
     <div id="view-storage" style="display:none">
@@ -1865,6 +1872,7 @@ async function loadProducts(){
 }
 
 function showView(v){
+  if(v==='users' && currentRole!=='admin') v='orders';
   ['orders','products','directory','users','clients','warehouse','brands','storage','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
@@ -5360,32 +5368,31 @@ async function delDirItem(id){
 // USERS
 async function renderUsers(){
   const{data}=await sb.from('profiles').select('*').order('created_at');
-  const wrap=document.getElementById('users-wrap');
+  const tbody=document.getElementById('users-tbody');
+  if(!tbody)return;
   const showDeleted=document.getElementById('u-show-deleted')?.checked;
   const rows=(data||[]).filter(u=>showDeleted?u.deleted_at:!u.deleted_at);
-  if(!rows.length){wrap.innerHTML='<div style="color:var(--muted)">'+(showDeleted?'No deleted users.':'No users yet.')+'</div>';return;}
-  const tag='font-size:10px;color:var(--red);font-family:var(--mono);padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15)';
-  wrap.innerHTML=rows.map(u=>{
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-icon">👥</div><div>${showDeleted?'No deleted users':'No users yet'}</div></div></td></tr>`;return;}
+  const dash='<span style="color:var(--border)">—</span>';
+  tbody.innerHTML=rows.map(u=>{
     const del=!!u.deleted_at, off=(u.active===false||del);
-    const badge=del?`<span style="${tag}">DELETED</span>`:(u.active===false?`<span style="${tag}">INACTIVE</span>`:'');
+    const initials=(u.name||u.email||'?').slice(0,2).toUpperCase();
+    const status=del
+      ?'<span class="badge" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)">Deleted</span>'
+      :(u.active===false
+         ?'<span class="badge" style="background:rgba(148,163,184,.15);color:var(--muted);border:1px solid var(--border)">Inactive</span>'
+         :'<span class="badge" style="background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3)">Active</span>');
     const actions=del
       ?`<button class="act-btn" onclick="restoreUser('${u.id}')">Restore</button>`
       :`<button class="act-btn" onclick="editUser('${u.id}')">Edit</button><button class="act-btn del" onclick="softDeleteUser('${u.id}')" title="Delete user">&#10005;</button>`;
-    return `
-    <div class="user-card" style="${off?'opacity:.5;':''}">
-      <div class="user-info">
-        <div class="avatar" style="${off?'background:var(--muted);':''}">${(u.name||u.email||'?').slice(0,2).toUpperCase()}</div>
-        <div>
-          <div class="user-name">${u.name||'&mdash;'} ${badge}</div>
-          <div class="user-email">${u.email||''}</div>
-          ${u.staff_role?`<div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:2px">${u.staff_role}</div>`:''}
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span class="role-badge role-${u.role}">${u.role}</span>
-        ${actions}
-      </div>
-    </div>`;
+    return `<tr style="${off?'opacity:.55':''}">
+      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:28px;height:28px;border-radius:50%;background:${off?'var(--muted)':'var(--accent)'};color:#000;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials}</div><span style="font-weight:600">${u.name||dash}</span></div></td>
+      <td style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">${u.email||''}</td>
+      <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+      <td>${u.staff_role||dash}</td>
+      <td>${status}</td>
+      <td><div class="actions">${actions}</div></td>
+    </tr>`;
   }).join('');
 }
 
