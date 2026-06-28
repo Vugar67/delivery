@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v10.7 -->
+<!-- v10.8 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v10.8</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -3668,7 +3668,10 @@ async function openNewOrder(){
   _setDistrictOptions([]);
   document.getElementById('f-num').value = 'Auto';
   document.getElementById('f-num').disabled = true;
-  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  // Default order date = TODAY in Dubai (UTC+4), not UTC. Using plain
+  // toISOString() returned the UTC date, which rolled back a day for orders
+  // created between 00:00–04:00 Dubai time.
+  document.getElementById('f-date').value=new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0];
 
   // Clear all text fields
   ['f-apt','f-client','f-client-name','f-seller-name','f-notes',
