@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v12.3 -->
+<!-- v12.4 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.4</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1339,7 +1339,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div class="loghist-panel" id="loghist-panel">
   <div class="loghist-head">
     <div>
-      <div id="loghist-title" style="font-size:15px;font-weight:700">История заказа</div>
+      <div id="loghist-title" style="font-size:15px;font-weight:700">Order History</div>
       <div id="loghist-sub" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px"></div>
     </div>
     <button class="close-btn" onclick="closeLogHistory()">✕</button>
@@ -3918,7 +3918,7 @@ function renderLogs() {
       const det = l.details ? Object.entries(l.details).filter(([,v])=>v).map(([k,v])=>`<span style="color:var(--muted);font-size:10px">${k}:</span> ${typeof v==='object'?'{…}':v}`).join(' · ') : '—';
       const isOrderRow = l.entity_type === 'order';
       const oNum = (l.details && l.details.order_num) ? String(l.details.order_num) : '';
-      const clickAttr = isOrderRow ? ` style="cursor:pointer" onclick="openLogHistory('${l.entity_id}','${oNum.replace(/'/g,"\\'")}')" title="Открыть историю заказа"` : '';
+      const clickAttr = isOrderRow ? ` style="cursor:pointer" onclick="openLogHistory('${l.entity_id}','${oNum.replace(/'/g,"\\'")}')" title="Open order history"` : '';
       return `<tr${clickAttr}>
         <td style="font-family:var(--mono);font-size:11px;white-space:nowrap;color:var(--muted)">${t}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--text)">${l.user_email||'—'}</td>
@@ -3943,14 +3943,14 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'статус доставки',payment_status:'оплата',driver:'водитель',confirmed:'подтверждён',priority:'приоритет',emirate:'эмират',city:'город',notes:'заметки',client_name:'клиент',seller_name:'продавец',total:'итого',client:'клиент',seller:'продавец',warehouse_status:'склад-статус'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'notes',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
   const d=l.details||{};
-  const sub={warehouse_packed:'📦 Склад: упаковано',warehouse_problem:'⚠️ Склад: проблема',warehouse_status:'📦 Склад: статус',priority_change:'⭐ Смена приоритета',wa_sent_to_client:'📱 WhatsApp клиенту',wa_sent_to_driver:'🚚 WhatsApp водителю'};
+  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver'};
   if(d.action && sub[d.action]) return sub[d.action];
-  const base={CREATE:'🆕 Создан',UPDATE:'✏️ Изменён',DELETE:'🗑 Удалён',LOGIN:'Вход',LOGOUT:'Выход',EXPORT:'Экспорт'};
+  const base={CREATE:'🆕 Created',UPDATE:'✏️ Updated',DELETE:'🗑 Deleted',LOGIN:'Login',LOGOUT:'Logout',EXPORT:'Export'};
   return base[l.action]||l.action||'—';
 }
 function _lhChangesHtml(l){
@@ -3971,20 +3971,20 @@ function _lhChangesHtml(l){
   }
   if(l.action==='CREATE'){
     const snap=[];
-    if(d.client) snap.push('клиент: '+_lhEsc(d.client));
+    if(d.client) snap.push('client: '+_lhEsc(d.client));
     if(d.emirate) snap.push(_lhEsc(d.emirate));
-    if(d.delivery_status) snap.push('статус: '+_lhEsc(d.delivery_status));
-    if(d.payment_status) snap.push('оплата: '+_lhEsc(d.payment_status));
-    if(d.driver) snap.push('водитель: '+_lhEsc(d.driver));
-    if(d.total!=null) snap.push('итого: '+_lhEsc(d.total)+' AED');
+    if(d.delivery_status) snap.push('status: '+_lhEsc(d.delivery_status));
+    if(d.payment_status) snap.push('payment: '+_lhEsc(d.payment_status));
+    if(d.driver) snap.push('driver: '+_lhEsc(d.driver));
+    if(d.total!=null) snap.push('total: '+_lhEsc(d.total)+' AED');
     if(snap.length) out.push(`<div class="lh-row" style="color:var(--muted)">${snap.join(' · ')}</div>`);
-    if(Array.isArray(d.items)&&d.items.length) out.push(`<div class="lh-row" style="color:var(--muted)">позиции: ${d.items.map(i=>_lhEsc(i.product_name)+'×'+(i.qty??i.quantity)).join(', ')}</div>`);
+    if(Array.isArray(d.items)&&d.items.length) out.push(`<div class="lh-row" style="color:var(--muted)">items: ${d.items.map(i=>_lhEsc(i.product_name)+'×'+(i.qty??i.quantity)).join(', ')}</div>`);
   }
   if(d.problem) out.push(`<div class="lh-row lh-rem">${_lhEsc(d.problem)}</div>`);
-  if(d.priority_before!=null && d.priority_after!=null) out.push(`<div class="lh-row"><span class="lh-k">приоритет:</span> ${_lhEsc(d.priority_before)}<span class="lh-arrow">→</span><b>${_lhEsc(d.priority_after)}</b></div>`);
-  if(d.warehouse_status && d.action==='warehouse_status') out.push(`<div class="lh-row"><span class="lh-k">склад-статус:</span> ${_lhEsc(d.warehouse_status)}</div>`);
+  if(d.priority_before!=null && d.priority_after!=null) out.push(`<div class="lh-row"><span class="lh-k">priority:</span> ${_lhEsc(d.priority_before)}<span class="lh-arrow">→</span><b>${_lhEsc(d.priority_after)}</b></div>`);
+  if(d.warehouse_status && d.action==='warehouse_status') out.push(`<div class="lh-row"><span class="lh-k">warehouse status:</span> ${_lhEsc(d.warehouse_status)}</div>`);
   if(d.client_number && d.action==='wa_sent_to_client') out.push(`<div class="lh-row" style="color:var(--muted)">→ ${_lhEsc(d.client_number)}</div>`);
-  if(l.action==='DELETE' && d.reason) out.push(`<div class="lh-row lh-rem">причина: ${_lhEsc(d.reason)}</div>`);
+  if(l.action==='DELETE' && d.reason) out.push(`<div class="lh-row lh-rem">reason: ${_lhEsc(d.reason)}</div>`);
   if(!out.length){
     const skip=new Set(['order_num','action']);
     for(const [k,v] of Object.entries(d)){
@@ -4010,16 +4010,16 @@ function _lhRenderEvent(l){
 async function openLogHistory(entityId, orderNum){
   const panel=document.getElementById('loghist-panel');
   const backdrop=document.getElementById('loghist-backdrop');
-  document.getElementById('loghist-title').textContent=orderNum?('История '+orderNum):'История заказа';
+  document.getElementById('loghist-title').textContent=orderNum||'Order History';
   document.getElementById('loghist-sub').textContent='';
   const body=document.getElementById('loghist-body');
-  body.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted)"><span class="spinner"></span> Загрузка…</div>';
+  body.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted)"><span class="spinner"></span> Loading…</div>';
   backdrop.classList.add('open'); panel.classList.add('open');
   const { data, error } = await sb.from('logs').select('*').eq('entity_id', entityId).order('created_at', { ascending: true });
-  if(error){ body.innerHTML='<div style="padding:20px;color:var(--red)">Ошибка загрузки истории</div>'; return; }
+  if(error){ body.innerHTML='<div style="padding:20px;color:var(--red)">Failed to load history</div>'; return; }
   const rows=data||[];
-  document.getElementById('loghist-sub').textContent=rows.length+' событий';
-  body.innerHTML=rows.length?rows.map(_lhRenderEvent).join(''):'<div style="padding:20px;color:var(--muted)">Событий не найдено</div>';
+  document.getElementById('loghist-sub').textContent=rows.length+(rows.length===1?' event':' events');
+  body.innerHTML=rows.length?rows.map(_lhRenderEvent).join(''):'<div style="padding:20px;color:var(--muted)">No events found</div>';
 }
 function closeLogHistory(){
   document.getElementById('loghist-panel').classList.remove('open');
