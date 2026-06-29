@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v12.7 -->
+<!-- v12.8 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.7</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.8</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1141,8 +1141,16 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
             <div id="shop-cart-items"></div>
             <div class="shop-cart-total">
-              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">TOTAL</span>
-              <span id="shop-cart-total-val" style="font-size:18px;font-weight:700;color:var(--accent);font-family:var(--mono)">0.00 AED</span>
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Subtotal</span>
+              <span id="shop-cart-total-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
+            </div>
+            <div class="shop-cart-total" style="border-top:none;margin-top:2px;padding-top:0">
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Delivery Charge</span>
+              <span id="shop-cart-delivery-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
+            </div>
+            <div class="shop-cart-total">
+              <span style="font-size:13px;color:var(--accent);font-family:var(--mono);font-weight:700">Grand Total</span>
+              <span id="shop-cart-grand-val" style="font-size:18px;font-weight:700;color:var(--accent);font-family:var(--mono)">0.00 AED</span>
             </div>
           </div>
           <div id="shop-cart-empty" style="text-align:center;padding:10px;color:var(--muted);font-size:12px;font-family:var(--mono)">No items added yet</div>
@@ -2461,6 +2469,7 @@ function pickDelivery(val, btn) {
   if (dcWrap) dcWrap.style.display = 'none';
   const hint = document.getElementById('delivery-hint');
   if (hint) hint.textContent = (parseFloat(val) === 0) ? 'Free delivery' : (val + ' AED selected');
+  updateCartTotals();
 }
 function pickDeliveryManual(btn) {
   _clearDeliveryActive();
@@ -2473,6 +2482,7 @@ function pickDeliveryManual(btn) {
   }
   const hint = document.getElementById('delivery-hint');
   if (hint) hint.textContent = 'Type a custom amount';
+  updateCartTotals();
 }
 // When user types in the manual field, keep "Manual" highlighted
 function onManualDeliveryInput() {
@@ -2481,6 +2491,7 @@ function onManualDeliveryInput() {
     _clearDeliveryActive();
     manualBtn.classList.add('active');
   }
+  updateCartTotals();
 }
 // Reset preset UI to a known state. mode 'new' = nothing selected, field hidden.
 // If an explicit value is given (editing an order), show it: highlight a matching
@@ -2512,6 +2523,7 @@ function resetDeliveryPresets(value) {
     if (dc) dc.style.display = '';
     if (hint) hint.textContent = 'Custom amount';
   }
+  updateCartTotals();
 }
 
 async function loadDrivers() {
@@ -3092,6 +3104,20 @@ function renderShopProducts() {
   }).join('');
 }
 
+function updateCartTotals() {
+  const _gp = item => item.is_custom ? item.price : (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price));
+  const _gq = item => item.is_custom ? item.quantity : item.qty;
+  const subtotal = (cart || []).reduce((s, item) => s + (_gp(item) || 0) * (_gq(item) || 0), 0);
+  const dcEl = document.getElementById('f-delivery-charge');
+  const dc = dcEl ? (parseFloat(dcEl.value) || 0) : 0;
+  const subEl = document.getElementById('shop-cart-total-val');
+  const delEl = document.getElementById('shop-cart-delivery-val');
+  const grandEl = document.getElementById('shop-cart-grand-val');
+  if (subEl) subEl.textContent = subtotal.toFixed(2) + ' AED';
+  if (delEl) delEl.textContent = dc.toFixed(2) + ' AED';
+  if (grandEl) grandEl.textContent = (subtotal + dc).toFixed(2) + ' AED';
+}
+
 function renderCart() {
   const cartEl = document.getElementById('shop-cart');
   const emptyEl = document.getElementById('shop-cart-empty');
@@ -3118,8 +3144,7 @@ function renderCart() {
     return alias ? item.product.name + ' <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">→ ' + alias + '</span>' : item.product.name;
   };
 
-  const total = cart.reduce((s, item) => s + getPrice(item) * getQty(item), 0);
-  if (totalEl) totalEl.textContent = total.toFixed(2) + ' AED';
+  updateCartTotals();
   if (countEl) countEl.textContent = cart.length + ' item' + (cart.length > 1 ? 's' : '');
   
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
