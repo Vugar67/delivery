@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v12.8 -->
+<!-- v12.9 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.8</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.9</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -1161,7 +1161,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group form-full" style="margin-top:-4px">
         <button onclick="toggleCustomItem()" id="custom-item-toggle" style="background:none;border:1px dashed var(--border);border-radius:6px;padding:7px 14px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;width:100%;text-align:left" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Custom Item (one-time, not saved to catalog)</button>
         <div id="custom-item-form" style="display:none;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="display:grid;grid-template-columns:1fr 110px 70px;gap:8px;align-items:end">
+          <div style="display:grid;grid-template-columns:1fr 100px 78px 60px;gap:8px;align-items:end">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">NAME</div>
               <input id="custom-item-name" placeholder="e.g. Tesa 30mg Pen" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
@@ -1169,6 +1169,16 @@ select option{background:#1a1d27;color:#f0f2ff}
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE (AED)</div>
               <input id="custom-item-price" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
+              <select id="custom-item-unit" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <option value="pcs" selected>pcs</option>
+                <option value="pen">pen</option>
+                <option value="vial">vial</option>
+                <option value="ml">ml</option>
+                <option value="box">box</option>
+              </select>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
@@ -3135,7 +3145,7 @@ function renderCart() {
 
   const getPrice = item => item.is_custom ? item.price : (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price));
   const getQty   = item => item.is_custom ? item.quantity : item.qty;
-  const getUnit  = item => item.is_custom ? '' : item.product.unit;
+  const getUnit  = item => item.is_custom ? (item.unit || '') : item.product.unit;
   const _sellerEl = document.getElementById('f-seller-id') || {};
   const _sellerId = window._selectedSellerId || '';
   const getName = item => {
@@ -3224,6 +3234,7 @@ function addCustomItem() {
   const name = document.getElementById('custom-item-name').value.trim();
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
   const qty = parseInt(document.getElementById('custom-item-qty').value) || 1;
+  const unit = document.getElementById('custom-item-unit')?.value || 'pcs';
   if (!name) { toast('Enter item name', true); return; }
 
   // Add to cart as a custom item (no product_id)
@@ -3231,13 +3242,14 @@ function addCustomItem() {
   if (existing) {
     existing.quantity += qty;
   } else {
-    cart.push({ product_id: null, product_name: name, price, quantity: qty, is_custom: true });
+    cart.push({ product_id: null, product_name: name, price, quantity: qty, unit, is_custom: true });
   }
 
   // Reset form
   document.getElementById('custom-item-name').value = '';
   document.getElementById('custom-item-price').value = '';
   document.getElementById('custom-item-qty').value = '1';
+  if (document.getElementById('custom-item-unit')) document.getElementById('custom-item-unit').value = 'pcs';
   document.getElementById('custom-item-form').style.display = 'none';
 
   renderCart();
@@ -3863,7 +3875,7 @@ async function editOrder(id){
   cart=items.map(item=>{
     // Custom item — no product_id or product not found
     if (!item.product_id) {
-      return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), is_custom: true };
+      return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true };
     }
     const p=products.find(x=>x.id===item.product_id)||{id:item.product_id,name:item.product_name,price:item.price,unit:item.unit};
     const savedPrice = parseFloat(item.price);
@@ -4116,7 +4128,7 @@ async function saveOrder(){
       const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
       return qty > 0;
     }).map(item=> {
-      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:'', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
+      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
       const alias = _sId ? getAlias(_sId, item.product.id) : null;
       const hasCustomComp = item.customComponents && item.customComponents.length > 0;
       // Check if custom components differ from standard
