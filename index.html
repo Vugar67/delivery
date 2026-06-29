@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v12.6 -->
+<!-- v12.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -3960,8 +3960,13 @@ function _lhChangesHtml(l){
   const val=v=>(v==null||v==='')?'—':_lhEsc(v);
   if(d.field_changes && typeof d.field_changes==='object'){
     for(const [f,ch] of Object.entries(d.field_changes)){
-      if(ch && typeof ch==='object' && ('before' in ch || 'after' in ch))
-        out.push(`<div class="lh-row"><span class="lh-k">${_lhFieldLabel(f)}:</span> ${val(ch.before)}<span class="lh-arrow">→</span><b>${val(ch.after)}</b></div>`);
+      if(ch && typeof ch==='object' && ('before' in ch || 'after' in ch)){
+        const _long=(String(ch.before||'').length+String(ch.after||'').length)>40;
+        if(_long)
+          out.push(`<div class="lh-row" style="flex-direction:column;gap:2px"><span class="lh-k">${_lhFieldLabel(f)}:</span><span>${val(ch.before)}</span><span><span class="lh-arrow">→</span><b>${val(ch.after)}</b></span></div>`);
+        else
+          out.push(`<div class="lh-row"><span class="lh-k">${_lhFieldLabel(f)}:</span> ${val(ch.before)}<span class="lh-arrow">→</span><b>${val(ch.after)}</b></div>`);
+      }
     }
   }
   if(d.item_changes && typeof d.item_changes==='object'){
@@ -3971,15 +3976,18 @@ function _lhChangesHtml(l){
     (ic.changed||[]).forEach(i=>out.push(`<div class="lh-row"><span class="lh-k">${_lhEsc(i.product_name)}:</span> ×${i.qty_before}<span class="lh-arrow">→</span><b>×${i.qty_after}</b></div>`));
   }
   if(l.action==='CREATE'){
-    const snap=[];
-    if(d.client) snap.push('client: '+_lhEsc(d.client));
-    if(d.emirate) snap.push(_lhEsc(d.emirate));
-    if(d.delivery_status) snap.push('status: '+_lhEsc(d.delivery_status));
-    if(d.payment_status) snap.push('payment: '+_lhEsc(d.payment_status));
-    if(d.driver) snap.push('driver: '+_lhEsc(d.driver));
-    if(d.total!=null) snap.push('total: '+_lhEsc(d.total)+' AED');
-    if(snap.length) out.push(`<div class="lh-row" style="color:var(--muted)">${snap.join(' · ')}</div>`);
-    if(Array.isArray(d.items)&&d.items.length) out.push(`<div class="lh-row" style="color:var(--muted)">items: ${d.items.map(i=>_lhEsc(i.product_name)+'×'+(i.qty??i.quantity)).join(', ')}</div>`);
+    const snapRow=(k,v)=>out.push(`<div class="lh-row"><span class="lh-k">${k}:</span> ${_lhEsc(v)}</div>`);
+    if(d.client) snapRow('client',d.client);
+    if(d.seller) snapRow('seller',d.seller);
+    if(d.emirate) snapRow('emirate',d.emirate);
+    if(d.delivery_status) snapRow('status',d.delivery_status);
+    if(d.payment_status) snapRow('payment',d.payment_status);
+    if(d.driver) snapRow('driver',d.driver);
+    if(d.total!=null) out.push(`<div class="lh-row"><span class="lh-k">total:</span> ${_lhEsc(d.total)} AED</div>`);
+    if(Array.isArray(d.items)&&d.items.length){
+      out.push(`<div class="lh-row"><span class="lh-k">items:</span></div>`);
+      d.items.forEach(i=>out.push(`<div class="lh-row" style="padding-left:12px">• ${_lhEsc(i.product_name)} ×${i.qty??i.quantity}</div>`));
+    }
   }
   if(d.problem) out.push(`<div class="lh-row lh-rem">${_lhEsc(d.problem)}</div>`);
   if(d.priority_before!=null && d.priority_after!=null) out.push(`<div class="lh-row"><span class="lh-k">priority:</span> ${_lhEsc(d.priority_before)}<span class="lh-arrow">→</span><b>${_lhEsc(d.priority_after)}</b></div>`);
