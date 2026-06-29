@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v12.0 -->
+<!-- v12.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -312,7 +312,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.0</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v12.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -5897,15 +5897,20 @@ async function sendToDriver(orderId) {
   const waItems = freshWaItems || orderItems[orderId] || [];
   const items = waItems.map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
   const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
-  const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
+  const needsCollect = (o.payment_status||'').toLowerCase().includes('on delivery');
   const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
   const totalAmount = itemsSubtotal + (o.delivery_charge||0);
-  const codLine = isCOD ? `\n\n💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*` : '';
   const showItems = o.wa_show_items === true;
-  const itemsSection = showItems && items ? `\n\n📦 *Items:*\n${items}` : '';
-  const locationSection = o.location_url ? `\n\n🗺 *Location:* ${o.location_url}` : '';
   const clientLine = [o.client_name, o.client_number].filter(Boolean).join(' — ');
-  const msg = `🚚 *DELIVERY ORDER ${o.order_num}*\n\n📍 *Address:* ${address}\n👤 *Client:* ${clientLine||'—'}${locationSection}${itemsSection}\n\n💰 *Payment:* ${o.payment_status||'—'}${codLine}\n${o.notes?'\n📝 *Notes:* '+o.notes:''}`;
+  const lines = [`🚚 *DELIVERY ORDER ${o.order_num}*`];
+  lines.push(`📍 *Address:* ${address||'—'}`);
+  lines.push(`👤 *Client:* ${clientLine||'—'}`);
+  if (o.location_url) lines.push(`🗺 *Location:* ${o.location_url}`);
+  if (showItems && items) lines.push(`📦 *Items:*\n${items}`);
+  lines.push(`💰 *Payment:* ${o.payment_status||'—'}`);
+  if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*`);
+  if (o.notes) lines.push(`📝 *Notes:* ${o.notes}`);
+  const msg = lines.join('\n');
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
   const waUrl = 'whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(msg);
