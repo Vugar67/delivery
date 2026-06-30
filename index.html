@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.1 -->
+<!-- v13.2 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.1</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.2</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -612,7 +612,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="section-head">
         <div class="section-title">📋 Activity Logs</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="log-search" placeholder="Search email, order#..." oninput="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
+          <input type="text" id="log-search" placeholder="Search order# / ID / email" oninput="onLogSearchInput()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:200px">
           <select id="log-action-filter" onchange="renderLogs()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             <option value="">All Actions</option>
             <option value="LOGIN">Login</option>
@@ -3892,12 +3892,76 @@ async function editOrder(id){
 
 // ─── LOGS ────────────────────────────────────────────────────────
 let _logs = [], _logsPage = 1;
+let _logSearchMode = false, _logSearchResults = [], _logSearchTimer = null;
 const LOGS_PER_PAGE = 50;
 
 async function loadLogs() {
   document.getElementById('logs-tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)"><span class="spinner"></span> Loading...</td></tr>';
   const { data } = await sb.from('logs').select('*').order('created_at', { ascending: false }).limit(2000);
   _logs = data || [];
+  _logsPage = 1;
+  _logSearchMode = false;   // Refresh returns to the recent feed
+  renderLogs();
+}
+
+// Debounced entry point for the search box.
+function onLogSearchInput() {
+  clearTimeout(_logSearchTimer);
+  _logSearchTimer = setTimeout(searchLogsServer, 350);
+}
+
+// Server-side log search: resolves a full order number / uuid / exact email to
+// entity_ids and fetches that entity's COMPLETE history from the DB (no 2000-row
+// window). Partial/free-text falls back to filtering the loaded recent feed, so
+// behaviour never regresses.
+async function searchLogsServer() {
+  const raw = (document.getElementById('log-search')?.value || '').trim();
+  if (!raw) { _logSearchMode = false; _logsPage = 1; renderLogs(); return; }
+
+  const tbody = document.getElementById('logs-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Searching…</td></tr>';
+
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let entityIds = [];
+
+  if (uuidRe.test(raw)) {
+    entityIds = [raw];
+  } else {
+    // Treat as an order number → resolve to uuid(s) via exact match on the server.
+    const digits = raw.replace(/[^0-9]/g, '');
+    const candidates = [];
+    if (digits) candidates.push('ORD-' + digits);
+    if (/^ord-/i.test(raw)) candidates.push(raw.toUpperCase());
+    if (candidates.length) {
+      const { data: ords } = await sb.from('orders').select('id,order_num').in('order_num', [...new Set(candidates)]);
+      entityIds = (ords || []).map(o => o.id);
+    }
+  }
+
+  let results = [];
+  if (entityIds.length) {
+    const { data } = await sb.from('logs').select('*').in('entity_id', entityIds).order('created_at', { ascending: false });
+    results = data || [];
+  }
+
+  // Exact email match across all history (merged in, deduped).
+  if (raw.includes('@')) {
+    const { data: byEmail } = await sb.from('logs').select('*').eq('user_email', raw).order('created_at', { ascending: false });
+    if (byEmail && byEmail.length) {
+      const seen = new Set(results.map(r => r.id));
+      byEmail.forEach(r => { if (!seen.has(r.id)) results.push(r); });
+      results.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    }
+  }
+
+  if (entityIds.length || raw.includes('@')) {
+    // Server search resolved a target → show full-history results.
+    _logSearchMode = true;
+    _logSearchResults = results;
+  } else {
+    // Couldn't resolve (partial number / free text) → fall back to the recent feed.
+    _logSearchMode = false;
+  }
   _logsPage = 1;
   renderLogs();
 }
@@ -3910,13 +3974,16 @@ function renderLogs() {
   const dateFrom = document.getElementById('log-date-from')?.value || '';
   const dateTo = document.getElementById('log-date-to')?.value || '';
 
-  let filtered = _logs.filter(l => {
+  // In server-search mode the source is already the DB-matched full history;
+  // otherwise filter the loaded recent feed (with the client-side text match).
+  const source = _logSearchMode ? _logSearchResults : _logs;
+  let filtered = source.filter(l => {
     if (actionF && l.action !== actionF) return false;
     if (entityF && l.entity_type !== entityF) return false;
     if (roleF && l.role !== roleF) return false;
     if (dateFrom && (l.created_at||'').slice(0,10) < dateFrom) return false;
     if (dateTo && (l.created_at||'').slice(0,10) > dateTo) return false;
-    if (q) {
+    if (!_logSearchMode && q) {
       const hay = [l.user_email, l.entity_id, JSON.stringify(l.details||{})].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
@@ -4120,36 +4187,41 @@ async function saveOrder(){
     if (!orderId) { toast('Error: failed to get order ID', true); btn.disabled=false; btn.textContent='Save Order'; return; }
     payload.order_num = orderNum;
   }
-  // save cart items
-  await sb.from('order_items').delete().eq('order_id',orderId);
-  if(cart.length){
-    const _sId = window._selectedSellerId || '';
-    const items=cart.filter(item => {
-      const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
-      return qty > 0;
-    }).map(item=> {
-      if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
-      const alias = _sId ? getAlias(_sId, item.product.id) : null;
-      const hasCustomComp = item.customComponents && item.customComponents.length > 0;
-      // Check if custom components differ from standard
-      const stdComps = productComponents.filter(pc => String(pc.product_id) === String(item.product.id));
-      const isDifferent = hasCustomComp && (
-        item.customComponents.length !== stdComps.length ||
-        item.customComponents.some((c,i) => !stdComps[i] || String(c.component_id) !== String(stdComps[i].component_id) || String(c.quantity) !== String(stdComps[i].quantity))
-      );
-      const itemType = (item.product.product_type === 'Custom' || isDifferent) ? 'Custom' : 'Regular';
-      return {
-        order_id: orderId,
-        product_id: item.product.id,
-        product_name: alias || item.product.name,
-        unit: item.product.unit,
-        price: item.customPrice !== undefined ? item.customPrice : item.product.price,
-        quantity: item.qty,
-        item_type: itemType,
-        custom_components: isDifferent ? item.customComponents : null,
-      };
-    });
-    await sb.from('order_items').insert(items);
+  // save cart items — atomic replace via RPC (delete+insert in ONE transaction).
+  // Old rows are guaranteed gone before new ones are written; on any failure the
+  // whole operation rolls back, so duplicate rows can no longer accumulate.
+  const _sId = window._selectedSellerId || '';
+  const items=(cart||[]).filter(item => {
+    const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
+    return qty > 0;
+  }).map(item=> {
+    if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
+    const alias = _sId ? getAlias(_sId, item.product.id) : null;
+    const hasCustomComp = item.customComponents && item.customComponents.length > 0;
+    // Check if custom components differ from standard
+    const stdComps = productComponents.filter(pc => String(pc.product_id) === String(item.product.id));
+    const isDifferent = hasCustomComp && (
+      item.customComponents.length !== stdComps.length ||
+      item.customComponents.some((c,i) => !stdComps[i] || String(c.component_id) !== String(stdComps[i].component_id) || String(c.quantity) !== String(stdComps[i].quantity))
+    );
+    const itemType = (item.product.product_type === 'Custom' || isDifferent) ? 'Custom' : 'Regular';
+    return {
+      order_id: orderId,
+      product_id: item.product.id,
+      product_name: alias || item.product.name,
+      unit: item.product.unit,
+      price: item.customPrice !== undefined ? item.customPrice : item.product.price,
+      quantity: item.qty,
+      item_type: itemType,
+      custom_components: isDifferent ? item.customComponents : null,
+    };
+  });
+  const { error: _itemsErr } = await sb.rpc('replace_order_items', { p_order_id: orderId, p_items: items });
+  if (_itemsErr) {
+    console.log('Items save error:', _itemsErr);
+    toast('Failed to save items — please try again', true);
+    btn.disabled=false; btn.textContent='Save Order';
+    return;
   }
   // Compute content_type, subtotal, total — always update regardless of cart
   const hasCustom = (cart||[]).some(i => {
