@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.2 -->
+<!-- v13.3 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.2</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.3</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -466,7 +466,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <table class="tbl">
             <thead><tr>
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
-              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Created By</th><th>Emirate</th><th>City</th>
+              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Created By</th><th>Emirate</th><th>District</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
               <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
             </tr></thead>
@@ -2276,7 +2276,7 @@ function renderTable(){
         <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${toUAE(o.created_at)}</td>
         <td style="font-size:11px;color:var(--muted);font-family:var(--mono);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.created_by||''}">${o.created_by?o.created_by.split('@')[0]:'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
-        <td>${o.city||'&mdash;'}</td>
+        <td>${o.apt||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
@@ -3579,7 +3579,8 @@ function whCopyBlock(orderId, btn) {
     lines.push(o.order_num);
     if (o.client_name && o.client_name.trim()) lines.push('Client: ' + o.client_name.trim());
     if (o.seller_name && o.seller_name.trim()) lines.push('Seller: ' + o.seller_name.trim());
-    const loc = [o.apt, o.city, o.emirate].filter(Boolean).join(', ');
+    const emB = o.emirate ? '*' + o.emirate + '*' : '';
+    const loc = [o.apt, o.villa, emB].filter(Boolean).join(', ');
     if (loc) lines.push(loc);
     if (o.payment_status && o.payment_status.toLowerCase() === 'cash on delivery' && o.total) lines.push('COD: ' + o.total + ' AED');
     if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + o.total + ' AED');
