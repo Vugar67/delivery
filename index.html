@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.3 -->
+<!-- v13.6 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.3</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.6</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -599,12 +599,6 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
 
     <div id="view-warehouse" style="display:none">
-      <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 0">
-        <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-family:var(--mono);color:var(--muted);cursor:pointer;user-select:none">
-          <input type="checkbox" id="wh-show-nc" checked onchange="renderWarehouseQueue()" style="cursor:pointer">
-          Show Not Confirmed
-        </label>
-      </div>
       <div id="warehouse-queue"></div>
     </div>
 
@@ -1199,8 +1193,8 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
       </div>
       <div class="form-group"><label>Payment Status</label><select id="f-payment"></select></div>
-      <div class="form-group"><label>Delivery Status</label><select id="f-delivery"></select></div>
-      <div class="form-group"><label>Confirmed</label><select id="f-confirmed"><option value="No">No</option><option value="Yes">Yes</option></select></div>
+      <div class="form-group"><label>Delivery Status</label><select id="f-delivery" onchange="onDeliveryChange()"></select></div>
+      <div class="form-group"><label>Confirmed</label><select id="f-confirmed" onchange="onConfirmedChange()"><option value="No">No</option><option value="Yes">Yes</option></select></div>
       <div class="form-group"><label>Priority</label>
         <select id="f-priority">
           <option value="3">🟢 Level 3 — Normal</option>
@@ -1208,6 +1202,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="1">🚨 Level 1 — Urgent</option>
         </select>
       </div>
+      <div class="form-group"><label>Weight (g) <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Aramex — blank → 500)</span></label><input id="f-weight" type="number" step="1" min="0" placeholder="500"></div>
       <div class="form-group form-full">
         <label>Delivery Charge (AED)</label>
         <!-- Quick-pick delivery buttons. The actual value lives in the hidden
@@ -2017,39 +2012,30 @@ function populateFormRefs(o){
 
   // ── Delivery status — role-based restrictions ──────────────────
   const currentStatus = o?.delivery_status || '';
-  const isAdmin = currentRole === 'admin';
 
-  // Statuses set only by warehouse/dispatcher — not manually selectable
-  const systemOnly = ['Ready for Pick-up', 'En Route'];
-
-  // Temporarily disabled pending business process definition
-  const pendingBP = ['Delivery fail/reschedule', 'Cancelled'];
+  // Delivery status in the order form is driven by the Confirmed toggle
+  // (Not Confirmed / Processing in Lab) and by warehouse/dispatch actions
+  // (Ready for Pick-up / En Route). Lab/warehouse intermediate statuses are
+  // frozen (no process yet). The ONLY hand-set status here is "Delivered".
+  // Same rules for every role — no admin override.
+  const confirmDriven = ['Not Confirmed', 'Processing in Lab'];      // set via Confirmed toggle
+  const frozen        = ['Ready in Lab', 'In the Warehouse'];        // process pending
+  const systemOnly    = ['Ready for Pick-up', 'En Route'];           // set by warehouse/dispatcher
+  const pendingBP     = ['Delivery fail/reschedule', 'Cancelled'];   // coming soon
+  const manualOK      = ['Delivered'];                               // the only manually selectable status
 
   const deliveryEl = document.getElementById('f-delivery');
   deliveryEl.innerHTML = refs.deliveryStatus.map(r => {
-    const isSystemOnly = systemOnly.includes(r.value);
-    const isPending = pendingBP.includes(r.value);
-    const isSelected = r.value === currentStatus;
-
-    // Admin sees everything
-    if (isAdmin) {
-      if (isPending) {
-        return `<option value="${r.value}" ${isSelected?'selected':''} style="color:var(--muted)">${r.value} (pending BP)</option>`;
-      }
-      return `<option value="${r.value}" ${isSelected?'selected':''}>${r.value}</option>`;
+    const sel = r.value === currentStatus ? 'selected' : '';
+    if (manualOK.includes(r.value)) {
+      return `<option value="${r.value}" ${sel}>${r.value}</option>`;
     }
-
-    // Operators: system-only statuses shown as disabled (visible but not selectable)
-    if (isSystemOnly) {
-      return `<option value="${r.value}" ${isSelected?'selected':''} disabled style="color:var(--muted)">${r.value} — set by ${r.value==='Ready for Pick-up'?'warehouse':'dispatcher'}</option>`;
-    }
-
-    // Pending BP statuses — disabled for everyone except admin
-    if (isPending) {
-      return `<option value="${r.value}" ${isSelected?'selected':''} disabled style="color:var(--muted)">${r.value} (coming soon)</option>`;
-    }
-
-    return `<option value="${r.value}" ${isSelected?'selected':''}>${r.value}</option>`;
+    let hint = '';
+    if (confirmDriven.includes(r.value)) hint = ' — set via Confirmed';
+    else if (systemOnly.includes(r.value)) hint = ` — set by ${r.value==='Ready for Pick-up'?'warehouse':'dispatcher'}`;
+    else if (frozen.includes(r.value)) hint = ' — process pending';
+    else if (pendingBP.includes(r.value)) hint = ' (coming soon)';
+    return `<option value="${r.value}" ${sel} disabled style="color:var(--muted)">${r.value}${hint}</option>`;
   }).join('');
   // ────────────────────────────────────────────────────────────────
 
@@ -3494,23 +3480,15 @@ function renderWarehouseQueue() {
   if (!container) return;
   const prevScroll = container.querySelector('.wh-scroll')?.scrollLeft || 0;
 
-  // "Show Not Confirmed" toggle — defaults to on if the control is absent.
-  const ncEl = document.getElementById('wh-show-nc');
-  const showNC = ncEl ? ncEl.checked : true;
-
   const pc = p => p===1?'#ff2222':p===2?'#ffcc00':'#00ee44';
   const onum = o => parseInt(String(o.order_num||'').replace(/\D/g,'')) || 0;
   const emKey = o => (o.emirate && o.emirate.trim()) ? o.emirate.trim() : '—';
 
-  // Active = everything before pick-up (optionally hiding Not Confirmed).
-  const skip = ['Delivered','Cancelled','Ready for Pick-up','En Route'];
-  const active = orders.filter(o => {
-    const ds = o.delivery_status || '';
-    if (skip.includes(ds)) return false;
-    if (!showNC && ds === 'Not Confirmed') return false;
-    return true;
-  });
-  // Parked = Ready for Pick-up. Stays until En Route (excluded above).
+  // Active board = confirmed orders awaiting warehouse work. Lab/warehouse
+  // intermediate statuses are frozen, so the only inbound status is
+  // "Processing in Lab" (set when the operator confirms the order).
+  const active = orders.filter(o => (o.delivery_status || '') === 'Processing in Lab');
+  // Parked = Ready for Pick-up. Stays until En Route.
   const parked = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
 
   // Fixed columns: every emirate defined in the Directory (locations), always
@@ -3778,7 +3756,7 @@ async function openNewOrder(){
   document.getElementById('f-date').value=new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0];
 
   // Clear all text fields
-  ['f-apt','f-client','f-client-name','f-seller-name','f-notes',
+  ['f-apt','f-weight','f-client','f-client-name','f-seller-name','f-notes',
    'f-location-raw','f-location-url','f-raw-message',
    'shop-search','client-search-input','seller-search-input'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
@@ -3804,6 +3782,8 @@ async function openNewOrder(){
   hideSellerSuggest();
 
   document.getElementById('f-confirmed').value='No';
+  const _fd=document.getElementById('f-delivery'); if(_fd) _fd.value='Not Confirmed'; // new order baseline
+  syncConfirmLock();
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='0';
   resetDeliveryPresets(); // new order: no preset selected, manual field hidden
@@ -3844,9 +3824,11 @@ async function editOrder(id){
   const invDisp=document.getElementById('f-invoice-display');if(invDisp)invDisp.value=o.invoice_number||'—';
   const invGrp=document.getElementById('f-invoice-group');if(invGrp)invGrp.style.display=o.invoice_number?'':'none';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
+  syncConfirmLock(); // lock Confirmed if this order is already past the pre-lab zone
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
   resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
+  const _wEl=document.getElementById('f-weight');if(_wEl)_wEl.value=(o.actual_weight!=null?o.actual_weight:'');
   document.getElementById('f-notes').value=o.notes||'';
   const locUrlEl=document.getElementById('f-location-url');
   const locRawEl=document.getElementById('f-location-raw');
@@ -4156,13 +4138,44 @@ async function logEvent(action, entityType, entityId, details={}) {
   } catch(e) { console.warn('Log failed:', e); }
 }
 
+// ── Confirmed ↔ Delivery Status coupling (order form) ───────────────
+// Confirmed is the sole manual driver of the early pipeline:
+//   No → Yes  : Delivery → Processing in Lab (only from Not Confirmed)
+//   Yes → No  : Delivery → Not Confirmed     (only from Processing in Lab)
+// Fires on manual change only (onchange), never on load.
+function onConfirmedChange(){
+  const conf = document.getElementById('f-confirmed').value;
+  const del  = document.getElementById('f-delivery');
+  if (conf === 'Yes') {
+    if (del.value === 'Not Confirmed') del.value = 'Processing in Lab';
+  } else {
+    if (del.value === 'Processing in Lab') del.value = 'Not Confirmed';
+  }
+  syncConfirmLock();
+}
+// Delivery only changes manually to "Delivered"; re-evaluate the Confirmed lock.
+// (No reverse coupling — we never auto-toggle Confirmed from Delivery.)
+function onDeliveryChange(){
+  syncConfirmLock();
+}
+// Confirmed is editable only while Delivery is in the pre-lab zone.
+// Once the order moves on (Ready for Pick-up / En Route / Delivered / frozen),
+// Confirmed locks — you can't un-confirm an order already in the warehouse/out.
+function syncConfirmLock(){
+  const del = document.getElementById('f-delivery')?.value || '';
+  const editable = (del === 'Not Confirmed' || del === 'Processing in Lab');
+  const cf = document.getElementById('f-confirmed');
+  if (cf) cf.disabled = !editable;
+}
+
 async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
