@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.6 -->
+<!-- v13.7 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.6</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.7</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -396,7 +396,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
-        <button class="btn btn-ghost" onclick="openCSVExport()">&#8595; XLSX</button>
+        <button class="btn btn-ghost" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
       <div id="dispatch-panel" style="display:none;margin-bottom:12px">
@@ -5292,34 +5292,13 @@ async function deleteProduct(id){
 }
 
 // EXPORT
-function openCSVExport(){
-  const existing = document.getElementById('csv-export-modal');
-  if(existing) existing.remove();
-  const today = new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0];
-  const modal = document.createElement('div');
-  modal.id = 'csv-export-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
-  modal.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:340px;box-shadow:0 16px 48px rgba(0,0,0,.5)">
-      <div style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:20px">Export Orders</div>
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div>
-          <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Date From</label>
-          <input type="date" id="csv-date-from" value="" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">Date To</label>
-          <input type="date" id="csv-date-to" value="${today}" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box">
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Leave "Date From" empty to export all orders</div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:20px">
-        <button onclick="document.getElementById('csv-export-modal').remove()" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:13px">Cancel</button>
-        <button onclick="exportXLSX()" style="flex:2;padding:9px;background:var(--accent);border:none;border-radius:8px;color:#000;cursor:pointer;font-size:13px;font-weight:600">↓ Export XLSX</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+// Persistent per-device export counter → incrementing filename each export.
+function _nextExportSeq(){
+  let n = 0;
+  try { n = parseInt(localStorage.getItem('delivr_export_seq') || '0', 10) || 0; } catch(e){}
+  n += 1;
+  try { localStorage.setItem('delivr_export_seq', String(n)); } catch(e){}
+  return n;
 }
 
 function _xlsxPhone(v){ return v ? String(v).trim().replace(/\s+/g,'') : ''; }
@@ -5341,20 +5320,16 @@ async function _loadXLSX(){
 }
 
 async function exportXLSX(){
-  const fromEl = document.getElementById('csv-date-from');
-  const toEl = document.getElementById('csv-date-to');
-  const from = fromEl ? fromEl.value : '';
-  const to = toEl ? toEl.value : '';
-  document.getElementById('csv-export-modal')?.remove();
-
-  let filtered = orders;
-  if(from) filtered = filtered.filter(o => (o.order_date||'') >= from);
-  if(to)   filtered = filtered.filter(o => (o.order_date||'') <= to);
+  // Export exactly what the operator/admin currently sees under the active
+  // filters (search, emirate, delivery statuses, driver, confirmed, content,
+  // date range) in the on-screen sort order — all pages, not just the visible one.
+  const filtered = getFiltered();
+  if(!filtered.length){ toast('No orders match the current filters', true); return; }
 
   const XL = await _loadXLSX();
 
   // Build rows — one row per order item, order info repeated
-  const headers = ['Order #','Date','Time','Created By','Emirate','City','Villa/Apt','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Notes'];
+  const headers = ['Order #','Date','Time','Created By','Emirate','City','District','Villa','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Notes'];
 
   const data = [headers];
   filtered.forEach(o => {
@@ -5367,7 +5342,7 @@ async function exportXLSX(){
     const deliverySub = deliveryCharge === 0 ? 'Free' : '';
     const base = [
       o.order_num, o.order_date, time, o.created_by||'',
-      o.emirate, o.city, o.apt, o.client_name||'',
+      o.emirate, o.city||'', o.apt||'', o.villa||'', o.client_name||'',
       _xlsxPhone(o.client_number), o.seller_name||'',
     ];
     const tail = [o.driver||'', o.payment_status||'', o.delivery_status||'', o.confirmed||'', o.notes||''];
@@ -5391,7 +5366,7 @@ async function exportXLSX(){
 
   // Column widths
   ws['!cols'] = [
-    {wch:14},{wch:11},{wch:6},{wch:18},{wch:12},{wch:14},{wch:22},
+    {wch:14},{wch:11},{wch:6},{wch:18},{wch:12},{wch:14},{wch:16},{wch:16},
     {wch:20},{wch:16},{wch:20},{wch:28},{wch:5},{wch:6},
     {wch:10},{wch:10},{wch:14},{wch:12},
     {wch:14},{wch:12},{wch:16},{wch:10},{wch:28}
@@ -5405,9 +5380,10 @@ async function exportXLSX(){
 
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Orders');
-  const fname = 'orders' + (from?'_'+from:'') + (to?'_to_'+to:'') + '.xlsx';
+  const fname = 'orders_' + _nextExportSeq() + '.xlsx';
   XL.writeFile(wb, fname);
-  logEvent('EXPORT', 'orders', '', { filename: fname, count: filtered.length, date_from: from||null, date_to: to||null });
+  toast('Exported ' + filtered.length + ' orders → ' + fname);
+  logEvent('EXPORT', 'orders', '', { filename: fname, count: filtered.length });
   toast(`✅ Exported ${filtered.length} orders → ${fname}`);
 }
 
