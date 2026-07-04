@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.12 -->
+<!-- v13.13 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -134,6 +134,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .lh-changes{margin-top:7px;font-size:12.5px;color:var(--text);line-height:1.6}
 .lh-row{display:flex;gap:6px;flex-wrap:wrap}
 .lh-k{color:var(--muted)}
+.lh-ver{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:.8;border:1px solid var(--border);border-radius:5px;padding:1px 5px;white-space:nowrap}
 .lh-arrow{color:var(--muted);margin:0 5px}
 .lh-add{color:var(--green)}
 .lh-rem{color:var(--red)}
@@ -468,7 +469,7 @@ select option{background:#1a1d27;color:#f0f2ff}
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
               <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Created By</th><th>Emirate</th><th>District</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
-              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th style="width:54px;text-align:center">Ver.</th><th></th>
+              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Internal</th><th>Driver Note</th><th style="width:54px;text-align:center">Ver.</th><th></th>
             </tr></thead>
             <tbody id="order-tbody"></tbody>
           </table>
@@ -724,9 +725,9 @@ select option{background:#1a1d27;color:#f0f2ff}
   <div class="modal" style="max-width:600px;width:96%;max-height:90vh;overflow-y:auto;padding:0">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
       <div style="display:flex;align-items:center;gap:12px">
-        <div style="flex:1;min-width:0">
+        <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
           <div id="wh-order-num" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)"></div>
-          <div id="wh-seller" style="font-size:13px;color:var(--muted);margin-top:2px;display:none"></div>
+          <div id="wh-seller" style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);display:none"></div>
         </div>
         <button id="wh-copy-btn" onclick="whCopyBlock(window._whOrderId, this)" title="Copy order info" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:var(--muted);font-size:40px;height:40px;display:flex;align-items:center;justify-content:center;opacity:.5;transition:.15s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5">⎘</button>
         <button class="close-btn" onclick="whCloseModal()">✕</button>
@@ -744,8 +745,14 @@ select option{background:#1a1d27;color:#f0f2ff}
       </table>
     </div>
     <div id="wh-notes-section" style="display:none;padding:10px 20px;background:rgba(245,166,35,.08);border-top:1px solid rgba(245,166,35,.2)">
-      <div style="font-size:10px;color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📝 Notes</div>
-      <div id="wh-notes-text" style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5"></div>
+      <div id="wh-drivernote-block" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📝 Driver Note</div>
+        <div id="wh-drivernote-text" style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5"></div>
+      </div>
+      <div id="wh-internalnote-block" style="display:none">
+        <div style="font-size:10px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📋 Internal Note</div>
+        <div id="wh-notes-text" style="font-size:13px;color:var(--muted);white-space:pre-wrap;line-height:1.5"></div>
+      </div>
     </div>
     <div style="padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;position:sticky;bottom:0;background:var(--surface)">
       <button id="wh-complete-btn" onclick="whComplete()" style="flex:1;padding:14px;font-size:15px;font-weight:700;background:#00cc66;color:#fff;border:none;border-radius:10px;cursor:pointer">✅ Mark Ready for Pick-up</button>
@@ -1226,7 +1233,8 @@ select option{background:#1a1d27;color:#f0f2ff}
           <span id="delivery-hint" style="font-size:12px;color:var(--muted);font-family:var(--mono)">Pick a preset or choose Manual to type a custom amount</span>
         </div>
       </div>
-      <div class="form-group form-full"><label>Notes <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Shift+Enter for new line)</span></label><textarea id="f-notes" placeholder="Any additional notes..." rows="2" onkeydown="if((event.shiftKey||event.altKey)&&event.key==='Enter'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd,v=this.value;this.value=v.slice(0,s)+'\n'+v.slice(e);this.selectionStart=this.selectionEnd=s+1;}" style="resize:vertical;min-height:52px"></textarea></div>
+      <div class="form-group form-full"><label>Internal Note <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(office only — not sent to driver)</span></label><textarea id="f-notes" placeholder="Internal notes for office/warehouse..." rows="2" onkeydown="if((event.shiftKey||event.altKey)&&event.key==='Enter'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd,v=this.value;this.value=v.slice(0,s)+'\n'+v.slice(e);this.selectionStart=this.selectionEnd=s+1;}" style="resize:vertical;min-height:52px"></textarea></div>
+      <div class="form-group form-full"><label>Driver Note <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(goes to driver / warehouse copy)</span></label><textarea id="f-driver-note" placeholder="Notes for the driver..." rows="2" onkeydown="if((event.shiftKey||event.altKey)&&event.key==='Enter'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd,v=this.value;this.value=v.slice(0,s)+'\n'+v.slice(e);this.selectionStart=this.selectionEnd=s+1;}" style="resize:vertical;min-height:52px"></textarea></div>
       <div class="form-group form-full">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="f-wa-show-items" style="width:16px;height:16px;cursor:pointer">
@@ -1374,7 +1382,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.12';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.13';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2bmdhcmticWdieGFjbmpoeGV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzM4MTQsImV4cCI6MjA5MTc0OTgxNH0.AFRI1qS0aAjctC93Dx9X4g-i1UPX_OtTEuf0thp7Cw8';
@@ -2133,7 +2141,7 @@ function getFiltered(){
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'Not Confirmed':0,'Processing in Lab':1,'Ready in Lab':2,'In the Warehouse':3,'Ready for Pick-up':4,'En Route':5,'Delivered':6,'Cancelled':7,'Delivery fail/reschedule':8};
@@ -2283,6 +2291,7 @@ function renderTable(){
         <td class="col-financial" style="font-family:var(--mono);font-size:12px;color:var(--green)">${o.discount>0?('-'+o.discount.toFixed(2)):'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
+        <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:11px" title="${o.driver_note||''}">${o.driver_note||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center" title="App version at last save">${o.app_version||'&mdash;'}</td>
         <td><div class="actions">
           ${o.driver ? (() => {
@@ -3570,7 +3579,7 @@ function whCopyBlock(orderId, btn) {
     if (loc) lines.push(loc);
     if (o.payment_status && o.payment_status.toLowerCase() === 'cash on delivery' && o.total) lines.push('COD: ' + o.total + ' AED');
     if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + o.total + ' AED');
-    if (o.notes && o.notes.trim()) lines.push('Note: ' + o.notes.trim());
+    if (o.driver_note && o.driver_note.trim()) lines.push('Note: ' + o.driver_note.trim());
   }
   const text = lines.join('\n') || (document.getElementById('wh-order-num')?.textContent || '');
   navigator.clipboard.writeText(text).then(() => {
@@ -3635,15 +3644,19 @@ async function openWarehouseOrder(orderId, sendMqtt = true) {
   else { _whSellerEl.style.display = 'none'; }
   document.getElementById('wh-items-table').innerHTML = rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--muted)">No items</td></tr>';
 
-  // Show notes if present
+  // Show notes if present (warehouse sees BOTH; driver note first/emphasized)
   const notesSection = document.getElementById('wh-notes-section');
   const notesText = document.getElementById('wh-notes-text');
-  if (o.notes && o.notes.trim()) {
-    notesText.textContent = o.notes;
-    notesSection.style.display = '';
-  } else {
-    notesSection.style.display = 'none';
-  }
+  const dnBlock = document.getElementById('wh-drivernote-block');
+  const dnText = document.getElementById('wh-drivernote-text');
+  const inBlock = document.getElementById('wh-internalnote-block');
+  const hasDriver = o.driver_note && o.driver_note.trim();
+  const hasInternal = o.notes && o.notes.trim();
+  if (hasDriver) { dnText.textContent = o.driver_note; dnBlock.style.display = ''; }
+  else { dnBlock.style.display = 'none'; }
+  if (hasInternal) { notesText.textContent = o.notes; inBlock.style.display = ''; }
+  else { inBlock.style.display = 'none'; }
+  notesSection.style.display = (hasDriver || hasInternal) ? '' : 'none';
 
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
@@ -3774,7 +3787,7 @@ async function openNewOrder(){
   document.getElementById('f-date').value=new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0];
 
   // Clear all text fields
-  ['f-apt','f-weight','f-client','f-client-name','f-seller-name','f-notes',
+  ['f-apt','f-weight','f-client','f-client-name','f-seller-name','f-notes','f-driver-note',
    'f-location-raw','f-location-url','f-raw-message',
    'shop-search','client-search-input','seller-search-input'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
@@ -3848,6 +3861,7 @@ async function editOrder(id){
   resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
   const _wEl=document.getElementById('f-weight');if(_wEl)_wEl.value=(o.actual_weight!=null?o.actual_weight:'');
   document.getElementById('f-notes').value=o.notes||'';
+  {const _dn=document.getElementById('f-driver-note');if(_dn)_dn.value=o.driver_note||'';}
   const locUrlEl=document.getElementById('f-location-url');
   const locRawEl=document.getElementById('f-location-raw');
   const locPreview=document.getElementById('f-location-preview');
@@ -4049,7 +4063,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'notes',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4100,7 +4114,7 @@ function _lhChangesHtml(l){
   if(d.client_number && d.action==='wa_sent_to_client') out.push(`<div class="lh-row" style="color:var(--muted)">→ ${_lhEsc(d.client_number)}</div>`);
   if(l.action==='DELETE' && d.reason) out.push(`<div class="lh-row lh-rem">reason: ${_lhEsc(d.reason)}</div>`);
   if(!out.length){
-    const skip=new Set(['order_num','action']);
+    const skip=new Set(['order_num','action','app_version']);
     for(const [k,v] of Object.entries(d)){
       if(skip.has(k)||v==null||v===''||typeof v==='object') continue;
       out.push(`<div class="lh-row"><span class="lh-k">${_lhFieldLabel(k)}:</span> ${_lhEsc(v)}</div>`);
@@ -4113,9 +4127,13 @@ function _lhRenderEvent(l){
   const colors={CREATE:'var(--green)',UPDATE:'var(--blue)',DELETE:'var(--red)',LOGIN:'var(--muted)',LOGOUT:'var(--muted)',EXPORT:'var(--accent)'};
   const ac=colors[l.action]||'var(--text)';
   const changes=_lhChangesHtml(l);
+  const ver=(l.details&&l.details.app_version)?l.details.app_version:'';
   return `<div class="lh-event">
     <span class="lh-dot" style="background:${ac}"></span>
-    <div class="lh-time">${t}</div>
+    <div class="lh-time" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span>${t}</span>
+      ${ver?`<span class="lh-ver" title="App version at this event">${_lhEsc(ver)}</span>`:''}
+    </div>
     <div class="lh-actor">${_lhEsc(l.user_email||'—')} · ${_lhEsc(l.role||'—')}</div>
     <div class="lh-action" style="color:${ac}">${_lhActionLabel(l)}</div>
     ${changes?`<div class="lh-changes">${changes}</div>`:''}
@@ -4232,7 +4250,7 @@ async function saveOrder(){
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -4348,7 +4366,7 @@ async function saveOrder(){
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
-    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','client_name','seller_name'].forEach(f => {
+    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name'].forEach(f => {
       if (String(_prevOrder[f]||'') !== String(payload[f]||'')) {
         _fieldDiff[f] = { before: _prevOrder[f], after: payload[f] };
       }
@@ -4453,7 +4471,9 @@ function copyOrderDetails(orderId){
   const waItems = orderItems[orderId]||[];
   const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0);
   const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
-  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${[o.client_name,o.client_number].filter(Boolean).join(' — ')||'—'}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}${codLine}`;
+  const internalLine = (o.notes && o.notes.trim()) ? `\n\n📋 Internal Note: ${o.notes.trim()}` : '';
+  const driverLine = (o.driver_note && o.driver_note.trim()) ? `\n\n📝 Driver Note: ${o.driver_note.trim()}` : '';
+  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${[o.client_name,o.client_number].filter(Boolean).join(' — ')||'—'}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}${codLine}${internalLine}${driverLine}`;
   navigator.clipboard.writeText(text).then(()=>toast('✅ Copied to clipboard')).catch(()=>toast('❌ Copy failed',true));
 }
 
@@ -6147,7 +6167,8 @@ function showOrderTooltip(e, orderId) {
       const subtotal = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
       content += `<div class="tooltip-total"><span>Total</span><span class="tooltip-total-val">${subtotal.toFixed(2)} AED</span></div>`;
     }
-    if (o?.notes) content += `<div style="margin-top:8px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:6px">📝 ${o.notes}</div>`;
+    if (o?.driver_note) content += `<div style="margin-top:8px;font-size:11px;color:var(--accent);border-top:1px solid var(--border);padding-top:6px">📝 Driver: ${escHtml(o.driver_note)}</div>`;
+    if (o?.notes) content += `<div style="margin-top:6px;font-size:11px;color:var(--muted)">📋 Internal: ${escHtml(o.notes)}</div>`;
     
     tooltip.innerHTML = content;
     
@@ -6235,7 +6256,7 @@ async function sendToDriver(orderId) {
   if (showItems && items) lines.push(`📦 *Items:*\n${items}`);
   lines.push(`💰 *Payment:* ${o.payment_status||'—'}`);
   if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*`);
-  if (o.notes) lines.push(`📝 *Notes:* ${o.notes}`);
+  if (o.driver_note) lines.push(`📝 *Note:* ${o.driver_note}`);
   const msg = lines.join('\n');
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
@@ -6584,6 +6605,7 @@ function renderDispatchQueue() {
       <div style="font-size:12px;color:var(--text)">${o.client_name||'—'}</div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[o.emirate, o.city].filter(Boolean).join(' · ')} ${o.client_number ? '· ' + o.client_number : ''}</div>
       ${itemCount ? `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:3px">${itemCount} item${itemCount!==1?'s':''}</div>` : ''}
+      ${o.driver_note && o.driver_note.trim() ? `<div style="font-size:11px;color:var(--accent);margin-top:4px;white-space:pre-wrap;line-height:1.4">📝 ${escHtml(o.driver_note.trim())}</div>` : ''}
     </div>`;
   }).join('');
 }
