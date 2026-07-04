@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.11 -->
+<!-- v13.12 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -331,7 +331,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div id="app-screen" style="display:none">
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.11</div>
+    <div id="app-version-label" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.12</div>
     <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
@@ -468,7 +468,7 @@ select option{background:#1a1d27;color:#f0f2ff}
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
               <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Created By</th><th>Emirate</th><th>District</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
-              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th></th>
+              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Notes</th><th style="width:54px;text-align:center">Ver.</th><th></th>
             </tr></thead>
             <tbody id="order-tbody"></tbody>
           </table>
@@ -1374,6 +1374,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
+const APP_VERSION = 'v13.12';  // single source of truth: logs + order stamp + visible label
+try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2bmdhcmticWdieGFjbmpoeGV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzM4MTQsImV4cCI6MjA5MTc0OTgxNH0.AFRI1qS0aAjctC93Dx9X4g-i1UPX_OtTEuf0thp7Cw8';
 
@@ -2281,6 +2283,7 @@ function renderTable(){
         <td class="col-financial" style="font-family:var(--mono);font-size:12px;color:var(--green)">${o.discount>0?('-'+o.discount.toFixed(2)):'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center" title="App version at last save">${o.app_version||'&mdash;'}</td>
         <td><div class="actions">
           ${o.driver ? (() => {
             if (o.wa_sent_at) {
@@ -4148,8 +4151,7 @@ async function logEvent(action, entityType, entityId, details={}) {
       action,
       entity_type: entityType,
       entity_id: String(entityId||''),
-      details
-    });
+      details: { ...(details||{}), app_version: APP_VERSION }    });
   } catch(e) { console.warn('Log failed:', e); }
 }
 
@@ -4230,7 +4232,7 @@ async function saveOrder(){
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
