@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.13 -->
+<!-- v13.14 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1222,6 +1222,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button type="button" class="delivery-preset-btn" data-val="0" onclick="pickDelivery(0,this)">Free</button>
           <button type="button" class="delivery-preset-btn" data-val="50" onclick="pickDelivery(50,this)">50 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="60" onclick="pickDelivery(60,this)">60 AED</button>
+          <button type="button" class="delivery-preset-btn" data-val="100" onclick="pickDelivery(100,this)">100 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="150" onclick="pickDelivery(150,this)">150 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="200" onclick="pickDelivery(200,this)">200 AED</button>
           <button type="button" class="delivery-preset-btn" data-val="250" onclick="pickDelivery(250,this)">250 AED</button>
@@ -1382,7 +1383,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.13';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.14';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2bmdhcmticWdieGFjbmpoeGV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzM4MTQsImV4cCI6MjA5MTc0OTgxNH0.AFRI1qS0aAjctC93Dx9X4g-i1UPX_OtTEuf0thp7Cw8';
@@ -2513,7 +2514,7 @@ function resetDeliveryPresets(value) {
   _clearDeliveryActive();
   const dc = document.getElementById('f-delivery-charge');
   const hint = document.getElementById('delivery-hint');
-  const presets = [0, 50, 60, 150, 200, 250];
+  const presets = [0, 50, 60, 100, 150, 200, 250];
   if (value === undefined || value === null || value === '') {
     // New order: nothing chosen yet, hide field
     if (dc) { dc.value = '0'; dc.style.display = 'none'; }
