@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.14 -->
+<!-- v13.16 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +309,6 @@ select option{background:#1a1d27;color:#f0f2ff}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
 
@@ -1350,6 +1349,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div id="u-reset-section" style="display:none;border-top:1px solid var(--border);padding-top:12px">
         <div class="form-group"><label>New Password</label><input id="u-new-pass" type="password" placeholder="min 8 chars, incl. a special character" autocomplete="new-password"></div>
+        <div class="form-group"><label>Confirm New Password</label><input id="u-new-pass2" type="password" placeholder="repeat the new password" autocomplete="new-password"></div>
         <div class="form-group"><label>Confirm with your admin password</label><input id="u-admin-pass" type="password" placeholder="your own password" autocomplete="off"></div>
         <button type="button" id="u-setpass-btn" onclick="setUserPassword()" class="btn btn-ghost" style="width:100%">🔑 Set Password</button>
       </div>
@@ -1383,10 +1383,10 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.14';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.16';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2bmdhcmticWdieGFjbmpoeGV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzM4MTQsImV4cCI6MjA5MTc0OTgxNH0.AFRI1qS0aAjctC93Dx9X4g-i1UPX_OtTEuf0thp7Cw8';
+const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
 
 let _authToken = null;
 let _refreshToken = null;
@@ -1768,7 +1768,7 @@ function toUAEDate(utcStr) {
   return uae.toISOString().slice(0, 10);
 }
 
-function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';setTimeout(()=>t.classList.remove('show'),2400);}
+function toast(msg,err=false){const t=document.getElementById('toast');t.textContent=msg;t.className='toast'+(err?' err':'')+' show';clearTimeout(t._hideTimer);t._hideTimer=setTimeout(()=>t.classList.remove('show'),err?6000:2400);}
 // Order numbers are assigned by DB trigger (order_num_seq sequence)
 
 // AUTH
@@ -1848,7 +1848,6 @@ async function initApp(){
   if(isWarehouse){
     nav.innerHTML=`<button class="tab-btn active" onclick="showView('warehouse')">📦 Warehouse</button>`;
     await Promise.all([loadOrders(),loadProducts()]);
-    mqttConnect();
     showView('warehouse');
     renderWarehouseQueue();
     subscribeRealtime();
@@ -3401,72 +3400,16 @@ function clearClientField() {
   toast('Client cleared');
 }
 
-// ─── MQTT ────────────────────────────────────────────────────────
-const MQTT_CONFIG = {
-  host: 'wss://c14ac6c6046c42dbb49ab5573c499048.s1.eu.hivemq.cloud:8884/mqtt',
-  username: 'esp32_shelf',
-  password: 'Qwer77za!',
-  topic: 'warehouse/shelf/1'
-};
-
-let mqttClient = null;
-
-function mqttConnect() {
-  if (mqttClient) return;
-  try {
-    mqttClient = mqtt.connect(MQTT_CONFIG.host, {
-      username: MQTT_CONFIG.username,
-      password: MQTT_CONFIG.password,
-      clientId: 'delivr_' + Math.random().toString(16).slice(2, 8),
-      reconnectPeriod: 5000,
-      connectTimeout: 10000
-    });
-    mqttClient.on('connect', () => console.log('MQTT connected'));
-    mqttClient.on('error', e => console.warn('MQTT error:', e.message));
-  } catch(e) {
-    console.warn('MQTT init failed:', e.message);
-  }
-}
-
-function mqttPublish(payload) {
-  // Convert shelf positions to 0-based LED index
-  if (payload.led) payload.led = payload.led.map(p => p - 1);
-  console.log('MQTT publish:', JSON.stringify(payload), '\nFrom:', new Error().stack.split('\n')[2]);
-  if (!mqttClient || !mqttClient.connected) {
-    mqttConnect();
-    setTimeout(() => mqttPublish(payload), 2000);
-    return;
-  }
-  mqttClient.publish(MQTT_CONFIG.topic, JSON.stringify(payload), { qos: 1, retain: true });
-}
+// ─── WAREHOUSE PICKER ────────────────────────────────────────────
+// NOTE: MQTT shelf-LED integration was removed in v13.15 (demo-only, hardware
+// was never installed). Removed: MQTT_CONFIG, mqttConnect, mqttPublish,
+// mqttLedsOn, mqttLedOff, mqttAllOff + the mqtt.min.js CDN script.
+// getPickerId is kept — it is still used by the warehouse picking logic.
 
 function getPickerId(email) {
   // warehouse1@... → 1, warehouse2@... → 2, etc.
   const m = (email || '').match(/warehouse(\d+)/i);
   return m ? parseInt(m[1]) : 1;
-}
-
-function mqttLedsOn(orderId) {
-  const items = orderItems[orderId] || [];
-  const o = orders.find(x => x.id === orderId);
-  const prog = o?.picking_progress || {};
-  const allProds = window._allProducts || products;
-  // Only light positions that are not fully collected yet
-  const leds = [...new Set(
-    items.filter(i => {
-      const k = i.product_id || i.id;
-      return (prog[k] || 0) < (i.quantity || 1);
-    }).map(i => {
-      const p = allProds.find(x => x.id === i.product_id);
-      return p?.shelf_position || null;
-    }).filter(Boolean)
-  )];
-  if (!leds.length) return;
-  mqttPublish({ action: 'on', led: leds, picker_id: getPickerId(currentUser?.email) });
-}
-
-function mqttLedOff(pos) {
-  mqttPublish({ action: 'off', led: [pos], picker_id: getPickerId(currentUser?.email) });
 }
 
 function whCloseModal() {
@@ -3477,19 +3420,6 @@ function whCloseModal() {
   }
   window._whOrderId = null;
   closeModal('wh-modal');
-}
-
-function mqttAllOff(orderId) {
-  const items = orderItems[orderId] || [];
-  const allProds = window._allProducts || products;
-  const leds = [...new Set(
-    items.map(i => {
-      const p = allProds.find(x => x.id === i.product_id);
-      return p?.shelf_position || null;
-    }).filter(Boolean)
-  )];
-  if (!leds.length) return;
-  mqttPublish({ action: 'off', led: leds, picker_id: getPickerId(currentUser?.email) });
 }
 
 // ─── WAREHOUSE ───────────────────────────────────────────────────
@@ -3594,8 +3524,8 @@ function whCopyBlock(orderId, btn) {
 
 // ── Warehouse Session Timeout ("WH session auto-close") ─────────────
 // Auto-closes the open picking modal after WH_TIMEOUT_MS while an order is
-// open (tied to the pick session / MQTT shelf-LED). TEMPORARILY DISABLED —
-// flip WH_TIMEOUT_ENABLED back to true to re-activate.
+// open (tied to the pick session; originally also to the MQTT shelf-LED, which
+// was removed in v13.15). TEMPORARILY DISABLED — flip WH_TIMEOUT_ENABLED to true.
 let _whInactivityTimer = null;
 const WH_TIMEOUT_MS = 60000; // 1 minute
 const WH_TIMEOUT_ENABLED = false; // ← temporarily deactivated
@@ -3611,7 +3541,7 @@ function resetWhInactivityTimer() {
   }, WH_TIMEOUT_MS);
 }
 
-async function openWarehouseOrder(orderId, sendMqtt = true) {
+async function openWarehouseOrder(orderId) {
   if (currentRole !== 'warehouse') return;
   // Block if another order is already open
   if (window._whOrderId && window._whOrderId !== orderId) {
@@ -3661,7 +3591,8 @@ async function openWarehouseOrder(orderId, sendMqtt = true) {
 
   document.getElementById('wh-modal').classList.add('open');
   window._whOrderId = orderId;
-  // Write current_picker_id to DB — Edge Function handles MQTT
+  // Write current_picker_id to DB (marks who is picking this order).
+  // Previously a DB trigger (mqtt_led_trigger) reacted to this to light shelf LEDs.
   const pickerId = getPickerId(currentUser?.email);
   sb.from('orders').update({ current_picker_id: pickerId }).eq('id', orderId).then(() => {});
   resetWhInactivityTimer();
@@ -5816,12 +5747,14 @@ async function setUserPassword(){
   const userId    = document.getElementById('u-id').value;
   const email     = document.getElementById('u-email').value;
   const newPass   = document.getElementById('u-new-pass').value;
+  const newPass2  = (document.getElementById('u-new-pass2')||{}).value || '';
   const adminPass = document.getElementById('u-admin-pass').value;
   if(!userId){ toast('No user selected', true); return; }
   // Policy: at least 8 characters and at least one special character
   if(newPass.length < 8 || !/[^A-Za-z0-9]/.test(newPass)){
     toast('Password must be at least 8 characters and include a special character', true); return;
   }
+  if(newPass !== newPass2){ toast('❌ New passwords do not match — retype both fields', true); return; }
   if(!adminPass){ toast('Enter your own password to confirm', true); return; }
   if(!confirm('Set a new password for ' + email + '?')) return;
 
@@ -5845,6 +5778,7 @@ async function setUserPassword(){
     } else {
       toast('✅ Password updated for ' + email);
       document.getElementById('u-new-pass').value = '';
+      {const _p2=document.getElementById('u-new-pass2');if(_p2)_p2.value='';}
       document.getElementById('u-admin-pass').value = '';
       logEvent('UPDATE','user',userId,{ action:'set_password', email });
     }
