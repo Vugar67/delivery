@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.16 -->
+<!-- v13.17 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -599,6 +599,12 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
 
     <div id="view-warehouse" style="display:none">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <input id="wh-search" type="text" placeholder="🔍 Search by order #..." oninput="onWhSearch(this.value)"
+          style="flex:0 1 320px;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--mono)">
+        <button id="wh-search-clear" onclick="onWhSearch('');document.getElementById('wh-search').value=''" title="Clear"
+          style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:8px 11px;color:var(--muted);font-size:13px">✕</button>
+      </div>
       <div id="warehouse-queue"></div>
     </div>
 
@@ -1383,7 +1389,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.16';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.17';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1969,7 +1975,14 @@ function showView(v){
 function renderFilters(){
   const fe=document.getElementById('filter-emirate'),fdr=document.getElementById('filter-driver');
   const cur={em:fe.value,dr:fdr.value};
-  fe.innerHTML='<option value="">All Emirates</option>'+refs.emirates.map(r=>`<option value="${r.value}" ${cur.em===r.value?'selected':''}>${r.value}</option>`).join('');
+  // Emirate filter now mirrors the Directory (same source as the order form &
+  // warehouse board), so new emirates like INTERNATIONAL / PICK-UP show up
+  // automatically. Plus any stray emirate value already present in orders, so
+  // legacy orders never become unfilterable.
+  const dirEms = getLocs('emirate').map(e => e.name);
+  const strayEms = [...new Set(orders.map(o => (o.emirate||'').trim()).filter(Boolean))].filter(e => !dirEms.includes(e));
+  const allEms = [...dirEms, ...strayEms];
+  fe.innerHTML='<option value="">All Emirates</option>'+allEms.map(name=>`<option value="${name}" ${cur.em===name?'selected':''}>${name}</option>`).join('');
   fdr.innerHTML='<option value="">All Drivers</option>'+drivers.map(d=>`<option value="${d.name}" ${cur.dr===d.name?'selected':''}>${d.name}</option>`).join('');
   // Populate delivery multi-select
   const list = document.getElementById('filter-delivery-list');
@@ -2311,7 +2324,6 @@ function renderTable(){
           })() : ''}
           <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
           <button class="act-btn" onclick="copyOrderDetails('${o.id}')" title="Copy order details" style="color:#25d366;border-color:rgba(37,211,102,.3)">⎘</button>
-          ${!window._dispatcherMode ? `<button class="act-btn del" onclick="deleteOrder('${o.id}')" title="Delete order">&#10005;</button>` : ''}
         </div></td>
       </tr>`;
     }).join('');
@@ -3423,6 +3435,23 @@ function whCloseModal() {
 }
 
 // ─── WAREHOUSE ───────────────────────────────────────────────────
+let _whSearch = '';
+function onWhSearch(v) {
+  _whSearch = (v || '').trim();
+  const clr = document.getElementById('wh-search-clear');
+  if (clr) clr.style.display = _whSearch ? '' : 'none';
+  renderWarehouseQueue();
+}
+// Match an order against the warehouse search term (by order number).
+function _whMatch(o) {
+  if (!_whSearch) return true;
+  const num = String(o.order_num || '').toLowerCase();
+  const q = _whSearch.toLowerCase();
+  if (num.includes(q)) return true;
+  const dNum = num.replace(/\D/g, ''), dQ = q.replace(/\D/g, '');
+  return dQ && dNum.includes(dQ);
+}
+
 function renderWarehouseQueue() {
   const container = document.getElementById('warehouse-queue');
   if (!container) return;
@@ -3435,9 +3464,9 @@ function renderWarehouseQueue() {
   // Active board = confirmed orders awaiting warehouse work. Lab/warehouse
   // intermediate statuses are frozen, so the only inbound status is
   // "Processing in Lab" (set when the operator confirms the order).
-  const active = orders.filter(o => (o.delivery_status || '') === 'Processing in Lab');
+  const active = orders.filter(o => (o.delivery_status || '') === 'Processing in Lab').filter(_whMatch);
   // Parked = Ready for Pick-up. Stays until En Route.
-  const parked = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
+  const parked = orders.filter(o => o.delivery_status === 'Ready for Pick-up').filter(_whMatch);
 
   // Fixed columns: every emirate defined in the Directory (locations), always
   // shown even when empty, in the Directory's sort order. Plus any stray emirate
@@ -3445,8 +3474,17 @@ function renderWarehouseQueue() {
   const dirEmirates = getLocs('emirate').map(e => e.name);
   const seen = new Set([...active, ...parked].map(emKey));
   const stray = [...seen].filter(e => e !== '—' && !dirEmirates.includes(e));
-  const present = [...dirEmirates, ...stray];
+  // Normally show every directory emirate (even empty). While searching, show
+  // only columns that contain a match, to keep the board readable.
+  const present = _whSearch
+    ? [...dirEmirates.filter(e => seen.has(e)), ...stray]
+    : [...dirEmirates, ...stray];
   if (seen.has('—')) present.push('—');
+
+  if (_whSearch && !present.length) {
+    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--muted)">No orders match "${escHtml(_whSearch)}"</div>`;
+    return;
+  }
 
   if (!present.length) {
     container.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">No orders on the board</div>';
