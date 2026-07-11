@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.17 -->
+<!-- v13.18 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1389,7 +1389,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.17';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.18';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -5376,7 +5376,7 @@ async function exportXLSX(){
   const XL = await _loadXLSX();
 
   // Build rows — one row per order item, order info repeated
-  const headers = ['Order #','Date','Time','Created By','Emirate','City','District','Villa','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Notes'];
+  const headers = ['Order #','Date','Time','Created By','Emirate','City','District','Villa','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Internal Note','Driver Note'];
 
   const data = [headers];
   filtered.forEach(o => {
@@ -5392,7 +5392,7 @@ async function exportXLSX(){
       o.emirate, o.city||'', o.apt||'', o.villa||'', o.client_name||'',
       _xlsxPhone(o.client_number), o.seller_name||'',
     ];
-    const tail = [o.driver||'', o.payment_status||'', o.delivery_status||'', o.confirmed||'', o.notes||''];
+    const tail = [o.driver||'', o.payment_status||'', o.delivery_status||'', o.confirmed||'', o.notes||'', o.driver_note||''];
     if(items.length === 0){
       data.push([...base, '','','','','',deliveryDisplay,grandTotal, ...tail]);
     } else {
