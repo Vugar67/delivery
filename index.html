@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v13.18 -->
+<!-- v13.19 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1389,7 +1389,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.18';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.19';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1538,6 +1538,16 @@ const sb = {
       _refreshToken = data.refresh_token;
       _currentSession = data;
       _authListeners.forEach(cb => cb('SIGNED_IN', { user: data.user }));
+      // Security audit: fire-and-forget notify (login journal + admin geo-alert).
+      // Runs ONLY on a real password login (not on session restore). Never blocks
+      // or fails the login — errors are swallowed.
+      try {
+        fetch(SUPABASE_URL + '/functions/v1/login-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + data.access_token },
+          body: '{}'
+        }).catch(()=>{});
+      } catch(_) {}
       return { error: null };
     },
 
