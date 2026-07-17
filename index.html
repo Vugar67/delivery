@@ -1389,7 +1389,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.19';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.20';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3865,8 +3865,22 @@ async function editOrder(id){
       locPreview.style.display='none';
     }
   }
-  // load cart from existing items
-  const items=orderItems[id]||[];
+  // load cart from existing items — v13.20 FIX: always fetch fresh from the DB.
+  // The orderItems cache is wiped and re-loaded in sequential batches after
+  // EVERY save / full reload; opening an order during that window returned an
+  // EMPTY cart, and pressing Save then deleted every item from the order
+  // (replace_order_items with an empty list). In the logs this looked like
+  // "admin sets Delivered → items get minused" — Delivered was simply the most
+  // common quick edit, done in rapid succession right after a previous save.
+  // The cache is only used as a fallback if the network fetch fails.
+  let items = orderItems[id] || [];
+  try {
+    const { data: _freshItems, error: _freshErr } = await sb.from('order_items').select('*').eq('order_id', id);
+    if (!_freshErr && Array.isArray(_freshItems)) {
+      items = _freshItems;
+      orderItems[id] = _freshItems; // refresh the cache while we're at it
+    }
+  } catch(e) { console.log('editOrder: fresh items fetch failed, using cached items', e); }
   cart=items.map(item=>{
     // Custom item — no product_id or product not found
     if (!item.product_id) {
@@ -4227,6 +4241,26 @@ async function saveOrder(){
   const get=id=>document.getElementById(id).value.trim();
   const btn=document.getElementById('save-order-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+  // ── Empty-cart wipe guard (v13.20) ─────────────────────────────────
+  // If the form cart is EMPTY while the order still has items in the DB,
+  // the items almost certainly hadn't finished loading when the modal was
+  // opened. Saving in that state used to silently DELETE all items from the
+  // order. Runs BEFORE any write, so cancelling leaves the order untouched.
+  if (editId) {
+    const _cartCount = (cart||[]).filter(i => (i.is_custom ? (i.quantity||0) : (i.qty||0)) > 0).length;
+    if (_cartCount === 0) {
+      const { data: _existing } = await sb.from('order_items').select('id').eq('order_id', editId).limit(1);
+      if (_existing && _existing.length) {
+        const _wipeOK = confirm('⚠️ The items list in this form is EMPTY, but this order HAS items saved in the database (they may not have finished loading).\n\nSaving now will REMOVE ALL items from the order.\n\nCancel = abort save (recommended)\nOK = save anyway without items');
+        if (!_wipeOK) {
+          btn.disabled = false; btn.textContent = 'Save Order';
+          toast('Save cancelled — items kept. Reopen the order and try again.', true);
+          return;
+        }
+      }
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
