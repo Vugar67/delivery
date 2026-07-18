@@ -1194,25 +1194,40 @@ select option{background:#1a1d27;color:#f0f2ff}
               <select id="custom-item-name-sel" onchange="onCustomNameSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">— Select product —</option>
               </select>
-              <input id="custom-item-name" placeholder="Type custom name…" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
+              <div id="custom-item-name-wrap" style="display:none;gap:4px">
+                <input id="custom-item-name" type="text" placeholder="Name…" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
+                <button onclick="backFromOther('custom-item-name-sel','custom-item-name-wrap','custom-item-name')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 8px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
+              </div>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">DOSAGE</div>
               <select id="custom-item-dosage-sel" onchange="onCustomDosageSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">—</option>
               </select>
-              <input id="custom-item-dosage" placeholder="30" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <div id="custom-item-dosage-wrap" style="display:none;gap:4px">
+                <input id="custom-item-dosage" type="text" placeholder="25+25" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <button onclick="backFromOther('custom-item-dosage-sel','custom-item-dosage-wrap','custom-item-dosage')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
+              </div>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
-              <input id="custom-item-unit" value="" placeholder="—" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <select id="custom-item-unit-sel" onchange="onCustomUnitSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <option value="">—</option>
+              </select>
+              <div id="custom-item-unit-wrap" style="display:none;gap:4px">
+                <input id="custom-item-unit" type="text" placeholder="mg" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <button onclick="backFromOther('custom-item-unit-sel','custom-item-unit-wrap','custom-item-unit')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
+              </div>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">SOLVENT ML</div>
               <select id="custom-item-dosage2-sel" onchange="onCustomDosage2Sel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">—</option>
               </select>
-              <input id="custom-item-dosage2" placeholder="/2ml" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <div id="custom-item-dosage2-wrap" style="display:none;gap:4px">
+                <input id="custom-item-dosage2" type="text" placeholder="/2ml" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <button onclick="backFromOther('custom-item-dosage2-sel','custom-item-dosage2-wrap','custom-item-dosage2')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
+              </div>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
@@ -1426,7 +1441,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.27';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.29';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3176,6 +3191,18 @@ function renderCustomItemPickers() {
       '<option value="__custom__">✏️ Other…</option>';
     if (cur && [...dose2Sel.options].some(o => o.value === cur)) dose2Sel.value = cur;
   }
+  // UNIT dropdown: units directory symbols + units used by custom products
+  const unitSel = document.getElementById('custom-item-unit-sel');
+  if (unitSel) {
+    const cur = unitSel.value;
+    const set = new Set();
+    (units || []).forEach(u => { if (u.symbol) set.add(u.symbol); });
+    (customProducts || []).forEach(c => { if (c.unit) set.add(c.unit); });
+    unitSel.innerHTML = '<option value="">—</option>' +
+      [...set].map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('') +
+      '<option value="__custom__">✏️ Other…</option>';
+    if (cur && [...unitSel.options].some(o => o.value === cur)) unitSel.value = cur;
+  }
   renderCustomTypeChips();
   updateCustomItemTotal();
 }
@@ -3197,36 +3224,65 @@ function setCustomItemType(t) {
   renderCustomTypeChips();
 }
 
+// "Other…" mode (v13.28): the dropdown is REPLACED by a free-text input (no
+// leftover "Other" label above). The ↩ button switches back to the dropdown.
+function _otherModeToggle(selId, wrapId, inpId, on) {
+  const sel = document.getElementById(selId);
+  const wrap = document.getElementById(wrapId);
+  const inp = document.getElementById(inpId);
+  if (!sel || !wrap || !inp) return;
+  sel.style.display = on ? 'none' : '';
+  wrap.style.display = on ? 'flex' : 'none';
+  if (on) inp.focus();
+}
+function backFromOther(selId, wrapId, inpId) {
+  const sel = document.getElementById(selId); if (sel) sel.value = '';
+  const inp = document.getElementById(inpId); if (inp) inp.value = '';
+  _otherModeToggle(selId, wrapId, inpId, false);
+}
+
 // Product picked → pull its unit from the directory; "Other…" → free-text name.
 function onCustomNameSel() {
   const sel = document.getElementById('custom-item-name-sel');
-  const freeInp = document.getElementById('custom-item-name');
-  const unitInp = document.getElementById('custom-item-unit');
   if (!sel) return;
   const isCustom = sel.value === '__custom__';
-  if (freeInp) { freeInp.style.display = isCustom ? 'block' : 'none'; if (isCustom) freeInp.focus(); }
-  if (!isCustom && unitInp) {
+  _otherModeToggle('custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name', isCustom);
+  if (!isCustom) {
     const match = (customProducts || []).find(c => c.name === sel.value);
-    if (match) unitInp.value = match.unit || '';
+    if (match) setCustomUnit(match.unit || '');
   }
+}
+
+// Set the UNIT dropdown to a specific value (auto-fill from the product card);
+// adds the option on the fly if the directory doesn't list it.
+function setCustomUnit(u) {
+  const sel = document.getElementById('custom-item-unit-sel');
+  if (!sel) return;
+  backFromOther('custom-item-unit-sel', 'custom-item-unit-wrap', 'custom-item-unit'); // ensure dropdown mode
+  if (u && ![...sel.options].some(o => o.value === u)) {
+    const opt = document.createElement('option');
+    opt.value = u; opt.textContent = u;
+    sel.insertBefore(opt, sel.querySelector('option[value="__custom__"]'));
+  }
+  sel.value = u || '';
+}
+
+function onCustomUnitSel() {
+  const sel = document.getElementById('custom-item-unit-sel');
+  if (!sel) return;
+  _otherModeToggle('custom-item-unit-sel', 'custom-item-unit-wrap', 'custom-item-unit', sel.value === '__custom__');
 }
 
 function onCustomDosageSel() {
   const sel = document.getElementById('custom-item-dosage-sel');
-  const freeInp = document.getElementById('custom-item-dosage');
-  if (!sel || !freeInp) return;
-  const isCustom = sel.value === '__custom__';
-  freeInp.style.display = isCustom ? 'block' : 'none';
-  if (isCustom) freeInp.focus();
+  if (!sel) return;
+  _otherModeToggle('custom-item-dosage-sel', 'custom-item-dosage-wrap', 'custom-item-dosage', sel.value === '__custom__');
 }
 
 function onCustomDosage2Sel() {
   const sel = document.getElementById('custom-item-dosage2-sel');
-  const freeInp = document.getElementById('custom-item-dosage2');
-  if (!sel || !freeInp) return;
-  const isCustom = sel.value === '__custom__';
-  freeInp.style.display = isCustom ? 'block' : 'none';
-  if (isCustom) freeInp.focus();
+  if (!sel) return;
+  _otherModeToggle('custom-item-dosage2-sel', 'custom-item-dosage2-wrap', 'custom-item-dosage2', sel.value === '__custom__');
 }
 
 // Live line total = QTY × price per unit.
@@ -3241,15 +3297,16 @@ function updateCustomItemTotal() {
 // initShop) and after adding an item — leftovers from a previous order must
 // never survive into a new one.
 function resetCustomItemForm() {
-  ['custom-item-name-sel', 'custom-item-dosage-sel', 'custom-item-dosage2-sel'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
-  ['custom-item-name', 'custom-item-dosage', 'custom-item-dosage2'].forEach(id => {
-    const el = document.getElementById(id); if (el) { el.value = ''; el.style.display = 'none'; }
+  [['custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name'],
+   ['custom-item-dosage-sel', 'custom-item-dosage-wrap', 'custom-item-dosage'],
+   ['custom-item-dosage2-sel', 'custom-item-dosage2-wrap', 'custom-item-dosage2'],
+   ['custom-item-unit-sel', 'custom-item-unit-wrap', 'custom-item-unit']].forEach(([s, w, i]) => {
+    const sel = document.getElementById(s); if (sel) { sel.value = ''; sel.style.display = ''; }
+    const wr = document.getElementById(w); if (wr) wr.style.display = 'none';
+    const inp = document.getElementById(i); if (inp) inp.value = '';
   });
   const pr = document.getElementById('custom-item-price'); if (pr) pr.value = '';
   const q = document.getElementById('custom-item-qty'); if (q) q.value = '1';
-  const u = document.getElementById('custom-item-unit'); if (u) u.value = '';
   customItemType = '';
   renderCustomTypeChips();
   updateCustomItemTotal();
@@ -3421,7 +3478,10 @@ function addCustomItem() {
     : (document.getElementById('custom-item-dosage2')?.value || '').trim();
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
   const qty = parseFloat(document.getElementById('custom-item-qty').value) || 1;
-  const unit = (document.getElementById('custom-item-unit')?.value || '').trim();
+  const unitSel = document.getElementById('custom-item-unit-sel');
+  const unit = (unitSel && unitSel.value && unitSel.value !== '__custom__')
+    ? unitSel.value
+    : (document.getElementById('custom-item-unit')?.value || '').trim();
   // Line name = NAME + TYPE + DOSAGE1+UNIT + DOSAGE2 → "THYMOSIN ALPHA PEN 10mg/2ml"
   const typePart = customItemType ? ' ' + customItemType.toUpperCase() : '';
   const dosePart = (dosage ? dosage + unit : '') + (dosage2 || '');
@@ -5911,12 +5971,12 @@ function renderDefaultQuantitiesGrid() {
 }
 
 function openNewDefaultQuantity() {
-  const v = prompt('Dosage number (e.g. 30, 60, 2.4):');
+  const v = prompt('Dosage — numbers and "+" (e.g. 30, 2.4, 25+25):');
   if (v === null) return;
-  const num = parseFloat(v);
-  if (!isFinite(num) || num <= 0) { toast('Enter a valid number', true); return; }
-  sb.from('default_quantities').insert({ value: num }).then(async ({ error }) => {
-    if (error) { toast('Could not add dosage', true); return; }
+  const val = v.trim();
+  if (!val || !/^[0-9.+]+$/.test(val)) { toast('Only numbers, dot and + allowed', true); return; }
+  sb.from('default_quantities').insert({ value: val }).then(async ({ error }) => {
+    if (error) { toast('Could not add — run the dosage ALTER script first', true); return; }
     await loadDefaultQuantities();
     renderDefaultQuantitiesGrid();
     renderCustomItemPickers();
