@@ -466,7 +466,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <table class="tbl">
             <thead><tr>
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
-              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Created By</th><th>Emirate</th><th>District</th>
+              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Sch Delivery</th><th>Created By</th><th>Emirate</th><th>District</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
               <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Internal</th><th>Driver Note</th><th style="width:54px;text-align:center">Ver.</th><th></th>
             </tr></thead>
@@ -1115,6 +1115,15 @@ select option{background:#1a1d27;color:#f0f2ff}
           <div id="seller-suggest-list"></div>
         </div>
       </div>
+      <div class="form-group">
+        <label>Scheduled Delivery</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="f-sched-date" type="date" style="flex:1.5;min-width:0">
+          <input id="f-sched-from" type="time" style="flex:1;min-width:0" title="From">
+          <span style="color:var(--muted);font-size:12px;flex-shrink:0">–</span>
+          <input id="f-sched-to" type="time" style="flex:1;min-width:0" title="To">
+        </div>
+      </div>
       <div class="form-group" id="f-invoice-group">
         <label>Invoice #</label>
         <div style="display:flex;gap:6px;align-items:center">
@@ -1437,7 +1446,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.31';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.32';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1809,6 +1818,15 @@ const PAGE_SIZE=15;
 let dirCategory=null;
 let cart=[]; // [{product, qty}]
 let realtimeSub=null;
+
+// Scheduled Delivery window → compact "18.07 14:00–18:00" (empty if not set)
+function fmtSched(o) {
+  if (!o || !o.sched_date) return '';
+  const p = String(o.sched_date).split('-');            // YYYY-MM-DD
+  const dd = p.length === 3 ? `${p[2]}.${p[1]}` : String(o.sched_date);
+  const t = [o.sched_from, o.sched_to].filter(Boolean).map(x => String(x).slice(0, 5)).join('–');
+  return t ? `${dd} ${t}` : dd;
+}
 
 function toUAE(utcStr) {
   if (!utcStr) return '—';
@@ -2346,6 +2364,7 @@ function renderTable(){
         <td style="font-size:12px;color:var(--text)">${o.client_name||'&mdash;'}</td>
         <td class="date-cell">${o.order_date||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${toUAE(o.created_at)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap" title="Scheduled delivery window">${fmtSched(o)||'&mdash;'}</td>
         <td style="font-size:11px;color:var(--muted);font-family:var(--mono);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.created_by||''}">${o.created_by?o.created_by.split('@')[0]:'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.apt||'&mdash;'}</td>
@@ -3727,7 +3746,10 @@ function renderWarehouseQueue() {
     const qty = items.reduce((s,i) => s + (i.quantity||1), 0);
     return `<div onclick="whCardClick('${o.id}',${dimmed})" style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:${dimmed?'default':'pointer'};opacity:${dimmed?'.5':'1'};transition:.15s">
       <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${pc(o.priority||3)};box-shadow:0 0 6px ${pc(o.priority||3)}"></span>
-      <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.order_num||'—'}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+        <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.order_num||'—'}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">🕐 ${toUAEDateTime(o.created_at).slice(5)}</span>
+      </span>
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0" title="items in order">📦 ${qty}</span>
       <button onclick="event.stopPropagation();whCopyBlock('${o.id}',this)" title="Copy order info" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">⧉</button>
     </div>`;
@@ -3992,6 +4014,7 @@ async function openNewOrder(){
   // Clear all text fields
   ['f-apt','f-weight','f-client','f-client-name','f-seller-name','f-notes','f-driver-note',
    'f-location-raw','f-location-url','f-raw-message',
+   'f-sched-date','f-sched-from','f-sched-to',
    'shop-search','client-search-input','seller-search-input'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
@@ -4045,6 +4068,9 @@ async function editOrder(id){
   document.getElementById('f-num').value = o.order_num;
   document.getElementById('f-num').disabled = true; // order_num never editable
   document.getElementById('f-date').value=o.order_date||'';
+  {const _sd=document.getElementById('f-sched-date');if(_sd)_sd.value=o.sched_date||'';
+   const _sf=document.getElementById('f-sched-from');if(_sf)_sf.value=o.sched_from?String(o.sched_from).slice(0,5):'';
+   const _st=document.getElementById('f-sched-to');if(_st)_st.value=o.sched_to?String(o.sched_to).slice(0,5):'';}
   populateLocationSelects(o.emirate||'', o.city||'', o.apt||'');
   
   
@@ -4280,7 +4306,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4486,8 +4512,18 @@ async function saveOrder(){
   // ───────────────────────────────────────────────────────────────────
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
+  // ── Scheduled Delivery validation ──────────────────────────────────
+  const _schedDate = get('f-sched-date'), _schedFrom = get('f-sched-from'), _schedTo = get('f-sched-to');
+  if ((_schedFrom || _schedTo) && !_schedDate) {
+    toast('Scheduled Delivery: set the date', true);
+    btn.disabled = false; btn.textContent = 'Save Order'; return;
+  }
+  if (_schedFrom && _schedTo && _schedTo < _schedFrom) {
+    toast('Scheduled Delivery: "to" time must be after "from"', true);
+    btn.disabled = false; btn.textContent = 'Save Order'; return;
+  }
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -4603,7 +4639,7 @@ async function saveOrder(){
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
-    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name'].forEach(f => {
+    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to'].forEach(f => {
       if (String(_prevOrder[f]||'') !== String(payload[f]||'')) {
         _fieldDiff[f] = { before: _prevOrder[f], after: payload[f] };
       }
@@ -4710,7 +4746,8 @@ function copyOrderDetails(orderId){
   const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
   const internalLine = (o.notes && o.notes.trim()) ? `\n\n📋 Internal Note: ${o.notes.trim()}` : '';
   const driverLine = (o.driver_note && o.driver_note.trim()) ? `\n\n📝 Driver Note: ${o.driver_note.trim()}` : '';
-  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${[o.client_name,o.client_number].filter(Boolean).join(' — ')||'—'}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}${codLine}${internalLine}${driverLine}`;
+  const schedLine = fmtSched(o) ? `\n\n🕒 Scheduled: ${fmtSched(o)}` : '';
+  const text = `🚚 DELIVERY ORDER ${o.order_num}\n\n📍 Address: ${address||'—'}\n👤 Client: ${[o.client_name,o.client_number].filter(Boolean).join(' — ')||'—'}${schedLine}\n\n📦 Items:\n${items||'—'}\n\n💰 Payment: ${o.payment_status||'—'}${codLine}${internalLine}${driverLine}`;
   navigator.clipboard.writeText(text).then(()=>toast('✅ Copied to clipboard')).catch(()=>toast('❌ Copy failed',true));
 }
 
@@ -6640,6 +6677,7 @@ async function sendToDriver(orderId) {
   lines.push(`📍 *Address:* ${address||'—'}`);
   lines.push(`👤 *Client:* ${clientLine||'—'}`);
   if (o.location_url) lines.push(`🗺 *Location:* ${o.location_url}`);
+  if (fmtSched(o)) lines.push(`🕒 *Scheduled:* ${fmtSched(o)}`);
   if (showItems && items) lines.push(`📦 *Items:*\n${items}`);
   lines.push(`💰 *Payment:* ${o.payment_status||'—'}`);
   if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*`);
