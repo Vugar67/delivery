@@ -466,9 +466,9 @@ select option{background:#1a1d27;color:#f0f2ff}
           <table class="tbl">
             <thead><tr>
               <th id="dispatch-th" style="width:32px;display:none;text-align:center"><input type="checkbox" id="dispatch-select-all" onchange="dispatchSelectAll(this.checked)" style="cursor:pointer"></th>
-              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Date</th><th>Time</th><th>Sch Delivery</th><th>Created By</th><th>Emirate</th><th>District</th>
+              <th style="width:40px;text-align:center">P</th><th>Order #</th><th>Seller</th><th>Client Name</th><th>Created</th><th>Created By</th><th>Emirate</th><th>District</th>
               <th>Villa/Apt</th><th>Client #</th><th>Driver</th>
-              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Internal</th><th>Driver Note</th><th style="width:54px;text-align:center">Ver.</th><th></th>
+              <th>Content</th><th>Payment</th><th>Delivery</th><th>Conf.</th><th>Invoice #</th><th class="col-financial">Delivery AED</th><th class="col-financial">Subtotal</th><th class="col-financial">Discount</th><th>Total</th><th>Internal</th><th>Driver Note</th><th>Sch Delivery</th><th style="width:54px;text-align:center">Ver.</th><th></th>
             </tr></thead>
             <tbody id="order-tbody"></tbody>
           </table>
@@ -1454,7 +1454,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.34';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.35';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2406,9 +2406,7 @@ function renderTable(){
         <td class="order-num">${o.order_num}</td>
         <td style="font-size:12px;color:var(--blue)">${o.seller_name||'&mdash;'}</td>
         <td style="font-size:12px;color:var(--text)">${o.client_name||'&mdash;'}</td>
-        <td class="date-cell">${o.order_date||'&mdash;'}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${toUAE(o.created_at)}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap" title="Scheduled delivery window">${fmtSched(o)||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">${toUAEDateTime(o.created_at)}</td>
         <td style="font-size:11px;color:var(--muted);font-family:var(--mono);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.created_by||''}">${o.created_by?o.created_by.split('@')[0]:'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.apt||'&mdash;'}</td>
@@ -2426,6 +2424,7 @@ function renderTable(){
         <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)">${o.total>0?o.total.toFixed(2):'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px" title="${o.notes||''}">${o.notes||'&mdash;'}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:11px" title="${o.driver_note||''}">${o.driver_note||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap" title="Scheduled delivery window">${fmtSched(o)||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center" title="App version at last save">${o.app_version||'&mdash;'}</td>
         <td><div class="actions">
           ${o.driver ? (() => {
