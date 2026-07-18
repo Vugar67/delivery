@@ -568,6 +568,18 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-ghost btn-sm" onclick="openNewComponent()">+ Add Component</button>
       </div>
       <div id="components-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:24px"></div>
+
+      <div class="section-head" style="margin-bottom:14px">
+        <div class="section-title">🧪 Custom Products</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewCustomProduct()">+ Add Custom Product</button>
+      </div>
+      <div id="custom-products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px"></div>
+
+      <div class="section-head" style="margin-bottom:14px">
+        <div class="section-title">🔢 Default Quantities</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewDefaultQuantity()">+ Add Quantity</button>
+      </div>
+      <div id="default-quantities-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:24px"></div>
     </div>
 
     <div id="view-clients" style="display:none">
@@ -1138,7 +1150,9 @@ select option{background:#1a1d27;color:#f0f2ff}
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">&#9906;</span>
               <input type="text" id="shop-search" placeholder="Search products..." oninput="renderShopProducts()" autocomplete="off" style="width:100%;padding:8px 12px 8px 30px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             </div>
-            <div id="shop-cats" class="shop-cats"></div>
+            <select id="shop-kind" onchange="renderShopProducts()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+              <option value="">All Kinds</option>
+            </select>
           </div>
           <!-- Product Grid -->
           <div id="shop-grid" class="shop-grid"></div>
@@ -1170,10 +1184,11 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group form-full" style="margin-top:-4px">
         <button onclick="toggleCustomItem()" id="custom-item-toggle" style="background:none;border:1px dashed var(--border);border-radius:6px;padding:7px 14px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;width:100%;text-align:left" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Custom Item (one-time, not saved to catalog)</button>
         <div id="custom-item-form" style="display:none;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="display:grid;grid-template-columns:1fr 100px 78px 60px;gap:8px;align-items:end">
+          <div style="display:grid;grid-template-columns:1fr 100px 78px 72px;gap:8px;align-items:end">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">NAME</div>
-              <input id="custom-item-name" placeholder="e.g. Tesa 30mg Pen" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-name" list="custom-products-list" autocomplete="off" oninput="onCustomProductPick()" placeholder="Select or type…" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
+              <datalist id="custom-products-list"></datalist>
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE (AED)</div>
@@ -1191,7 +1206,8 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
-              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-qty" list="default-qty-list" type="number" min="1" value="1" onfocus="this.select()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <datalist id="default-qty-list"></datalist>
             </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
@@ -1389,7 +1405,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.20';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.21';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1881,7 +1897,7 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities()]);
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
@@ -1964,7 +1980,7 @@ function showView(v){
   ['orders','products','directory','users','clients','warehouse','brands','storage','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
-  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();}
   if(v==='logs'){loadLogs();}
   if(v==='users')renderUsers();
   if(v==='products'){
@@ -3092,21 +3108,50 @@ function clearLocation() {
 }
 
 // SHOP CART
-let shopActiveCat = 'all';
-
-function renderShopCategories() {
-  const catsEl = document.getElementById('shop-cats');
-  if (!catsEl) return;
-  const cats = ['all', ...new Set(products.filter(p=>p.active!==false).map(p=>p.category).filter(Boolean))];
-  catsEl.innerHTML = cats.map(c => 
-    `<button class="shop-cat-btn ${shopActiveCat===c?'active':''}" onclick="setShopCat('${c}')">${c==='all'?'All':c}</button>`
-  ).join('');
+// #1: the order-form product picker filters by KIND (product.type) taken from
+// the refs directory (productType) — replaces the old free-text category chips.
+function renderShopKinds() {
+  const sel = document.getElementById('shop-kind');
+  if (!sel) return;
+  const cur = sel.value;
+  const kinds = (refs.productType || []).map(r => r.value).filter(Boolean);
+  sel.innerHTML = '<option value="">All Kinds</option>' +
+    kinds.map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${k}</option>`).join('');
 }
 
-function setShopCat(cat) {
-  shopActiveCat = cat;
-  renderShopCategories();
-  renderShopProducts();
+// #2: fill the custom-item pickers from the two new reference directories —
+// custom products (name datalist + unit dropdown) and default quantities.
+function renderCustomItemPickers() {
+  const nameList = document.getElementById('custom-products-list');
+  if (nameList) nameList.innerHTML = (customProducts || [])
+    .map(c => `<option value="${(c.name || '').replace(/"/g, '&quot;')}"></option>`).join('');
+  const qtyList = document.getElementById('default-qty-list');
+  if (qtyList) qtyList.innerHTML = (defaultQuantities || [])
+    .map(q => `<option value="${q.value}"></option>`).join('');
+  const unitSel = document.getElementById('custom-item-unit');
+  if (unitSel) {
+    const cur = unitSel.value;
+    const set = new Set(['pcs', 'pen', 'vial', 'ml', 'box']);
+    (units || []).forEach(u => { if (u.symbol) set.add(u.symbol); });
+    (customProducts || []).forEach(c => { if (c.unit) set.add(c.unit); });
+    unitSel.innerHTML = [...set].map(u => `<option value="${u}">${u}</option>`).join('');
+    if (cur && set.has(cur)) unitSel.value = cur;
+  }
+}
+
+// When a custom product is chosen from the datalist, pull its saved unit.
+function onCustomProductPick() {
+  const name = (document.getElementById('custom-item-name').value || '').trim();
+  const match = (customProducts || []).find(c => (c.name || '').toLowerCase() === name.toLowerCase());
+  if (match && match.unit) {
+    const unitSel = document.getElementById('custom-item-unit');
+    if (unitSel) {
+      if (![...unitSel.options].some(o => o.value === match.unit)) {
+        unitSel.insertAdjacentHTML('beforeend', `<option value="${match.unit}">${match.unit}</option>`);
+      }
+      unitSel.value = match.unit;
+    }
+  }
 }
 
 function renderShopProducts() {
@@ -3114,7 +3159,8 @@ function renderShopProducts() {
   if (!grid) return;
   const q = (document.getElementById('shop-search')?.value || '').toLowerCase();
   let filtered = products.filter(p => p.active !== false);
-  if (shopActiveCat !== 'all') filtered = filtered.filter(p => p.category === shopActiveCat);
+  const kind = document.getElementById('shop-kind')?.value || '';
+  if (kind) filtered = filtered.filter(p => (p.type || '') === kind);
   if (q) filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
   
   if (!filtered.length) {
@@ -3252,13 +3298,13 @@ function toggleCustomItem() {
   const form = document.getElementById('custom-item-form');
   const isHidden = form.style.display === 'none' || !form.style.display;
   form.style.display = isHidden ? 'block' : 'none';
-  if (isHidden) document.getElementById('custom-item-name').focus();
+  if (isHidden) { renderCustomItemPickers(); document.getElementById('custom-item-name').focus(); }
 }
 
 function addCustomItem() {
   const name = document.getElementById('custom-item-name').value.trim();
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
-  const qty = parseInt(document.getElementById('custom-item-qty').value) || 1;
+  const qty = parseFloat(document.getElementById('custom-item-qty').value) || 1;
   const unit = document.getElementById('custom-item-unit')?.value || 'pcs';
   if (!name) { toast('Enter item name', true); return; }
 
@@ -3727,8 +3773,9 @@ function addToCart(productId) {
 }
 
 function initShop() {
-  shopActiveCat = 'all';
-  renderShopCategories();
+  const sk = document.getElementById('shop-kind'); if (sk) sk.value = '';
+  renderShopKinds();
+  renderCustomItemPickers();
   renderShopProducts();
   renderCart();
 }
@@ -4608,6 +4655,18 @@ async function saveShelfCell(pos) {
 let units = [];
 let components = [];
 let productComponents = [];
+let customProducts = [];
+let defaultQuantities = [];
+
+async function loadCustomProducts() {
+  const { data } = await sb.from('custom_products').select('*').order('name');
+  customProducts = data || [];
+}
+
+async function loadDefaultQuantities() {
+  const { data } = await sb.from('default_quantities').select('*').order('value');
+  defaultQuantities = data || [];
+}
 
 async function loadUnits() {
   const { data } = await sb.from('units').select('*').order('name');
@@ -5668,6 +5727,81 @@ async function deleteComponent(id) {
   await loadComponents();
   renderComponentsGrid();
   toast('Component deleted');
+}
+
+// ─── CUSTOM PRODUCTS & DEFAULT QUANTITIES (reference directories) ───
+
+function renderCustomProductsGrid() {
+  const el = document.getElementById('custom-products-grid');
+  if (!el) return;
+  el.innerHTML = (customProducts || []).length
+    ? customProducts.map(c => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:600;font-size:13px">${c.name}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.unit || ''}</div>
+        </div>
+        <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px">No custom products defined</div>';
+}
+
+function openNewCustomProduct() {
+  const name = prompt('Custom product name:');
+  if (!name || !name.trim()) return;
+  const unit = prompt('Unit (e.g. pen, vial, ml, pcs):', 'pcs');
+  if (unit === null) return;
+  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs' }).then(async ({ error }) => {
+    if (error) { toast('Could not add — check the custom_products table exists', true); return; }
+    await loadCustomProducts();
+    renderCustomProductsGrid();
+    renderCustomItemPickers();
+    toast('Custom product added');
+  });
+}
+
+async function deleteCustomProduct(id) {
+  if (!confirm('Delete this custom product?')) return;
+  await sb.from('custom_products').delete().eq('id', id);
+  await loadCustomProducts();
+  renderCustomProductsGrid();
+  renderCustomItemPickers();
+  toast('Custom product deleted');
+}
+
+function renderDefaultQuantitiesGrid() {
+  const el = document.getElementById('default-quantities-grid');
+  if (!el) return;
+  el.innerHTML = (defaultQuantities || []).length
+    ? defaultQuantities.map(q => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:600;font-size:14px;font-family:var(--mono)">${q.value}</div>
+        <button class="act-btn del" onclick="deleteDefaultQuantity(${q.id})">✕</button>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px">No default quantities defined</div>';
+}
+
+function openNewDefaultQuantity() {
+  const v = prompt('Default quantity (number):');
+  if (v === null) return;
+  const num = parseFloat(v);
+  if (!isFinite(num) || num <= 0) { toast('Enter a valid number', true); return; }
+  sb.from('default_quantities').insert({ value: num }).then(async ({ error }) => {
+    if (error) { toast('Could not add — check the default_quantities table exists', true); return; }
+    await loadDefaultQuantities();
+    renderDefaultQuantitiesGrid();
+    renderCustomItemPickers();
+    toast('Quantity added');
+  });
+}
+
+async function deleteDefaultQuantity(id) {
+  if (!confirm('Delete this quantity?')) return;
+  await sb.from('default_quantities').delete().eq('id', id);
+  await loadDefaultQuantities();
+  renderDefaultQuantitiesGrid();
+  renderCustomItemPickers();
+  toast('Quantity deleted');
 }
 
 function renderDirectory(){
