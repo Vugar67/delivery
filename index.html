@@ -576,8 +576,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="custom-products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px"></div>
 
       <div class="section-head" style="margin-bottom:14px">
-        <div class="section-title">🔢 Default Quantities</div>
-        <button class="btn btn-ghost btn-sm" onclick="openNewDefaultQuantity()">+ Add Quantity</button>
+        <div class="section-title">💊 Dosages</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewDefaultQuantity()">+ Add Dosage</button>
       </div>
       <div id="default-quantities-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:24px"></div>
     </div>
@@ -1184,30 +1184,38 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group form-full" style="margin-top:-4px">
         <button onclick="toggleCustomItem()" id="custom-item-toggle" style="background:none;border:1px dashed var(--border);border-radius:6px;padding:7px 14px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;width:100%;text-align:left" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Custom Item (one-time, not saved to catalog)</button>
         <div id="custom-item-form" style="display:none;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="display:grid;grid-template-columns:1fr 100px 78px 72px;gap:8px;align-items:end">
+          <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;align-items:start">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">NAME</div>
-              <input id="custom-item-name" list="custom-products-list" autocomplete="off" oninput="onCustomProductPick()" placeholder="Select or type…" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
-              <datalist id="custom-products-list"></datalist>
+              <select id="custom-item-name-sel" onchange="onCustomNameSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
+                <option value="">— Select product —</option>
+              </select>
+              <input id="custom-item-name" placeholder="Type custom name…" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE (AED)</div>
-              <input id="custom-item-price" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">DOSAGE</div>
+              <select id="custom-item-dosage-sel" onchange="onCustomDosageSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <option value="">— Dosage —</option>
+              </select>
+              <input id="custom-item-dosage" placeholder="e.g. 30mg" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
+          </div>
+          <div style="display:grid;grid-template-columns:80px 70px 1fr 1fr;gap:8px;align-items:end;margin-top:8px">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
-              <select id="custom-item-unit" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-                <option value="pcs" selected>pcs</option>
-                <option value="pen">pen</option>
-                <option value="vial">vial</option>
-                <option value="ml">ml</option>
-                <option value="box">box</option>
-              </select>
+              <input id="custom-item-unit" value="pcs" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
-              <input id="custom-item-qty" list="default-qty-list" type="number" min="1" value="1" onfocus="this.select()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-              <datalist id="default-qty-list"></datalist>
+              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE / UNIT (AED)</div>
+              <input id="custom-item-price" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">TOTAL (AED)</div>
+              <input id="custom-item-total" readonly value="0.00" tabindex="-1" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);box-sizing:border-box">
             </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
@@ -1405,7 +1413,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.21';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.23';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3119,39 +3127,59 @@ function renderShopKinds() {
     kinds.map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${k}</option>`).join('');
 }
 
-// #2: fill the custom-item pickers from the two new reference directories —
-// custom products (name datalist + unit dropdown) and default quantities.
+// #2 (v13.22): custom-item pickers are REAL dropdowns fed by the reference
+// directories — custom products (name + unit) and dosages. Both selects end
+// with an "Other…" option that reveals a free-text input for one-off values.
 function renderCustomItemPickers() {
-  const nameList = document.getElementById('custom-products-list');
-  if (nameList) nameList.innerHTML = (customProducts || [])
-    .map(c => `<option value="${(c.name || '').replace(/"/g, '&quot;')}"></option>`).join('');
-  const qtyList = document.getElementById('default-qty-list');
-  if (qtyList) qtyList.innerHTML = (defaultQuantities || [])
-    .map(q => `<option value="${q.value}"></option>`).join('');
-  const unitSel = document.getElementById('custom-item-unit');
-  if (unitSel) {
-    const cur = unitSel.value;
-    const set = new Set(['pcs', 'pen', 'vial', 'ml', 'box']);
-    (units || []).forEach(u => { if (u.symbol) set.add(u.symbol); });
-    (customProducts || []).forEach(c => { if (c.unit) set.add(c.unit); });
-    unitSel.innerHTML = [...set].map(u => `<option value="${u}">${u}</option>`).join('');
-    if (cur && set.has(cur)) unitSel.value = cur;
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const nameSel = document.getElementById('custom-item-name-sel');
+  if (nameSel) {
+    const cur = nameSel.value;
+    nameSel.innerHTML = '<option value="">— Select product —</option>' +
+      (customProducts || []).map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('') +
+      '<option value="__custom__">✏️ Other — type name…</option>';
+    if (cur && [...nameSel.options].some(o => o.value === cur)) nameSel.value = cur;
+  }
+  const doseSel = document.getElementById('custom-item-dosage-sel');
+  if (doseSel) {
+    const cur = doseSel.value;
+    doseSel.innerHTML = '<option value="">— Dosage —</option>' +
+      (defaultQuantities || []).map(q => `<option value="${esc(q.value)}">${esc(q.value)}</option>`).join('') +
+      '<option value="__custom__">✏️ Other…</option>';
+    if (cur && [...doseSel.options].some(o => o.value === cur)) doseSel.value = cur;
+  }
+  updateCustomItemTotal();
+}
+
+// Product picked → pull its unit from the directory; "Other…" → free-text name.
+function onCustomNameSel() {
+  const sel = document.getElementById('custom-item-name-sel');
+  const freeInp = document.getElementById('custom-item-name');
+  const unitInp = document.getElementById('custom-item-unit');
+  if (!sel) return;
+  const isCustom = sel.value === '__custom__';
+  if (freeInp) { freeInp.style.display = isCustom ? 'block' : 'none'; if (isCustom) freeInp.focus(); }
+  if (!isCustom && unitInp) {
+    const match = (customProducts || []).find(c => c.name === sel.value);
+    if (match) unitInp.value = match.unit || 'pcs';
   }
 }
 
-// When a custom product is chosen from the datalist, pull its saved unit.
-function onCustomProductPick() {
-  const name = (document.getElementById('custom-item-name').value || '').trim();
-  const match = (customProducts || []).find(c => (c.name || '').toLowerCase() === name.toLowerCase());
-  if (match && match.unit) {
-    const unitSel = document.getElementById('custom-item-unit');
-    if (unitSel) {
-      if (![...unitSel.options].some(o => o.value === match.unit)) {
-        unitSel.insertAdjacentHTML('beforeend', `<option value="${match.unit}">${match.unit}</option>`);
-      }
-      unitSel.value = match.unit;
-    }
-  }
+function onCustomDosageSel() {
+  const sel = document.getElementById('custom-item-dosage-sel');
+  const freeInp = document.getElementById('custom-item-dosage');
+  if (!sel || !freeInp) return;
+  const isCustom = sel.value === '__custom__';
+  freeInp.style.display = isCustom ? 'block' : 'none';
+  if (isCustom) freeInp.focus();
+}
+
+// Live line total = QTY × price per unit.
+function updateCustomItemTotal() {
+  const qty = parseFloat(document.getElementById('custom-item-qty')?.value) || 0;
+  const price = parseFloat(document.getElementById('custom-item-price')?.value) || 0;
+  const out = document.getElementById('custom-item-total');
+  if (out) out.value = (qty * price).toFixed(2);
 }
 
 function renderShopProducts() {
@@ -3298,15 +3326,25 @@ function toggleCustomItem() {
   const form = document.getElementById('custom-item-form');
   const isHidden = form.style.display === 'none' || !form.style.display;
   form.style.display = isHidden ? 'block' : 'none';
-  if (isHidden) { renderCustomItemPickers(); document.getElementById('custom-item-name').focus(); }
+  if (isHidden) { renderCustomItemPickers(); document.getElementById('custom-item-name-sel')?.focus(); }
 }
 
 function addCustomItem() {
-  const name = document.getElementById('custom-item-name').value.trim();
+  // Name: from the directory dropdown, or free-typed via "Other…"
+  const nameSel = document.getElementById('custom-item-name-sel');
+  const baseName = (nameSel && nameSel.value && nameSel.value !== '__custom__')
+    ? nameSel.value
+    : (document.getElementById('custom-item-name').value || '').trim();
+  // Dosage: from the directory dropdown, or free-typed via "Other…"
+  const doseSel = document.getElementById('custom-item-dosage-sel');
+  const dosage = (doseSel && doseSel.value && doseSel.value !== '__custom__')
+    ? doseSel.value
+    : (document.getElementById('custom-item-dosage')?.value || '').trim();
+  const name = dosage ? (baseName + ' X ' + dosage) : baseName;   // "Tesa Pen X 30mg"
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
   const qty = parseFloat(document.getElementById('custom-item-qty').value) || 1;
-  const unit = document.getElementById('custom-item-unit')?.value || 'pcs';
-  if (!name) { toast('Enter item name', true); return; }
+  const unit = (document.getElementById('custom-item-unit')?.value || 'pcs').trim() || 'pcs';
+  if (!baseName) { toast('Select or enter item name', true); return; }
 
   // Add to cart as a custom item (no product_id)
   const existing = cart.find(c => c.product_id === null && c.product_name === name);
@@ -3317,10 +3355,14 @@ function addCustomItem() {
   }
 
   // Reset form
-  document.getElementById('custom-item-name').value = '';
+  const _nSel = document.getElementById('custom-item-name-sel'); if (_nSel) _nSel.value = '';
+  const _dSel = document.getElementById('custom-item-dosage-sel'); if (_dSel) _dSel.value = '';
+  const _nInp = document.getElementById('custom-item-name'); if (_nInp) { _nInp.value = ''; _nInp.style.display = 'none'; }
+  const _dInp = document.getElementById('custom-item-dosage'); if (_dInp) { _dInp.value = ''; _dInp.style.display = 'none'; }
   document.getElementById('custom-item-price').value = '';
   document.getElementById('custom-item-qty').value = '1';
   if (document.getElementById('custom-item-unit')) document.getElementById('custom-item-unit').value = 'pcs';
+  updateCustomItemTotal();
   document.getElementById('custom-item-form').style.display = 'none';
 
   renderCart();
@@ -4664,8 +4706,11 @@ async function loadCustomProducts() {
 }
 
 async function loadDefaultQuantities() {
-  const { data } = await sb.from('default_quantities').select('*').order('value');
-  defaultQuantities = data || [];
+  // Dosage directory (table kept as default_quantities). Natural sort so
+  // "2.4ml" < "30mg" < "100mg/3ml" orders sensibly for text values.
+  const { data } = await sb.from('default_quantities').select('*');
+  defaultQuantities = (data || []).sort((a, b) =>
+    String(a.value).localeCompare(String(b.value), undefined, { numeric: true, sensitivity: 'base' }));
 }
 
 async function loadUnits() {
@@ -5778,30 +5823,28 @@ function renderDefaultQuantitiesGrid() {
         <div style="font-weight:600;font-size:14px;font-family:var(--mono)">${q.value}</div>
         <button class="act-btn del" onclick="deleteDefaultQuantity(${q.id})">✕</button>
       </div>`).join('')
-    : '<div style="color:var(--muted);font-size:13px">No default quantities defined</div>';
+    : '<div style="color:var(--muted);font-size:13px">No dosages defined</div>';
 }
 
 function openNewDefaultQuantity() {
-  const v = prompt('Default quantity (number):');
-  if (v === null) return;
-  const num = parseFloat(v);
-  if (!isFinite(num) || num <= 0) { toast('Enter a valid number', true); return; }
-  sb.from('default_quantities').insert({ value: num }).then(async ({ error }) => {
-    if (error) { toast('Could not add — check the default_quantities table exists', true); return; }
+  const v = prompt('Dosage (e.g. 30mg, 2.4ml, 100mg/3ml):');
+  if (v === null || !v.trim()) return;
+  sb.from('default_quantities').insert({ value: v.trim() }).then(async ({ error }) => {
+    if (error) { toast('Could not add — run the dosage ALTER script first', true); return; }
     await loadDefaultQuantities();
     renderDefaultQuantitiesGrid();
     renderCustomItemPickers();
-    toast('Quantity added');
+    toast('Dosage added');
   });
 }
 
 async function deleteDefaultQuantity(id) {
-  if (!confirm('Delete this quantity?')) return;
+  if (!confirm('Delete this dosage?')) return;
   await sb.from('default_quantities').delete().eq('id', id);
   await loadDefaultQuantities();
   renderDefaultQuantitiesGrid();
   renderCustomItemPickers();
-  toast('Quantity deleted');
+  toast('Dosage deleted');
 }
 
 function renderDirectory(){
