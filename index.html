@@ -1196,7 +1196,6 @@ select option{background:#1a1d27;color:#f0f2ff}
               </select>
               <div id="custom-item-name-wrap" style="display:none;gap:4px">
                 <input id="custom-item-name" type="text" placeholder="Name…" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
-                <button onclick="backFromOther('custom-item-name-sel','custom-item-name-wrap','custom-item-name')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 8px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
               </div>
             </div>
             <div>
@@ -1206,7 +1205,6 @@ select option{background:#1a1d27;color:#f0f2ff}
               </select>
               <div id="custom-item-dosage-wrap" style="display:none;gap:4px">
                 <input id="custom-item-dosage" type="text" placeholder="25+25" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-                <button onclick="backFromOther('custom-item-dosage-sel','custom-item-dosage-wrap','custom-item-dosage')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
               </div>
             </div>
             <div>
@@ -1216,7 +1214,6 @@ select option{background:#1a1d27;color:#f0f2ff}
               </select>
               <div id="custom-item-unit-wrap" style="display:none;gap:4px">
                 <input id="custom-item-unit" type="text" placeholder="mg" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-                <button onclick="backFromOther('custom-item-unit-sel','custom-item-unit-wrap','custom-item-unit')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
               </div>
             </div>
             <div>
@@ -1226,7 +1223,6 @@ select option{background:#1a1d27;color:#f0f2ff}
               </select>
               <div id="custom-item-dosage2-wrap" style="display:none;gap:4px">
                 <input id="custom-item-dosage2" type="text" placeholder="/2ml" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-                <button onclick="backFromOther('custom-item-dosage2-sel','custom-item-dosage2-wrap','custom-item-dosage2')" title="Back to list" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0 6px;color:var(--muted);cursor:pointer;font-size:13px">↩</button>
               </div>
             </div>
             <div>
@@ -1248,7 +1244,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <button onclick="addCustomItem()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:7px 16px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;flex:1">Add to Cart</button>
-            <button onclick="toggleCustomItem()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--muted);font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
+            <button onclick="resetCustomItemForm()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--muted);font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
           </div>
         </div>
       </div>
@@ -1441,7 +1437,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.29';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.30';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3224,8 +3220,9 @@ function setCustomItemType(t) {
   renderCustomTypeChips();
 }
 
-// "Other…" mode (v13.28): the dropdown is REPLACED by a free-text input (no
-// leftover "Other" label above). The ↩ button switches back to the dropdown.
+// "Other…" mode (v13.28+): the dropdown is REPLACED by a free-text input (no
+// leftover "Other" label above). There is deliberately NO back button — if the
+// operator picked "Other" by mistake, Cancel clears the whole form to start over.
 function _otherModeToggle(selId, wrapId, inpId, on) {
   const sel = document.getElementById(selId);
   const wrap = document.getElementById(wrapId);
