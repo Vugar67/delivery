@@ -582,8 +582,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="default-quantities-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:24px"></div>
 
       <div class="section-head" style="margin-bottom:14px">
-        <div class="section-title">💊 Dosage 2 (suffix)</div>
-        <button class="btn btn-ghost btn-sm" onclick="openNewDosageSuffix()">+ Add Dosage 2</button>
+        <div class="section-title">💊 Solvent ml</div>
+        <button class="btn btn-ghost btn-sm" onclick="openNewDosageSuffix()">+ Add Solvent</button>
       </div>
       <div id="dosage-suffixes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:24px"></div>
     </div>
@@ -1188,7 +1188,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group form-full" style="margin-top:-4px">
         <button onclick="toggleCustomItem()" id="custom-item-toggle" style="background:none;border:1px dashed var(--border);border-radius:6px;padding:7px 14px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;width:100%;text-align:left" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Custom Item (one-time, not saved to catalog)</button>
         <div id="custom-item-form" style="display:none;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="display:grid;grid-template-columns:minmax(140px,1.6fr) 64px 84px 58px 54px 80px 88px;gap:8px;align-items:end">
+          <div style="display:grid;grid-template-columns:minmax(140px,1.6fr) 64px 58px 84px 54px 80px 88px;gap:8px;align-items:end">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">NAME</div>
               <select id="custom-item-name-sel" onchange="onCustomNameSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
@@ -1204,15 +1204,15 @@ select option{background:#1a1d27;color:#f0f2ff}
               <input id="custom-item-dosage" placeholder="30" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">DOSAGE 2</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
+              <input id="custom-item-unit" value="" placeholder="—" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+            </div>
+            <div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">SOLVENT ML</div>
               <select id="custom-item-dosage2-sel" onchange="onCustomDosage2Sel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">—</option>
               </select>
               <input id="custom-item-dosage2" placeholder="/2ml" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-            </div>
-            <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
-              <input id="custom-item-unit" value="" placeholder="—" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
@@ -1426,7 +1426,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.26';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.27';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3427,6 +3427,7 @@ function addCustomItem() {
   const dosePart = (dosage ? dosage + unit : '') + (dosage2 || '');
   const name = baseName + typePart + (dosePart ? ' ' + dosePart : '');
   if (!baseName) { toast('Select or enter item name', true); return; }
+  if (!customItemType) { toast('Select product type (Pen, Vial…)', true); return; }
 
   // Add to cart as a custom item (no product_id)
   const existing = cart.find(c => c.product_id === null && c.product_name === name);
@@ -5941,28 +5942,28 @@ function renderDosageSuffixesGrid() {
         <div style="font-weight:600;font-size:14px;font-family:var(--mono)">${q.value}</div>
         <button class="act-btn del" onclick="deleteDosageSuffix(${q.id})">✕</button>
       </div>`).join('')
-    : '<div style="color:var(--muted);font-size:13px">No dosage 2 values defined</div>';
+    : '<div style="color:var(--muted);font-size:13px">No solvent values defined</div>';
 }
 
 function openNewDosageSuffix() {
-  const v = prompt('Dosage 2 text (e.g. /2ml, /8ml, +5mg):');
+  const v = prompt('Solvent ml (e.g. /2ml, /8ml):');
   if (v === null || !v.trim()) return;
   sb.from('dosage_suffixes').insert({ value: v.trim() }).then(async ({ error }) => {
     if (error) { toast('Could not add — check the dosage_suffixes table exists', true); return; }
     await loadDosageSuffixes();
     renderDosageSuffixesGrid();
     renderCustomItemPickers();
-    toast('Dosage 2 added');
+    toast('Solvent added');
   });
 }
 
 async function deleteDosageSuffix(id) {
-  if (!confirm('Delete this dosage 2 value?')) return;
+  if (!confirm('Delete this solvent value?')) return;
   await sb.from('dosage_suffixes').delete().eq('id', id);
   await loadDosageSuffixes();
   renderDosageSuffixesGrid();
   renderCustomItemPickers();
-  toast('Dosage 2 deleted');
+  toast('Solvent deleted');
 }
 
 function renderDirectory(){
