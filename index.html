@@ -1101,6 +1101,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <div id="client-suggest-list"></div>
         </div>
       </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="position:relative">
         <label>Seller</label>
         <div style="position:relative">
@@ -1117,12 +1118,17 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
       <div class="form-group">
         <label>Scheduled Delivery</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input id="f-sched-date" type="date" style="flex:1.5;min-width:0">
-          <input id="f-sched-from" type="time" style="flex:1;min-width:0" title="From">
-          <span style="color:var(--muted);font-size:12px;flex-shrink:0">–</span>
-          <input id="f-sched-to" type="time" style="flex:1;min-width:0" title="To">
+        <input id="f-sched-date" type="date" style="width:100%;box-sizing:border-box">
+        <div style="display:flex;gap:4px;align-items:center">
+          <select id="f-sched-from-h" title="From — hour (24h)" style="flex:1.2;min-width:0"></select>
+          <span style="color:var(--muted);font-size:12px">:</span>
+          <select id="f-sched-from-m" title="From — minutes" style="flex:1;min-width:0"></select>
+          <span style="color:var(--muted);font-size:12px;padding:0 3px">–</span>
+          <select id="f-sched-to-h" title="To — hour (24h)" style="flex:1.2;min-width:0"></select>
+          <span style="color:var(--muted);font-size:12px">:</span>
+          <select id="f-sched-to-m" title="To — minutes" style="flex:1;min-width:0"></select>
         </div>
+      </div>
       </div>
       <div class="form-group" id="f-invoice-group">
         <label>Invoice #</label>
@@ -1446,7 +1452,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.32';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.33';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1818,6 +1824,42 @@ const PAGE_SIZE=15;
 let dirCategory=null;
 let cart=[]; // [{product, qty}]
 let realtimeSub=null;
+
+// Scheduled Delivery time selects: 24-hour hours (00–23), minutes 00/15/30/45.
+// Native <input type="time"> follows the OS locale (could show AM/PM) — selects
+// guarantee the 24h format and the 15-minute step the business wants.
+function initSchedTimeSelects() {
+  const hOpts = '<option value="">—</option>' + Array.from({ length: 24 }, (_, i) => {
+    const h = String(i).padStart(2, '0');
+    return `<option value="${h}">${h}</option>`;
+  }).join('');
+  const mOpts = '<option value="">—</option>' + ['00', '15', '30', '45'].map(m => `<option value="${m}">${m}</option>`).join('');
+  ['f-sched-from-h', 'f-sched-to-h'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = hOpts; });
+  ['f-sched-from-m', 'f-sched-to-m'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = mOpts; });
+}
+
+function _getSchedTime(which) {  // 'from' | 'to' → "HH:MM" or ''
+  const h = document.getElementById('f-sched-' + which + '-h')?.value || '';
+  if (h === '') return '';
+  const m = document.getElementById('f-sched-' + which + '-m')?.value || '00';
+  return h + ':' + (m === '' ? '00' : m);
+}
+
+function _setSchedTime(which, val) {  // accepts "HH:MM(:SS)" or null
+  const hEl = document.getElementById('f-sched-' + which + '-h');
+  const mEl = document.getElementById('f-sched-' + which + '-m');
+  if (!hEl || !mEl) return;
+  if (!val) { hEl.value = ''; mEl.value = ''; return; }
+  const [h, m] = String(val).slice(0, 5).split(':');
+  hEl.value = h || '';
+  if (m !== undefined) {
+    // legacy values may have minutes outside 00/15/30/45 — add them on the fly
+    if (![...mEl.options].some(o => o.value === m)) {
+      const o = document.createElement('option'); o.value = m; o.textContent = m; mEl.appendChild(o);
+    }
+    mEl.value = m;
+  } else mEl.value = '';
+}
 
 // Scheduled Delivery window → compact "18.07 14:00–18:00" (empty if not set)
 function fmtSched(o) {
@@ -2368,7 +2410,7 @@ function renderTable(){
         <td style="font-size:11px;color:var(--muted);font-family:var(--mono);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.created_by||''}">${o.created_by?o.created_by.split('@')[0]:'&mdash;'}</td>
         <td>${o.emirate||'&mdash;'}</td>
         <td>${o.apt||'&mdash;'}</td>
-        <td style="font-family:var(--mono);font-size:12px">${o.villa||'&mdash;'}</td>
+        <td style="font-family:var(--mono);font-size:12px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(o.villa||'')}">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
         <td>${o.driver||'&mdash;'}</td>
         <td>${contentBadge(o.id)}</td>
@@ -4014,7 +4056,7 @@ async function openNewOrder(){
   // Clear all text fields
   ['f-apt','f-weight','f-client','f-client-name','f-seller-name','f-notes','f-driver-note',
    'f-location-raw','f-location-url','f-raw-message',
-   'f-sched-date','f-sched-from','f-sched-to',
+   'f-sched-date','f-sched-from-h','f-sched-from-m','f-sched-to-h','f-sched-to-m',
    'shop-search','client-search-input','seller-search-input'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
@@ -4069,8 +4111,8 @@ async function editOrder(id){
   document.getElementById('f-num').disabled = true; // order_num never editable
   document.getElementById('f-date').value=o.order_date||'';
   {const _sd=document.getElementById('f-sched-date');if(_sd)_sd.value=o.sched_date||'';
-   const _sf=document.getElementById('f-sched-from');if(_sf)_sf.value=o.sched_from?String(o.sched_from).slice(0,5):'';
-   const _st=document.getElementById('f-sched-to');if(_st)_st.value=o.sched_to?String(o.sched_to).slice(0,5):'';}
+   _setSchedTime('from', o.sched_from);
+   _setSchedTime('to', o.sched_to);}
   populateLocationSelects(o.emirate||'', o.city||'', o.apt||'');
   
   
@@ -4513,7 +4555,7 @@ async function saveOrder(){
   // order_num: on CREATE — assigned by DB trigger (next_order_num sequence)
   //            on UPDATE — keep existing number from form
   // ── Scheduled Delivery validation ──────────────────────────────────
-  const _schedDate = get('f-sched-date'), _schedFrom = get('f-sched-from'), _schedTo = get('f-sched-to');
+  const _schedDate = get('f-sched-date'), _schedFrom = _getSchedTime('from'), _schedTo = _getSchedTime('to');
   if ((_schedFrom || _schedTo) && !_schedDate) {
     toast('Scheduled Delivery: set the date', true);
     btn.disabled = false; btn.textContent = 'Save Order'; return;
@@ -6691,6 +6733,7 @@ async function sendToDriver(orderId) {
 }
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+initSchedTimeSelects();
 document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveDirItem();});
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el && el.id !== 'order-modal' && el.id !== 'wh-modal')el.classList.remove('open');}));
