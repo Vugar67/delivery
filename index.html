@@ -1437,7 +1437,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.30';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.31';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2012,7 +2012,7 @@ function showView(v){
   ['orders','products','directory','users','clients','warehouse','brands','storage','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
-  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
   if(v==='logs'){loadLogs();}
   if(v==='users')renderUsers();
   if(v==='products'){
@@ -3953,6 +3953,7 @@ function initShop() {
   renderCustomItemPickers();
   renderShopProducts();
   renderCart();
+  refreshRefDirectories(); // pull directory changes made by other admins
 }
 
 // ORDER CRUD
@@ -4852,6 +4853,22 @@ async function loadDosageSuffixes() {
   const { data } = await sb.from('dosage_suffixes').select('*');
   dosageSuffixes = (data || []).sort((a, b) =>
     String(a.value).localeCompare(String(b.value), undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+// v13.31: reference directories are loaded once at app start, and the poller
+// only syncs ORDERS — so entries added by another admin were invisible until a
+// full page reload. Re-fetch the reference tables whenever the Directory view
+// or the order form is opened. Fire-and-forget: UI re-renders when data lands.
+async function refreshRefDirectories() {
+  try {
+    await Promise.all([loadCustomProducts(), loadDefaultQuantities(), loadDosageSuffixes(), loadUnits(), loadComponents()]);
+    renderCustomItemPickers();
+    renderCustomProductsGrid();
+    renderDefaultQuantitiesGrid();
+    renderDosageSuffixesGrid();
+    renderUnitsGrid();
+    renderComponentsGrid();
+  } catch (e) { console.log('Ref directories refresh failed:', e); }
 }
 
 async function loadUnits() {
