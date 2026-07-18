@@ -1413,7 +1413,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.23';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.24';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3340,10 +3340,11 @@ function addCustomItem() {
   const dosage = (doseSel && doseSel.value && doseSel.value !== '__custom__')
     ? doseSel.value
     : (document.getElementById('custom-item-dosage')?.value || '').trim();
-  const name = dosage ? (baseName + ' X ' + dosage) : baseName;   // "Tesa Pen X 30mg"
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
   const qty = parseFloat(document.getElementById('custom-item-qty').value) || 1;
   const unit = (document.getElementById('custom-item-unit')?.value || 'pcs').trim() || 'pcs';
+  // Line name = NAME X DOSAGE+UNIT, all three from directories: "Tesa Pen X 30mg"
+  const name = dosage ? (baseName + ' X ' + dosage + unit) : baseName;
   if (!baseName) { toast('Select or enter item name', true); return; }
 
   // Add to cart as a custom item (no product_id)
@@ -5794,7 +5795,7 @@ function renderCustomProductsGrid() {
 function openNewCustomProduct() {
   const name = prompt('Custom product name:');
   if (!name || !name.trim()) return;
-  const unit = prompt('Unit (e.g. pen, vial, ml, pcs):', 'pcs');
+  const unit = prompt('Unit (e.g. mg, ml, pcs):', 'mg');
   if (unit === null) return;
   sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs' }).then(async ({ error }) => {
     if (error) { toast('Could not add — check the custom_products table exists', true); return; }
@@ -5827,10 +5828,12 @@ function renderDefaultQuantitiesGrid() {
 }
 
 function openNewDefaultQuantity() {
-  const v = prompt('Dosage (e.g. 30mg, 2.4ml, 100mg/3ml):');
-  if (v === null || !v.trim()) return;
-  sb.from('default_quantities').insert({ value: v.trim() }).then(async ({ error }) => {
-    if (error) { toast('Could not add — run the dosage ALTER script first', true); return; }
+  const v = prompt('Dosage number (e.g. 30, 60, 2.4):');
+  if (v === null) return;
+  const num = parseFloat(v);
+  if (!isFinite(num) || num <= 0) { toast('Enter a valid number', true); return; }
+  sb.from('default_quantities').insert({ value: num }).then(async ({ error }) => {
+    if (error) { toast('Could not add dosage', true); return; }
     await loadDefaultQuantities();
     renderDefaultQuantitiesGrid();
     renderCustomItemPickers();
