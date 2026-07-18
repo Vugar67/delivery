@@ -1150,9 +1150,7 @@ select option{background:#1a1d27;color:#f0f2ff}
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">&#9906;</span>
               <input type="text" id="shop-search" placeholder="Search products..." oninput="renderShopProducts()" autocomplete="off" style="width:100%;padding:8px 12px 8px 30px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
             </div>
-            <select id="shop-kind" onchange="renderShopProducts()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
-              <option value="">All Kinds</option>
-            </select>
+            <div id="shop-kinds" class="shop-cats"></div>
           </div>
           <!-- Product Grid -->
           <div id="shop-grid" class="shop-grid"></div>
@@ -1184,7 +1182,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group form-full" style="margin-top:-4px">
         <button onclick="toggleCustomItem()" id="custom-item-toggle" style="background:none;border:1px dashed var(--border);border-radius:6px;padding:7px 14px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;width:100%;text-align:left" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">+ Custom Item (one-time, not saved to catalog)</button>
         <div id="custom-item-form" style="display:none;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;align-items:start">
+          <div style="display:grid;grid-template-columns:minmax(150px,1.6fr) 86px 58px 54px 84px 94px;gap:8px;align-items:end">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">NAME</div>
               <select id="custom-item-name-sel" onchange="onCustomNameSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
@@ -1194,28 +1192,26 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">DOSAGE</div>
-              <select id="custom-item-dosage-sel" onchange="onCustomDosageSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
-                <option value="">— Dosage —</option>
+              <select id="custom-item-dosage-sel" onchange="onCustomDosageSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <option value="">—</option>
               </select>
-              <input id="custom-item-dosage" placeholder="e.g. 30mg" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-dosage" placeholder="30" style="display:none;width:100%;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
-          </div>
-          <div style="display:grid;grid-template-columns:80px 70px 1fr 1fr;gap:8px;align-items:end;margin-top:8px">
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
-              <input id="custom-item-unit" value="pcs" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-unit" value="pcs" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
-              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE / UNIT (AED)</div>
-              <input id="custom-item-price" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE</div>
+              <input id="custom-item-price" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">TOTAL (AED)</div>
-              <input id="custom-item-total" readonly value="0.00" tabindex="-1" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);box-sizing:border-box">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">TOTAL</div>
+              <input id="custom-item-total" readonly value="0.00" tabindex="-1" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);box-sizing:border-box">
             </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
@@ -1413,7 +1409,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.24';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.25';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3116,15 +3112,22 @@ function clearLocation() {
 }
 
 // SHOP CART
-// #1: the order-form product picker filters by KIND (product.type) taken from
-// the refs directory (productType) — replaces the old free-text category chips.
+// #1 (v13.25): the order-form product picker filters by KIND (product.type)
+// from the refs directory (productType), shown as a single row of chip
+// buttons — same look as the old category chips, but directory-driven.
+let shopActiveKind = '';
 function renderShopKinds() {
-  const sel = document.getElementById('shop-kind');
-  if (!sel) return;
-  const cur = sel.value;
+  const el = document.getElementById('shop-kinds');
+  if (!el) return;
   const kinds = (refs.productType || []).map(r => r.value).filter(Boolean);
-  sel.innerHTML = '<option value="">All Kinds</option>' +
-    kinds.map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${k}</option>`).join('');
+  el.innerHTML = [''].concat(kinds).map(k =>
+    `<button class="shop-cat-btn ${shopActiveKind === k ? 'active' : ''}" onclick="setShopKind('${k.replace(/'/g, "\\'")}')">${k === '' ? 'All' : k}</button>`
+  ).join('');
+}
+function setShopKind(k) {
+  shopActiveKind = k;
+  renderShopKinds();
+  renderShopProducts();
 }
 
 // #2 (v13.22): custom-item pickers are REAL dropdowns fed by the reference
@@ -3143,7 +3146,7 @@ function renderCustomItemPickers() {
   const doseSel = document.getElementById('custom-item-dosage-sel');
   if (doseSel) {
     const cur = doseSel.value;
-    doseSel.innerHTML = '<option value="">— Dosage —</option>' +
+    doseSel.innerHTML = '<option value="">—</option>' +
       (defaultQuantities || []).map(q => `<option value="${esc(q.value)}">${esc(q.value)}</option>`).join('') +
       '<option value="__custom__">✏️ Other…</option>';
     if (cur && [...doseSel.options].some(o => o.value === cur)) doseSel.value = cur;
@@ -3182,12 +3185,29 @@ function updateCustomItemTotal() {
   if (out) out.value = (qty * price).toFixed(2);
 }
 
+// Fully clear the custom-item form. Called on every order-modal open (via
+// initShop) and after adding an item — leftovers from a previous order must
+// never survive into a new one.
+function resetCustomItemForm() {
+  ['custom-item-name-sel', 'custom-item-dosage-sel'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['custom-item-name', 'custom-item-dosage'].forEach(id => {
+    const el = document.getElementById(id); if (el) { el.value = ''; el.style.display = 'none'; }
+  });
+  const pr = document.getElementById('custom-item-price'); if (pr) pr.value = '';
+  const q = document.getElementById('custom-item-qty'); if (q) q.value = '1';
+  const u = document.getElementById('custom-item-unit'); if (u) u.value = 'pcs';
+  updateCustomItemTotal();
+  const f = document.getElementById('custom-item-form'); if (f) f.style.display = 'none';
+}
+
 function renderShopProducts() {
   const grid = document.getElementById('shop-grid');
   if (!grid) return;
   const q = (document.getElementById('shop-search')?.value || '').toLowerCase();
   let filtered = products.filter(p => p.active !== false);
-  const kind = document.getElementById('shop-kind')?.value || '';
+  const kind = shopActiveKind;
   if (kind) filtered = filtered.filter(p => (p.type || '') === kind);
   if (q) filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
   
@@ -3355,16 +3375,8 @@ function addCustomItem() {
     cart.push({ product_id: null, product_name: name, price, quantity: qty, unit, is_custom: true });
   }
 
-  // Reset form
-  const _nSel = document.getElementById('custom-item-name-sel'); if (_nSel) _nSel.value = '';
-  const _dSel = document.getElementById('custom-item-dosage-sel'); if (_dSel) _dSel.value = '';
-  const _nInp = document.getElementById('custom-item-name'); if (_nInp) { _nInp.value = ''; _nInp.style.display = 'none'; }
-  const _dInp = document.getElementById('custom-item-dosage'); if (_dInp) { _dInp.value = ''; _dInp.style.display = 'none'; }
-  document.getElementById('custom-item-price').value = '';
-  document.getElementById('custom-item-qty').value = '1';
-  if (document.getElementById('custom-item-unit')) document.getElementById('custom-item-unit').value = 'pcs';
-  updateCustomItemTotal();
-  document.getElementById('custom-item-form').style.display = 'none';
+  // Reset form (also hides it)
+  resetCustomItemForm();
 
   renderCart();
   toast('✅ ' + name + ' added');
@@ -3816,8 +3828,9 @@ function addToCart(productId) {
 }
 
 function initShop() {
-  const sk = document.getElementById('shop-kind'); if (sk) sk.value = '';
+  shopActiveKind = '';
   renderShopKinds();
+  resetCustomItemForm();   // fresh modal → no leftovers from the previous order
   renderCustomItemPickers();
   renderShopProducts();
   renderCart();
