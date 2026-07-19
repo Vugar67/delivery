@@ -1330,7 +1330,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
     <div class="form-grid">
       <div class="form-group form-full"><label>Product Name</label><input id="p-name" placeholder="e.g. Fresh Dates 1kg"></div>
-      <div class="form-group"><label>Category</label><input id="p-category" placeholder="e.g. Fruits, Dairy..."></div>
+      <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
       <div class="form-group"><label>Shelf Position <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">1–64</span></label><input id="p-shelf" type="number" min="1" max="64" placeholder="e.g. 12"></div>
       <div class="form-group"><label>Unit</label>
         <select id="p-unit">
@@ -1454,7 +1454,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.36';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.38';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -1938,6 +1938,17 @@ function _populateProductTypeSelect(selectedVal) {
     (refs.productType||[]).map(r => `<option value="${r.value}" ${r.value===selectedVal?'selected':''}>${r.value}</option>`).join('');
 }
 
+// Category suggestions in the product modal come from the REAL categories in
+// the database (all products incl. inactive), uppercased and deduped — not
+// from browser autofill history (v13.38).
+function _fillCategoryDatalist() {
+  const dl = document.getElementById('p-category-list');
+  if (!dl) return;
+  const src = (window._allProducts && window._allProducts.length) ? window._allProducts : products;
+  const cats = [...new Set((src || []).map(p => (p.category || '').trim().toUpperCase()).filter(Boolean))].sort();
+  dl.innerHTML = cats.map(c => `<option value="${c}"></option>`).join('');
+}
+
 async function loadProfile(){
   const{data}=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
   // Block deleted or deactivated users before granting any access
@@ -1956,6 +1967,33 @@ async function loadProfile(){
   logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRole});
   return true;
 }
+
+// ── Live deactivation enforcement (v13.37) ──────────────────────────
+// Deactivation used to apply only on the next page load — an already-open tab
+// kept working with full rights. The profile is now re-checked every 30s and
+// whenever the tab regains focus: deactivated / deleted users are signed out
+// on the spot, and a role change reloads the app so the new rights apply.
+let _profileCheckBusy = false;
+async function enforceActiveUser() {
+  if (!currentUser || !currentRole || _profileCheckBusy) return;
+  _profileCheckBusy = true;
+  try {
+    const { data, error } = await sb.from('profiles').select('active,deleted_at,role').eq('id', currentUser.id).single();
+    if (error || !data) return;   // network hiccup — never force-logout on a failed check
+    if (data.deleted_at || data.active === false) {
+      logEvent('LOGOUT', 'session', currentUser?.id || '', { email: currentUser?.email, forced: 'deactivated_live' });
+      toast('❌ Your account has been deactivated', true);
+      setTimeout(() => sb.auth.signOut(), 800);
+      return;
+    }
+    if (data.role && data.role !== currentRole) {
+      toast('Your role was changed to "' + data.role + '" — reloading…');
+      setTimeout(() => location.reload(), 1200);
+    }
+  } finally { _profileCheckBusy = false; }
+}
+setInterval(enforceActiveUser, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) enforceActiveUser(); });
 
 async function initApp(){
   document.getElementById('loading').style.display='none';
@@ -5606,6 +5644,7 @@ function openNewProduct(){
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
   ['p-name','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
+  _fillCategoryDatalist();
   document.getElementById('p-type').value='Regular';
   document.getElementById('p-price').value='';
   document.getElementById('p-unit').value='pcs';
@@ -5626,6 +5665,7 @@ function editProduct(id){
   document.getElementById('product-modal-title').textContent='Edit Product';
   document.getElementById('p-name').value=p.name;
   document.getElementById('p-category').value=p.category||'';
+  _fillCategoryDatalist();
   document.getElementById('p-price').value=p.price;
   document.getElementById('p-unit').value=p.unit;
   document.getElementById('p-shelf').value=p.shelf_position||'';
@@ -5687,7 +5727,7 @@ async function saveProduct(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
-  const payload={name,category:get('p-category'),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true};
+  const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true};
   if(_productCurrentImageUrl!==undefined) payload.image_url = _productCurrentImageUrl;
 
   let error, productId = editProductId;
