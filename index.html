@@ -949,7 +949,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           Seller
         </label>
       </div>
-      <div class="form-group"><label>Phone</label><input id="cl-phone" placeholder="+971 5x xxx xxxx"></div>
+      <div class="form-group"><label>Phone</label><input id="cl-phone" inputmode="tel" maxlength="16" placeholder="+9715XXXXXXXX" oninput="this.value=normalizePhoneInput(this.value)" onfocus="if(!this.value)this.value='+971'" onblur="if(this.value==='+971'||this.value==='+')this.value=''"></div>
       <div class="form-group"><label>Emirate</label>
         <select id="cl-emirate" onchange="onClientEmirateChange()">
           <option value="">— Select Emirate —</option>
@@ -1102,7 +1102,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <div id="client-suggest-list"></div>
         </div>
       </div>
-      <div class="form-group"><label>Client Number</label><input id="f-client" placeholder="+971 5x xxx xxxx"></div>
+      <div class="form-group"><label>Client Number</label><input id="f-client" inputmode="tel" maxlength="16" placeholder="+9715XXXXXXXX" oninput="this.value=normalizePhoneInput(this.value)" onfocus="if(!this.value)this.value='+971'" onblur="if(this.value==='+971'||this.value==='+')this.value=''"></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="position:relative">
@@ -1454,7 +1454,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.39';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.42';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3002,7 +3002,10 @@ function parseClientText(text) {
   // 1. Phone
   const phoneMatch = text.match(/(\+971[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|971[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|05\d[\s\-]?\d{3}[\s\-]?\d{4})(?!\d)/);
   if (phoneMatch) {
-    const phone = phoneMatch[1].replace(/\s+/g, ' ').trim();
+    // v13.41: parsed numbers go through the SAME normalizer as manual input —
+    // digits only, 971-prefixed, no spaces (pasted WhatsApp text used to
+    // bypass the input control and inject "+971 50 123 4567" style values).
+    const phone = normalizePhoneInput(phoneMatch[1]);
     const clientEl = document.getElementById('f-client');
     if (clientEl && !clientEl.value) {
       clientEl.value = phone;
@@ -3715,7 +3718,7 @@ function applyClientSuggest(clientId, type='client') {
   document.getElementById('f-client-name').value = c.name || '';
   const ccb = document.getElementById('client-clear-btn');
   if(ccb) ccb.style.display = '';
-  if (c.phone) document.getElementById('f-client').value = c.phone;
+  if (c.phone) document.getElementById('f-client').value = normalizePhoneInput(c.phone);
   if (c.location_url) {
     document.getElementById('f-location-url').value = c.location_url;
     document.getElementById('f-location-raw').value = c.location_url;
@@ -4158,7 +4161,7 @@ async function editOrder(id){
   
   
   document.getElementById('f-apt').value=o.villa||o.apt||'';
-  document.getElementById('f-client').value=o.client_number||'';
+  document.getElementById('f-client').value=normalizePhoneInput(o.client_number||'');
   const cnEl=document.getElementById('f-client-name');if(cnEl)cnEl.value=o.client_name||'';
   const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display=o.client_name?'':'none';
   const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
@@ -4531,6 +4534,39 @@ function syncConfirmLock(){
 
 // Normalize a UAE phone to its significant digits for duplicate comparison
 // (drops spaces/symbols, international 00, +971 country code, and trunk leading zeros).
+// ── Phone input control (v13.40) ────────────────────────────────────
+// Live-normalizes what the operator types: DIGITS ONLY, no spaces/letters/+.
+// Fixes common entry styles automatically:
+//   "+971 50 123 4567" → 971501234567     "00971…" → 971…
+//   "0501234567"       → 971501234567     "50 123 4567" → 971501234567
+//   "9710501234567"    → 971501234567 (stray 0 after 971 removed)
+// Other country codes (966, 7, 44…) are allowed — just type them instead of 971.
+function normalizePhoneInput(raw) {
+  let d = String(raw || '').replace(/\D/g, '');          // digits only — kills spaces
+  d = d.replace(/^00/, '');                              // international 00-prefix
+  if (d.startsWith('0')) d = '971' + d.replace(/^0+/, ''); // local format 05x… → 9715x…
+  else if (d.startsWith('5')) d = '971' + d;             // bare mobile 5x… → 9715x…
+  if (d.startsWith('971')) d = '971' + d.slice(3).replace(/^0+/, ''); // 9710 5x… → 971 5x…
+  d = d.slice(0, 15);                                    // E.164 hard cap
+  return d ? '+' + d : '';                               // cosmetic leading "+"
+}
+
+// Validates a normalized (digits-only) number. Empty is allowed.
+// 971: mobile 9715XXXXXXXX (12 digits) or landline 971 + 8 digits (11 total).
+// Other codes: sane length only (8–15 digits) — for INTERNATIONAL clients.
+function validatePhone(d) {
+  d = String(d || '').replace(/^\+/, '');   // validation works on the digits
+  if (!d) return { ok: true };
+  if (d.startsWith('971')) {
+    const rest = d.slice(3);
+    if (rest.length === 9 && rest[0] === '5') return { ok: true };           // mobile
+    if (rest.length === 8 && /^[2-4679]/.test(rest)) return { ok: true };    // landline
+    return { ok: false, msg: 'UAE: 9715XXXXXXXX (12 digits) or 971+8-digit landline' };
+  }
+  if (d.length >= 8 && d.length <= 15) return { ok: true };
+  return { ok: false, msg: 'must be 8–15 digits' };
+}
+
 function _normPhone(s){
   let d = (s || '').replace(/\D/g, '');
   d = d.replace(/^00/, '');
@@ -4605,8 +4641,15 @@ async function saveOrder(){
     toast('Scheduled Delivery: "to" time must be after "from"', true);
     btn.disabled = false; btn.textContent = 'Save Order'; return;
   }
+  // ── Client number validation (v13.40) ──────────────────────────────
+  const _phoneNorm = normalizePhoneInput(get('f-client'));
+  const _pv = validatePhone(_phoneNorm);
+  if (!_pv.ok) {
+    toast('Client number: ' + _pv.msg, true);
+    btn.disabled = false; btn.textContent = 'Save Order'; return;
+  }
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:get('f-client'),driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -6926,7 +6969,7 @@ function editClient(id) {
   catSel.innerHTML = '<option value="">— Select —</option>' +
     (refs.clientCategory||[]).map(r => `<option value="${r.value}">${r.value}</option>`).join('');
   document.getElementById('cl-name').value = c.name||'';
-  document.getElementById('cl-phone').value = c.phone||'';
+  document.getElementById('cl-phone').value = normalizePhoneInput(c.phone||'');
   document.getElementById('cl-category').value = c.category||'';
   document.getElementById('cl-villa').value = c.villa||'';
   document.getElementById('cl-trn').value = c.trn||'';
@@ -6947,12 +6990,15 @@ async function saveClient() {
     toast('TRN must be exactly 15 digits', true);
     return;
   }
+  const _clPhone = normalizePhoneInput(document.getElementById('cl-phone').value);
+  const _clPv = validatePhone(_clPhone);
+  if (!_clPv.ok) { toast('Phone: ' + _clPv.msg, true); return; }
   const btn = document.getElementById('save-client-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
 
   const payload = {
     name,
-    phone: document.getElementById('cl-phone').value.trim() || null,
+    phone: _clPhone || null,
     category: document.getElementById('cl-category').value || null,
     emirate: document.getElementById('cl-emirate').value || null,
     city: document.getElementById('cl-city').value || null,
