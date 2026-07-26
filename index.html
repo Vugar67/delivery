@@ -309,6 +309,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Google libphonenumber (JS port) — official phone standards for ALL countries (lengths + patterns, ITU data). Used for client number validation; app falls back to basic rules if this fails to load. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/libphonenumber-js/1.12.23/libphonenumber-js.min.js"></script>
 </head>
 <body>
 
@@ -1454,7 +1456,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.42';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.43';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -4551,12 +4553,24 @@ function normalizePhoneInput(raw) {
   return d ? '+' + d : '';                               // cosmetic leading "+"
 }
 
-// Validates a normalized (digits-only) number. Empty is allowed.
-// 971: mobile 9715XXXXXXXX (12 digits) or landline 971 + 8 digits (11 total).
-// Other codes: sane length only (8–15 digits) — for INTERNATIONAL clients.
+// Validates a normalized number. Empty is allowed.
+// v13.43: primary check = Google libphonenumber (loaded from CDN) — it carries
+// the official numbering plans of EVERY country (ITU data): +34 Spain 9 digits,
+// +44 UK 10, +966 Saudi 9, +55 Brazil 11, +974 Qatar 8, etc. Checks both the
+// digit count AND the allowed leading digits for that country.
+// Fallback (CDN blocked / offline): UAE strict rules + sane 8–15 length.
 function validatePhone(d) {
   d = String(d || '').replace(/^\+/, '');   // validation works on the digits
   if (!d) return { ok: true };
+  try {
+    if (window.libphonenumber && typeof libphonenumber.parsePhoneNumberFromString === 'function') {
+      const pn = libphonenumber.parsePhoneNumberFromString('+' + d);
+      if (pn && pn.isValid()) return { ok: true };
+      return { ok: false, msg: (pn && pn.country)
+        ? 'invalid number for ' + pn.country + ' — check digit count'
+        : 'invalid — check country code and digit count' };
+    }
+  } catch (e) { /* fall through to basic rules */ }
   if (d.startsWith('971')) {
     const rest = d.slice(3);
     if (rest.length === 9 && rest[0] === '5') return { ok: true };           // mobile
