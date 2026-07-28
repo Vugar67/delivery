@@ -1456,7 +1456,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.43';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.44';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -4544,10 +4544,19 @@ function syncConfirmLock(){
 //   "9710501234567"    → 971501234567 (stray 0 after 971 removed)
 // Other country codes (966, 7, 44…) are allowed — just type them instead of 971.
 function normalizePhoneInput(raw) {
-  let d = String(raw || '').replace(/\D/g, '');          // digits only — kills spaces
+  const s = String(raw || '');
+  // v13.44: an explicit leading "+" means the operator supplied the country
+  // code — trust it verbatim. The UAE-local heuristics (05x…/5x… → 971…) used
+  // to hijack "+55…" (Brazil), "+52…" (Mexico) etc. because "+" was stripped
+  // before the startsWith('5') check. Since our output is always "+"-prefixed,
+  // the heuristics now only ever see the FIRST keystroke or a raw local paste.
+  const hasPlus = /^\s*\+/.test(s);
+  let d = s.replace(/\D/g, '');                          // digits only — kills spaces
   d = d.replace(/^00/, '');                              // international 00-prefix
-  if (d.startsWith('0')) d = '971' + d.replace(/^0+/, ''); // local format 05x… → 9715x…
-  else if (d.startsWith('5')) d = '971' + d;             // bare mobile 5x… → 9715x…
+  if (!hasPlus) {
+    if (d.startsWith('0')) d = '971' + d.replace(/^0+/, '');            // local 05x… → 9715x…
+    else if (d.startsWith('5') && d.length === 9) d = '971' + d;        // bare complete mobile 5XXXXXXXX
+  }
   if (d.startsWith('971')) d = '971' + d.slice(3).replace(/^0+/, ''); // 9710 5x… → 971 5x…
   d = d.slice(0, 15);                                    // E.164 hard cap
   return d ? '+' + d : '';                               // cosmetic leading "+"
