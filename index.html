@@ -1456,7 +1456,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.44';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.45';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2314,7 +2314,7 @@ function getFiltered(){
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date,o.aramex_awb].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'Not Confirmed':0,'Processing in Lab':1,'Ready in Lab':2,'In the Warehouse':3,'Ready for Pick-up':4,'En Route':5,'Delivered':6,'Cancelled':7,'Delivery fail/reschedule':8};
@@ -2452,7 +2452,7 @@ function renderTable(){
         <td>${o.apt||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(o.villa||'')}">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
-        <td>${o.driver||'&mdash;'}</td>
+        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a>`:''}</td>
         <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
@@ -7065,6 +7065,98 @@ async function deleteClient(id) {
 // ─── END CLIENTS ──────────────────────────────────────────────────
 
 
+// ─── ARAMEX DISPATCH (v13.45) ───────────────────────────────────────
+// Business rules: the dispatcher picks "Aramex" as the driver in Dispatch
+// mode. On send, an AWB is created via the aramex Edge Function instead of a
+// WhatsApp message; the label opens immediately for printing at the warehouse;
+// the order goes En Route with driver "Aramex". Weight = actual_weight (grams)
+// if entered, else 0.5 kg for all orders (business rule). COD via Aramex is
+// NOT enabled yet — cash orders need an explicit dispatcher confirmation.
+const ARAMEX_DRIVER = 'Aramex';
+
+async function createAramexShipment(o) {
+  const coords = extractCoordsFromUrl(o.location_url) || {};
+  const payload = {
+    ref: o.order_num || '',
+    name: o.client_name || 'Customer',
+    phone: String(o.client_number || '').replace(/\D/g, ''),
+    emirate: o.emirate || '',
+    city: o.city || '',
+    district: o.apt || '',
+    villa: o.villa || o.apt || 'NA',
+    lat: coords.lat, lng: coords.lng,
+    weight: (o.actual_weight && o.actual_weight > 0) ? o.actual_weight / 1000 : 0.5,
+    pieces: 1,
+    goods: 'Supplements',
+    codAed: 0,                 // COD via Aramex — pending business decision
+    productType: 'PEC',
+  };
+  const res = await fetch(SUPABASE_URL + '/functions/v1/aramex', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken, 'apikey': SUPABASE_ANON_KEY },
+    body: JSON.stringify({ action: 'create', payload })
+  });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = null; }
+  const xml = (data && typeof data.raw === 'string') ? data.raw : text;
+  let awb = '', label = '', errMsg = '';
+  if (data && data.Shipments && !data.raw) {          // clean JSON response
+    const ps = (data.Shipments || [])[0] || {};
+    awb = String(ps.ID || '');
+    label = ps.ShipmentLabel ? (ps.ShipmentLabel.LabelURL || '') : '';
+    if (!awb) errMsg = JSON.stringify(data.Notifications || data).slice(0, 300);
+  } else if (typeof xml === 'string' && xml.indexOf('<') >= 0) {  // XML response
+    const doc = new DOMParser().parseFromString(xml, 'text/xml');
+    awb = doc.getElementsByTagName('ID')[0]?.textContent || '';
+    label = doc.getElementsByTagName('LabelURL')[0]?.textContent || '';
+    if (!awb) {
+      errMsg = [...doc.getElementsByTagName('Notification')].map(n =>
+        ((n.getElementsByTagName('Code')[0]?.textContent || '') + ' ' +
+         (n.getElementsByTagName('Message')[0]?.textContent || '')).trim()).filter(Boolean).join('; ')
+        || (data && data.error) || 'Aramex returned no AWB';
+    }
+  } else {
+    errMsg = (data && data.error) || 'Unexpected Aramex response';
+  }
+  if (!awb) throw new Error(errMsg || 'Aramex returned no AWB');
+  return { awb, labelUrl: label };
+}
+
+// One order through the Aramex path: COD guard → create AWB → save → open label.
+// Returns true on success; on failure the order is left completely untouched.
+async function dispatchAramexOne(id) {
+  const o = orders.find(x => x.id === id);
+  if (!o) return false;
+  if (o.aramex_awb) {
+    if (!confirm(o.order_num + ' already has Aramex AWB ' + o.aramex_awb + '.\n\nCreate a NEW shipment anyway?')) return false;
+  }
+  if ((o.payment_status || '').toLowerCase().includes('on delivery')) {
+    const ok = confirm('⚠️ ' + o.order_num + ' is CASH ON DELIVERY.\n\nCOD via Aramex is NOT set up yet — Aramex will NOT collect cash from the client.\n\nSend anyway?');
+    if (!ok) return false;
+  }
+  let ship;
+  try { ship = await createAramexShipment(o); }
+  catch (e) { toast('❌ Aramex ' + (o.order_num || '') + ': ' + (e.message || e), true); return false; }
+  const now = new Date().toISOString();
+  await sb.from('orders').update({
+    driver: ARAMEX_DRIVER,
+    delivery_status: 'En Route',
+    aramex_awb: ship.awb,
+    aramex_label_url: ship.labelUrl || null,
+    aramex_created_at: now,
+    updated_by: currentUser.email
+  }).eq('id', id);
+  o.driver = ARAMEX_DRIVER;
+  o.delivery_status = 'En Route';
+  o.aramex_awb = ship.awb;
+  o.aramex_label_url = ship.labelUrl || null;
+  o.aramex_created_at = now;
+  logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_created', awb: ship.awb, driver: ARAMEX_DRIVER, delivery_status: 'En Route', label_url: ship.labelUrl || null });
+  if (ship.labelUrl) window.open(ship.labelUrl, '_blank');   // print the label right away
+  toast('✅ Aramex AWB ' + ship.awb + ' — ' + (o.order_num || ''));
+  return true;
+}
+
 let dispatchMode = false;
 let dispatchSelected = []; // [{id, order, lat, lng}] in selection order
 let dispatchDriverName = '';
@@ -7507,11 +7599,16 @@ function renderDispatchDriverListAndStore(q) {
   const list = document.getElementById('dispatch-driver-list');
   if (!list) return;
   _dispatchFilteredDrivers = q ? drivers.filter(d => d.name.toLowerCase().includes(q.toLowerCase())) : [...drivers];
-  list.innerHTML = _dispatchFilteredDrivers.length
+  // Aramex pseudo-driver pinned on top — sends via API (AWB + label), not WhatsApp
+  const showAramex = !q || 'aramex'.includes(q.toLowerCase()) || q.toLowerCase().includes('aramex');
+  const aramexRow = showAramex
+    ? `<div onclick="selectDispatchDriver(ARAMEX_DRIVER);event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);background:rgba(245,166,35,.06)" onmouseover="this.style.background='rgba(245,166,35,.15)'" onmouseout="this.style.background='rgba(245,166,35,.06)'">🚀 Aramex<span style="color:var(--muted);font-size:10px;font-weight:400;margin-left:8px">API — creates AWB + label</span></div>`
+    : '';
+  list.innerHTML = aramexRow + (_dispatchFilteredDrivers.length
     ? _dispatchFilteredDrivers.map((d,i) =>
         `<div onclick="selectDispatchDriverByIndex(${i});event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${d.name}${d.phone?`<span style="color:var(--muted);font-size:10px;margin-left:8px">${d.phone}</span>`:''}</div>`
       ).join('')
-    : `<div style="padding:8px 12px;color:var(--muted);font-family:var(--mono);font-size:12px">No drivers found</div>`;
+    : (aramexRow ? '' : `<div style="padding:8px 12px;color:var(--muted);font-family:var(--mono);font-size:12px">No drivers found</div>`));
 }
 
 function selectDispatchDriverByIndex(i) {
@@ -7534,7 +7631,7 @@ function openDispatchModal() {
     <div id="dsm-row-${id}" style="display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--border)">
       <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);flex:1">${o.order_num}</div>
       <div style="font-size:12px;color:var(--muted)">${o.emirate||''} ${o.client_name?'· '+o.client_name:''}</div>
-      <button id="dsm-btn-${id}" onclick="dispatchSendOne('${id}')" style="background:#25d366;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">WA ▶</button>
+      <button id="dsm-btn-${id}" onclick="dispatchSendOne('${id}')" style="background:${dispatchDriverName===ARAMEX_DRIVER?'var(--accent)':'#25d366'};color:${dispatchDriverName===ARAMEX_DRIVER?'#000':'#fff'};border:none;border-radius:8px;padding:7px 14px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">${dispatchDriverName===ARAMEX_DRIVER?'AWB ▶':'WA ▶'}</button>
       <div id="dsm-status-${id}" style="font-family:var(--mono);font-size:11px;color:var(--muted);min-width:50px;text-align:right">—</div>
     </div>`).join('');
   document.getElementById('dsm-list').innerHTML = rows;
@@ -7545,6 +7642,24 @@ async function dispatchSendOne(id) {
   const btn = document.getElementById('dsm-btn-' + id);
   const statusEl = document.getElementById('dsm-status-' + id);
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+
+  // ── Aramex path: create AWB instead of WhatsApp ──
+  if (dispatchDriverName === ARAMEX_DRIVER) {
+    const ok = await dispatchAramexOne(id);
+    if (!ok) {
+      if (statusEl) { statusEl.textContent = '✗ Failed'; statusEl.style.color = 'var(--red)'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'AWB ▶'; }
+      return;
+    }
+    if (statusEl) { statusEl.textContent = '✓ AWB'; statusEl.style.color = '#00ee88'; }
+    if (btn) { btn.textContent = '✓'; btn.style.background = 'rgba(0,200,100,.2)'; btn.style.color = '#00ee88'; }
+    dispatchSelected = dispatchSelected.filter(s => s.id !== id);
+    removeDispatchMarker(id);
+    updateDispatchCounter();
+    renderDispatchQueue();
+    renderDispatchSent();
+    return;
+  }
 
   const now = new Date().toISOString();
   const localOrder = orders.find(x => x.id === id);
@@ -7598,6 +7713,17 @@ async function dispatchSend() {
     const statusEl = document.getElementById('dsm-status-' + id);
     const localOrder = orders.find(x => x.id === id);
     const now = new Date().toISOString();
+
+    // ── Aramex path: create AWB instead of WhatsApp ──
+    if (dispatchDriverName === ARAMEX_DRIVER) {
+      if (statusEl) { statusEl.textContent = '⏳ AWB...'; statusEl.style.color = '#ffcc00'; }
+      const ok = await dispatchAramexOne(id);
+      if (statusEl) {
+        statusEl.textContent = ok ? '✓ AWB' : '✗ Failed';
+        statusEl.style.color = ok ? '#00ee88' : 'var(--red)';
+      }
+      continue;
+    }
 
     // Single UPDATE with all fields
     await sb.from('orders').update({
