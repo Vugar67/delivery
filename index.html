@@ -1456,7 +1456,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.45';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.47';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -7136,7 +7136,12 @@ async function dispatchAramexOne(id) {
   }
   let ship;
   try { ship = await createAramexShipment(o); }
-  catch (e) { toast('❌ Aramex ' + (o.order_num || '') + ': ' + (e.message || e), true); return false; }
+  catch (e) {
+    // Failures go to the order history too — not just a toast
+    logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_failed', error: String(e && e.message || e).slice(0, 300) });
+    toast('❌ Aramex ' + (o.order_num || '') + ': ' + (e.message || e), true);
+    return false;
+  }
   const now = new Date().toISOString();
   await sb.from('orders').update({
     driver: ARAMEX_DRIVER,
@@ -7152,9 +7157,18 @@ async function dispatchAramexOne(id) {
   o.aramex_label_url = ship.labelUrl || null;
   o.aramex_created_at = now;
   logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_created', awb: ship.awb, driver: ARAMEX_DRIVER, delivery_status: 'En Route', label_url: ship.labelUrl || null });
-  if (ship.labelUrl) window.open(ship.labelUrl, '_blank');   // print the label right away
+  openAramexLabel(ship.labelUrl, o.order_num);   // print the label right away
   toast('✅ Aramex AWB ' + ship.awb + ' — ' + (o.order_num || ''));
   return true;
+}
+
+// Opens the label PDF for printing; if the browser blocks the popup (window
+// opened after an async gap, not a direct click), tell the user where the
+// permanent reprint buttons live instead of failing silently.
+function openAramexLabel(url, orderNum) {
+  if (!url) { toast('No label URL saved for ' + (orderNum || 'this order'), true); return; }
+  const w = window.open(url, '_blank');
+  if (!w) toast('⚠️ Popup blocked! Allow popups for this site, or use the 📄 button (Dispatch → Sent column, or the Driver column in the table)', true);
 }
 
 let dispatchMode = false;
@@ -7430,6 +7444,7 @@ function renderDispatchSent() {
           <div style="font-size:11px;color:var(--text);margin-bottom:4px">${o.client_name||'—'}</div>
           <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
           <div style="display:flex;gap:4px">
+            ${o.aramex_awb ? `<button onclick="event.stopPropagation();openAramexLabel('${escAttr(o.aramex_label_url||'')}','${o.order_num||''}')" title="AWB ${o.aramex_awb}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">📄 Label</button>` : ''}
             <button onclick="event.stopPropagation();dispatchResend('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(37,211,102,.15);color:#25d366;border:1px solid rgba(37,211,102,.3);border-radius:5px;cursor:pointer">↺ Resend</button>
             <button onclick="event.stopPropagation();dispatchReassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">⇄ Reassign</button>
             <button onclick="event.stopPropagation();dispatchUnassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(255,80,80,.15);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:5px;cursor:pointer">✕ Unassign</button>
