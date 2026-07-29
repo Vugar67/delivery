@@ -1456,7 +1456,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.47';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.49';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -7110,16 +7110,37 @@ async function createAramexShipment(o) {
     awb = doc.getElementsByTagName('ID')[0]?.textContent || '';
     label = doc.getElementsByTagName('LabelURL')[0]?.textContent || '';
     if (!awb) {
-      errMsg = [...doc.getElementsByTagName('Notification')].map(n =>
+      const notes = [...doc.getElementsByTagName('Notification')].map(n =>
         ((n.getElementsByTagName('Code')[0]?.textContent || '') + ' ' +
-         (n.getElementsByTagName('Message')[0]?.textContent || '')).trim()).filter(Boolean).join('; ')
-        || (data && data.error) || 'Aramex returned no AWB';
+         (n.getElementsByTagName('Message')[0]?.textContent || '')).trim()).filter(Boolean).join('; ');
+      // No structured notifications → probably a WCF/HTML error page.
+      // Strip the tags and surface the actual text instead of a generic message.
+      errMsg = notes
+        || (data && data.error)
+        || xml.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+        || 'Aramex returned no AWB';
     }
   } else {
     errMsg = (data && data.error) || 'Unexpected Aramex response';
   }
-  if (!awb) throw new Error(errMsg || 'Aramex returned no AWB');
+  if (!awb) {
+    const err = new Error(errMsg || 'Aramex returned no AWB');
+    // full raw response for the copy button (toast/log keep the short form)
+    err.fullResponse = (typeof xml === 'string' ? xml : JSON.stringify(data || {})).slice(0, 2000);
+    throw err;
+  }
   return { awb, labelUrl: label };
+}
+
+// Last Aramex error per order — powering the ⧉ copy button next to "✗ Failed"
+const _aramexLastError = {};
+function copyAramexError(id) {
+  const t = _aramexLastError[id] || '';
+  if (!t) { toast('No error stored for this order', true); return; }
+  navigator.clipboard.writeText(t).then(() => toast('✅ Aramex error copied')).catch(() => toast('❌ Copy failed', true));
+}
+function _aramexFailedHtml(id) {
+  return '✗ Failed <button onclick="event.stopPropagation();copyAramexError(\'' + id + '\')" title="Copy full Aramex error" style="background:none;border:1px solid var(--red);border-radius:4px;color:var(--red);cursor:pointer;font-size:10px;padding:1px 6px;margin-left:4px;font-family:var(--mono)">⧉</button>';
 }
 
 // One order through the Aramex path: COD guard → create AWB → save → open label.
@@ -7137,6 +7158,7 @@ async function dispatchAramexOne(id) {
   let ship;
   try { ship = await createAramexShipment(o); }
   catch (e) {
+    _aramexLastError[id] = String((e && e.fullResponse) || (e && e.message) || e);
     // Failures go to the order history too — not just a toast
     logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_failed', error: String(e && e.message || e).slice(0, 300) });
     toast('❌ Aramex ' + (o.order_num || '') + ': ' + (e.message || e), true);
@@ -7662,7 +7684,7 @@ async function dispatchSendOne(id) {
   if (dispatchDriverName === ARAMEX_DRIVER) {
     const ok = await dispatchAramexOne(id);
     if (!ok) {
-      if (statusEl) { statusEl.textContent = '✗ Failed'; statusEl.style.color = 'var(--red)'; }
+      if (statusEl) { statusEl.innerHTML = _aramexFailedHtml(id); statusEl.style.color = 'var(--red)'; }
       if (btn) { btn.disabled = false; btn.textContent = 'AWB ▶'; }
       return;
     }
@@ -7734,8 +7756,8 @@ async function dispatchSend() {
       if (statusEl) { statusEl.textContent = '⏳ AWB...'; statusEl.style.color = '#ffcc00'; }
       const ok = await dispatchAramexOne(id);
       if (statusEl) {
-        statusEl.textContent = ok ? '✓ AWB' : '✗ Failed';
-        statusEl.style.color = ok ? '#00ee88' : 'var(--red)';
+        if (ok) { statusEl.textContent = '✓ AWB'; statusEl.style.color = '#00ee88'; }
+        else { statusEl.innerHTML = _aramexFailedHtml(id); statusEl.style.color = 'var(--red)'; }
       }
       continue;
     }
