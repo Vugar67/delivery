@@ -1186,16 +1186,35 @@ select option{background:#1a1d27;color:#f0f2ff}
               <span id="shop-cart-count" style="font-size:11px;color:var(--muted);font-family:var(--mono)"></span>
             </div>
             <div id="shop-cart-items"></div>
+            <!-- v13.51: full invoice-style calculation — Subtotal → Discount → Delivery → 5% VAT → Balance Due.
+                 Discount is editable right here and is saved on the order (the invoice window picks it up).
+                 VAT is shown per Mode A (5% on top) — the default invoice algorithm. -->
             <div class="shop-cart-total">
               <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Subtotal</span>
               <span id="shop-cart-total-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
             </div>
             <div class="shop-cart-total" style="border-top:none;margin-top:2px;padding-top:0">
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Discount</span>
+              <span style="display:flex;align-items:center;gap:5px">
+                <span style="font-size:14px;font-weight:700;color:var(--green);font-family:var(--mono)">&minus;</span>
+                <input id="f-discount" type="number" min="0" step="0.01" value="0"
+                  onfocus="if(parseFloat(this.value)===0)this.value=''"
+                  onblur="if(this.value==='')this.value='0'"
+                  oninput="updateCartTotals()"
+                  style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;color:var(--green);font-family:var(--mono);font-size:13px;outline:none;text-align:right">
+                <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">AED</span>
+              </span>
+            </div>
+            <div class="shop-cart-total" style="border-top:none;margin-top:2px;padding-top:0">
               <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Delivery Charge</span>
               <span id="shop-cart-delivery-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
             </div>
+            <div class="shop-cart-total" style="border-top:none;margin-top:2px;padding-top:0">
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">5% VAT</span>
+              <span id="shop-cart-vat-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
+            </div>
             <div class="shop-cart-total">
-              <span style="font-size:13px;color:var(--accent);font-family:var(--mono);font-weight:700">Grand Total</span>
+              <span style="font-size:13px;color:var(--accent);font-family:var(--mono);font-weight:700">Balance Due</span>
               <span id="shop-cart-grand-val" style="font-size:18px;font-weight:700;color:var(--accent);font-family:var(--mono)">0.00 AED</span>
             </div>
           </div>
@@ -1456,7 +1475,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.50';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.51';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -3454,12 +3473,20 @@ function updateCartTotals() {
   const subtotal = (cart || []).reduce((s, item) => s + (_gp(item) || 0) * (_gq(item) || 0), 0);
   const dcEl = document.getElementById('f-delivery-charge');
   const dc = dcEl ? (parseFloat(dcEl.value) || 0) : 0;
+  const discEl = document.getElementById('f-discount');
+  const disc = discEl ? (parseFloat(discEl.value) || 0) : 0;
+  // Same math as the invoice window, Mode A (VAT on top):
+  // net = Subtotal − Discount + Delivery;  VAT = net × 5%;  Balance Due = net + VAT
+  const net = subtotal - disc + dc;
+  const vat = parseFloat((net * 0.05).toFixed(2));
   const subEl = document.getElementById('shop-cart-total-val');
   const delEl = document.getElementById('shop-cart-delivery-val');
+  const vatEl = document.getElementById('shop-cart-vat-val');
   const grandEl = document.getElementById('shop-cart-grand-val');
   if (subEl) subEl.textContent = subtotal.toFixed(2) + ' AED';
   if (delEl) delEl.textContent = dc.toFixed(2) + ' AED';
-  if (grandEl) grandEl.textContent = (subtotal + dc).toFixed(2) + ' AED';
+  if (vatEl) vatEl.textContent = vat.toFixed(2) + ' AED';
+  if (grandEl) grandEl.textContent = (net + vat).toFixed(2) + ' AED';
 }
 
 function renderCart() {
@@ -4131,6 +4158,7 @@ async function openNewOrder(){
   syncConfirmLock();
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='0';
+  {const _di=document.getElementById('f-discount');if(_di)_di.value='0';} // v13.51: fresh order — no discount
   resetDeliveryPresets(); // new order: no preset selected, manual field hidden
   renderCart();
   initShop();
@@ -4175,6 +4203,7 @@ async function editOrder(id){
   syncConfirmLock(); // lock Confirmed if this order is already past the pre-lab zone
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
+  {const _di=document.getElementById('f-discount');if(_di)_di.value=o.discount||0;} // v13.51: show saved discount in the calc
   resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
   const _wEl=document.getElementById('f-weight');if(_wEl)_wEl.value=(o.actual_weight!=null?o.actual_weight:'');
   document.getElementById('f-notes').value=o.notes||'';
@@ -4394,7 +4423,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4672,7 +4701,7 @@ async function saveOrder(){
     btn.disabled = false; btn.textContent = 'Save Order'; return;
   }
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -4749,11 +4778,13 @@ async function saveOrder(){
   const contentType = hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular';
   const subtotal = (cart||[]).reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product?.price||0))*(item.qty||0)), 0);
   const deliveryCharge = parseFloat(document.getElementById('f-delivery-charge').value) || 0;
-  const total = subtotal + deliveryCharge;
+  const discountVal = parseFloat(document.getElementById('f-discount')?.value) || 0;
+  const total = subtotal + deliveryCharge - discountVal;   // net — same formula as the invoice window (VAT lives on the printed invoice only)
   await sb.from('orders').update({
     content_type: contentType,
     subtotal: parseFloat(subtotal.toFixed(2)),
     delivery_charge: deliveryCharge,
+    discount: parseFloat(discountVal.toFixed(2)),
     total: parseFloat(total.toFixed(2))
   }).eq('id', orderId);
   const localOrder = orders.find(x => x.id === orderId);
@@ -4788,7 +4819,7 @@ async function saveOrder(){
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
-    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to'].forEach(f => {
+    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to','delivery_charge','discount'].forEach(f => {
       if (String(_prevOrder[f]||'') !== String(payload[f]||'')) {
         _fieldDiff[f] = { before: _prevOrder[f], after: payload[f] };
       }
@@ -4803,6 +4834,7 @@ async function saveOrder(){
     driver:          payload.driver,
     emirate:         payload.emirate,
     total:           total,
+    discount:        discountVal > 0 ? discountVal : undefined,
     items:           _logAction === 'CREATE' ? _newItems : undefined,
     field_changes:   _logAction === 'UPDATE' && Object.keys(_fieldDiff).length ? _fieldDiff : undefined,
     item_changes:    (_logAction === 'UPDATE' && _hasItemChange) ? itemDiff : undefined,
@@ -4891,7 +4923,7 @@ function copyOrderDetails(orderId){
   const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
   const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
   const waItems = orderItems[orderId]||[];
-  const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0);
+  const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0) - parseFloat(o.discount||0); // v13.51: discount is deducted from cash to collect
   const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
   const internalLine = (o.notes && o.notes.trim()) ? `\n\n📋 Internal Note: ${o.notes.trim()}` : '';
   const driverLine = (o.driver_note && o.driver_note.trim()) ? `\n\n📝 Driver Note: ${o.driver_note.trim()}` : '';
@@ -6822,7 +6854,7 @@ async function sendToDriver(orderId) {
   const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
   const needsCollect = (o.payment_status||'').toLowerCase().includes('on delivery');
   const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
-  const totalAmount = itemsSubtotal + (o.delivery_charge||0);
+  const totalAmount = itemsSubtotal + (o.delivery_charge||0) - (parseFloat(o.discount)||0); // v13.51: discount is deducted from cash to collect
   const showItems = o.wa_show_items === true;
   const clientLine = [o.client_name, o.client_number].filter(Boolean).join(' — ');
   const lines = [`🚚 *DELIVERY ORDER ${o.order_num}*`];
