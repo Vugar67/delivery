@@ -379,6 +379,13 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="Mixed">Mixed</option>
         </select>
         <select class="filter-sel" id="filter-driver" onchange="renderTable()"><option value="">All Drivers</option></select>
+        <!-- v13.52: Aramex exchange filter — orders that talked to Aramex (AWB created) or are assigned to Aramex awaiting AWB -->
+        <select class="filter-sel" id="filter-aramex" onchange="renderTable()" style="min-width:150px" title="Orders with Aramex data exchange — sent (AWB) or planned (assigned to Aramex, no AWB yet)">
+          <option value="">🚀 Aramex (filter off)</option>
+          <option value="any">All Aramex — sent + planned</option>
+          <option value="sent">Sent — has AWB</option>
+          <option value="planned">Planned — awaiting AWB</option>
+        </select>
         <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px">
           <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">FROM</span>
           <input type="date" id="filter-date-from" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
@@ -1475,7 +1482,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.51';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.52';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2246,10 +2253,16 @@ function populateFormRefs(o){
   }).join('');
   // ────────────────────────────────────────────────────────────────
 
-  // Populate drivers from drivers table
+  // Populate drivers from drivers table.
+  // v13.52: Aramex pseudo-driver is pinned on top (same as the dispatch dropdown) so an
+  // order can be PLANNED for Aramex before the AWB exists, and so that editing an
+  // already-shipped Aramex order no longer silently wipes driver='Aramex' (the select
+  // had no matching option before, so Save wrote '').
   const driverEl = document.getElementById('f-driver');
-  driverEl.innerHTML = '<option value="">— Select Driver —</option>' + 
-    drivers.map(d=>`<option value="${d.name}" ${o?.driver===d.name?'selected':''}>${d.name}${d.phone?' ('+d.phone+')':''}</option>`).join('');
+  driverEl.innerHTML = '<option value="">— Select Driver —</option>' +
+    `<option value="Aramex" ${o?.driver==='Aramex'?'selected':''}>🚀 Aramex (API — AWB + label)</option>` +
+    drivers.filter(d=>(d.name||'').trim().toLowerCase()!=='aramex')
+      .map(d=>`<option value="${d.name}" ${o?.driver===d.name?'selected':''}>${d.name}${d.phone?' ('+d.phone+')':''}</option>`).join('');
 }
 
 // BADGES
@@ -2325,12 +2338,20 @@ function getFiltered(){
   const sortVal=document.getElementById('sort-select')?.value||'priority';
   const dateFrom=document.getElementById('filter-date-from')?.value||'';
   const dateTo=document.getElementById('filter-date-to')?.value||'';
+  const arx=document.getElementById('filter-aramex')?.value||'';
   const filtered=orders.filter(o=>{
     if(em&&o.emirate!==em)return false;
     if(selectedDeliveryStatuses.size&&!selectedDeliveryStatuses.has(o.delivery_status))return false;
     if(dr&&o.driver!==dr)return false;
     if(conf&&(o.confirmed||'No')!==conf)return false;
     if(contentFilter && (o.content_type||'Regular')!==contentFilter)return false;
+    if(arx){ // v13.52: Aramex exchange filter — sent = AWB exists; planned = assigned to Aramex but no AWB yet
+      const _hasAwb=!!o.aramex_awb;
+      const _isArx=(o.driver||'')==='Aramex';
+      if(arx==='any'&&!(_hasAwb||_isArx))return false;
+      if(arx==='sent'&&!_hasAwb)return false;
+      if(arx==='planned'&&!(_isArx&&!_hasAwb))return false;
+    }
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date,o.aramex_awb].join(' ').toLowerCase();if(!hay.includes(q))return false;}
@@ -2471,7 +2492,7 @@ function renderTable(){
         <td>${o.apt||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(o.villa||'')}">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
-        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a>`:''}</td>
+        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a>`:((o.driver||'')==='Aramex'?` <span title="Planned for Aramex — AWB not created yet" style="font-size:10px;cursor:default">⏳</span>`:'')}</td>
         <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
