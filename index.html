@@ -1049,6 +1049,13 @@ select option{background:#1a1d27;color:#f0f2ff}
         <label style="font-weight:600">Discount (AED):</label>
         <input type="number" id="inv-discount" value="0" min="0" step="0.01" oninput="updateInvoiceTotal()" style="width:80px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
       </div>
+      <!-- v13.53: Apply-VAT switch — default by rules (off for International / Cash on Delivery /
+           Paid Cash, on otherwise); operators + admin can override; choice is saved on the order. -->
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
+        <label style="font-weight:600">Apply 5% VAT:</label>
+        <input type="checkbox" id="inv-vat-apply" onchange="onInvVatApplyChange()" style="width:16px;height:16px;cursor:pointer">
+        <span style="font-size:11px;color:#888">auto: off for International / COD / Paid Cash</span>
+      </div>
       <div id="inv-vat-mode-wrap" style="display:none;align-items:center;gap:8px;font-size:13px;color:#333">
         <label style="font-weight:600">VAT included in prices:</label>
         <input type="checkbox" id="inv-vat-included" onchange="updateInvoiceTotal()" style="width:16px;height:16px;cursor:pointer">
@@ -1217,7 +1224,10 @@ select option{background:#1a1d27;color:#f0f2ff}
               <span id="shop-cart-delivery-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
             </div>
             <div class="shop-cart-total" style="border-top:none;margin-top:2px;padding-top:0">
-              <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">5% VAT</span>
+              <span style="font-size:12px;color:var(--muted);font-family:var(--mono);display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="f-vat-apply" onchange="updateCartTotals()" title="Auto: no VAT for International / Cash on Delivery / Paid Cash. Tick or untick to override — saved with the order." style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+                5% VAT
+              </span>
               <span id="shop-cart-vat-val" style="font-size:14px;font-weight:600;color:var(--text);font-family:var(--mono)">0.00 AED</span>
             </div>
             <div class="shop-cart-total">
@@ -1300,7 +1310,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <button type="button" onclick="document.getElementById('f-driver').value=''" title="Clear driver" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;padding:4px 8px;font-size:13px;line-height:1">✕</button>
         </div>
       </div>
-      <div class="form-group"><label>Payment Status</label><select id="f-payment"></select></div>
+      <div class="form-group"><label>Payment Status</label><select id="f-payment" onchange="_vatReDefault()"></select></div>
       <div class="form-group"><label>Delivery Status</label><select id="f-delivery" onchange="onDeliveryChange()"></select></div>
       <div class="form-group"><label>Confirmed</label><select id="f-confirmed" onchange="onConfirmedChange()"><option value="No">No</option><option value="Yes">Yes</option></select></div>
       <div class="form-group"><label>Priority</label>
@@ -1482,7 +1492,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.52';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.53';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2263,6 +2273,10 @@ function populateFormRefs(o){
     `<option value="Aramex" ${o?.driver==='Aramex'?'selected':''}>🚀 Aramex (API — AWB + label)</option>` +
     drivers.filter(d=>(d.name||'').trim().toLowerCase()!=='aramex')
       .map(d=>`<option value="${d.name}" ${o?.driver===d.name?'selected':''}>${d.name}${d.phone?' ('+d.phone+')':''}</option>`).join('');
+
+  // v13.53: Apply-VAT checkbox is toggleable by operators + admin only
+  const _va = document.getElementById('f-vat-apply');
+  if (_va) _va.disabled = !(currentRole === 'admin' || currentRole === 'operator');
 }
 
 // BADGES
@@ -2784,6 +2798,8 @@ function onEmirateChange() {
   _setDistrictOptions([]);
 
   cityEl.innerHTML = '<option value="">— Select City —</option>';
+
+  _vatReDefault(); // v13.53: emirate change re-defaults the Apply-VAT checkbox by rules
 
   if (!emirateId) return;
 
@@ -3488,6 +3504,26 @@ function renderShopProducts() {
   }).join('');
 }
 
+// ── v13.53: VAT default rule ────────────────────────────────────────────────
+// No VAT by default for: Emirate = International, Payment = Cash on Delivery
+// or Paid Cash. VAT on by default for everything else. The checkbox can always
+// be overridden manually (operators + admin); the choice is saved on the order.
+function vatDefaultFor(emirate, payment){
+  const em = (emirate||'').trim().toLowerCase();
+  const ps = (payment||'').trim().toLowerCase();
+  if (em === 'international') return false;
+  if (ps === 'cash on delivery' || ps === 'paid cash') return false;
+  return true;
+}
+// Re-apply the rule when Emirate / Payment Status changes in the order form
+// (business decision: a change always re-defaults the checkbox by the rules).
+function _vatReDefault(){
+  const _va = document.getElementById('f-vat-apply');
+  if (!_va) return;
+  _va.checked = vatDefaultFor(document.getElementById('f-emirate')?.value, document.getElementById('f-payment')?.value);
+  updateCartTotals();
+}
+
 function updateCartTotals() {
   const _gp = item => item.is_custom ? item.price : (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price));
   const _gq = item => item.is_custom ? item.quantity : item.qty;
@@ -3498,15 +3534,17 @@ function updateCartTotals() {
   const disc = discEl ? (parseFloat(discEl.value) || 0) : 0;
   // Same math as the invoice window, Mode A (VAT on top):
   // net = Subtotal − Discount + Delivery;  VAT = net × 5%;  Balance Due = net + VAT
+  // v13.53: VAT only when the Apply-VAT checkbox is on (defaults by vatDefaultFor).
+  const vatOn = !!document.getElementById('f-vat-apply')?.checked;
   const net = subtotal - disc + dc;
-  const vat = parseFloat((net * 0.05).toFixed(2));
+  const vat = vatOn ? parseFloat((net * 0.05).toFixed(2)) : 0;
   const subEl = document.getElementById('shop-cart-total-val');
   const delEl = document.getElementById('shop-cart-delivery-val');
   const vatEl = document.getElementById('shop-cart-vat-val');
   const grandEl = document.getElementById('shop-cart-grand-val');
   if (subEl) subEl.textContent = subtotal.toFixed(2) + ' AED';
   if (delEl) delEl.textContent = dc.toFixed(2) + ' AED';
-  if (vatEl) vatEl.textContent = vat.toFixed(2) + ' AED';
+  if (vatEl) vatEl.textContent = vatOn ? (vat.toFixed(2) + ' AED') : '—';
   if (grandEl) grandEl.textContent = (net + vat).toFixed(2) + ' AED';
 }
 
@@ -4180,6 +4218,7 @@ async function openNewOrder(){
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='0';
   {const _di=document.getElementById('f-discount');if(_di)_di.value='0';} // v13.51: fresh order — no discount
+  _vatReDefault(); // v13.53: fresh order — VAT checkbox set by rules from current Emirate/Payment
   resetDeliveryPresets(); // new order: no preset selected, manual field hidden
   renderCart();
   initShop();
@@ -4225,6 +4264,8 @@ async function editOrder(id){
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
   {const _di=document.getElementById('f-discount');if(_di)_di.value=o.discount||0;} // v13.51: show saved discount in the calc
+  {const _va=document.getElementById('f-vat-apply'); // v13.53: saved choice wins; legacy (null) → rule default
+   if(_va)_va.checked=(o.vat_applied===true||o.vat_applied===false)?o.vat_applied:vatDefaultFor(o.emirate,o.payment_status);}
   resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
   const _wEl=document.getElementById('f-weight');if(_wEl)_wEl.value=(o.actual_weight!=null?o.actual_weight:'');
   document.getElementById('f-notes').value=o.notes||'';
@@ -4444,7 +4485,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4722,7 +4763,7 @@ async function saveOrder(){
     btn.disabled = false; btn.textContent = 'Save Order'; return;
   }
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),vat_applied:!!document.getElementById('f-vat-apply')?.checked,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -4840,7 +4881,7 @@ async function saveOrder(){
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
-    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to','delivery_charge','discount'].forEach(f => {
+    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to','delivery_charge','discount','vat_applied'].forEach(f => {
       if (String(_prevOrder[f]||'') !== String(payload[f]||'')) {
         _fieldDiff[f] = { before: _prevOrder[f], after: payload[f] };
       }
@@ -6583,12 +6624,20 @@ async function generateInvoice(seller) {
   
   document.getElementById('inv-delivery').value = order.delivery_charge || 0;
   document.getElementById('inv-discount').value = order.discount || 0;
-  // VAT mode switch — visible to ADMIN only. Default (unchecked) = 5% added
-  // on top of the net amount; checked = prices treated as VAT-inclusive.
-  const vatWrap = document.getElementById('inv-vat-mode-wrap');
-  if (vatWrap) vatWrap.style.display = (currentRole === 'admin') ? 'flex' : 'none';
+  // v13.53: Apply-VAT checkbox — saved order choice wins; legacy orders (null)
+  // default by rules (no VAT for International / Cash on Delivery / Paid Cash).
+  // Toggleable by operators + admin.
+  const vatApply = document.getElementById('inv-vat-apply');
+  if (vatApply) {
+    vatApply.checked = (order.vat_applied === true || order.vat_applied === false)
+      ? order.vat_applied
+      : vatDefaultFor(order.emirate, order.payment_status);
+    vatApply.disabled = !(currentRole === 'admin' || currentRole === 'operator');
+  }
+  // VAT-included mode (admin-only, Mode B) — only relevant while VAT is applied.
   const vatChk = document.getElementById('inv-vat-included');
   if (vatChk) vatChk.checked = false;
+  _syncInvVatUI();
   
   renderInvoiceContent(order, items, seller, invNum);
   document.getElementById('invoice-modal').classList.add('open');
@@ -6610,9 +6659,21 @@ async function generateInvoice(seller) {
   await sb.from('orders').update({
     invoice_number: invNum,
     subtotal: subtotal0,
+    vat_applied: !!document.getElementById('inv-vat-apply')?.checked, // v13.53: materialize the default/choice on the order
     total: parseFloat((subtotal0 + (order.delivery_charge || 0) - (order.discount || 0)).toFixed(2))
   }).eq('id', order.id);
   await loadOrders(); renderTable();
+}
+
+// v13.53: "VAT included" (admin Mode B) is only shown while VAT is applied
+function _syncInvVatUI() {
+  const on = !!document.getElementById('inv-vat-apply')?.checked;
+  const vatWrap = document.getElementById('inv-vat-mode-wrap');
+  if (vatWrap) vatWrap.style.display = (currentRole === 'admin' && on) ? 'flex' : 'none';
+}
+function onInvVatApplyChange() {
+  _syncInvVatUI();
+  updateInvoiceTotal();
 }
 
 function getSellerInfo(seller) {
@@ -6632,14 +6693,18 @@ function renderInvoiceContent(order, items, seller, invNum) {
   const si = getSellerInfo(seller);
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
   const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
-  const vatIncluded = document.getElementById('inv-vat-included')?.checked || false;
+  // v13.53: VAT only when the Apply-VAT checkbox is on (defaults by vatDefaultFor:
+  // off for International / Cash on Delivery / Paid Cash). When off, the 5% VAT
+  // row is REMOVED from the printed invoice and Balance Due = net. Title stays TAX INVOICE.
+  const vatApplied = document.getElementById('inv-vat-apply')?.checked ?? true;
+  const vatIncluded = vatApplied && (document.getElementById('inv-vat-included')?.checked || false);
   const subtotal = items.reduce((s, i) => s + parseFloat(i.price || 0) * parseFloat(i.quantity || 1), 0);
   const net = subtotal + delivery - discount;
   // 5% UAE VAT (v13.50). Default: added ON TOP — Balance Due = net + net×0.05.
   // Admin "VAT included" mode: prices already contain VAT — Balance Due = net,
   // and the VAT line shows the share from within (net × 5/105).
-  const vat = parseFloat((vatIncluded ? net * 5 / 105 : net * 0.05).toFixed(2));
-  const balanceDue = vatIncluded ? net : net + vat;
+  const vat = vatApplied ? parseFloat((vatIncluded ? net * 5 / 105 : net * 0.05).toFixed(2)) : 0;
+  const balanceDue = (!vatApplied || vatIncluded) ? net : net + vat;
   const today = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
   const orderDate = order.order_date ? new Date(order.order_date).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'}) : today;
   const billAddress = [order.emirate, order.city, order.apt].filter(Boolean).join(', ');
@@ -6700,7 +6765,7 @@ function renderInvoiceContent(order, items, seller, invNum) {
             <tr><td>SUBTOTAL</td><td style="text-align:right">${subtotal.toFixed(2)}</td></tr>
             <tr><td>DISCOUNT</td><td style="text-align:right">${discount > 0 ? discount.toFixed(2) : ''}</td></tr>
             <tr><td>DELIVERY</td><td style="text-align:right">${delivery > 0 ? delivery.toFixed(2) : ''}</td></tr>
-            <tr><td>5% VAT</td><td style="text-align:right">${vat.toFixed(2)}</td></tr>
+            ${vatApplied ? `<tr><td>5% VAT</td><td style="text-align:right">${vat.toFixed(2)}</td></tr>` : ''}
             <tr class="total-row"><td>Balance Due</td><td style="text-align:right">${balanceDue.toFixed(2)}</td></tr>
           </table>
         </div>
@@ -6731,6 +6796,7 @@ async function updateInvoiceTotal() {
     delivery_charge: delivery,
     discount: discount,
     subtotal: subtotal,
+    vat_applied: !!document.getElementById('inv-vat-apply')?.checked, // v13.53: remember the choice on the order
     total: parseFloat(total.toFixed(2))
   }).eq('id', order.id);
   await loadOrders(); renderTable();
