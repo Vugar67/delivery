@@ -1508,7 +1508,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.55';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.56';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -7493,16 +7493,30 @@ async function aramexSyncUndelivered(manual = false) {
   const btn = document.getElementById('aramex-sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Aramex…'; }
   try {
-    const awbs = [...new Set(targets.map(o => String(o.aramex_awb)))].slice(0, 100);
-    const map = await _aramexTrackRequest(awbs);
-    let changedN = 0;
+    // v13.56: NO overall cap — all pending AWBs are checked, in chunks of 25
+    // per request (large batches risk WCF limits / silent empty responses).
+    const awbs = [...new Set(targets.map(o => String(o.aramex_awb)))];
+    const CHUNK = 25;
+    const map = {};
+    let failedChunks = 0;
+    for (let i = 0; i < awbs.length; i += CHUNK) {
+      if (btn) btn.textContent = `⏳ Aramex ${Math.min(i + CHUNK, awbs.length)}/${awbs.length}…`;
+      try {
+        Object.assign(map, await _aramexTrackRequest(awbs.slice(i, i + CHUNK)));
+      } catch (err) {
+        failedChunks++;
+        console.log('Aramex track chunk failed:', err);
+      }
+    }
+    let changedN = 0, gotData = 0;
     for (const o of targets) {
       const events = map[String(o.aramex_awb)];
       if (!events || !events.length) continue;
+      gotData++;
       if (await _applyAramexTrack(o, events)) changedN++;
     }
     renderTable();
-    if (manual) toast(`✅ Aramex: checked ${awbs.length} AWB, changes: ${changedN}`);
+    if (manual) toast(`✅ Aramex: ${awbs.length} AWB checked · data for ${gotData} · changes: ${changedN}${failedChunks ? ` · ${failedChunks} chunk(s) failed` : ''}`, failedChunks > 0);
   } catch (err) {
     console.log('Aramex sync error:', err);
     if (manual) toast('Aramex sync failed: ' + String(err && err.message || err).slice(0, 120), true);
