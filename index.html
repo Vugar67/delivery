@@ -303,6 +303,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .empty-icon{font-size:36px;margin-bottom:12px;opacity:.4}
 .role-admin .col-financial{display:none}
 .col-financial{display:none}
+#aramex-sync-btn{display:none} /* v13.54: manual Aramex sync — admin only */
+.role-admin #aramex-sync-btn{display:inline-block}
 select option{background:#1a1d27;color:#f0f2ff}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:15px;font-weight:700}
@@ -386,6 +388,8 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="sent">Sent — has AWB</option>
           <option value="planned">Planned — awaiting AWB</option>
         </select>
+        <!-- v13.54: manual Aramex tracking refresh — ADMIN ONLY (shown via .role-admin CSS) -->
+        <button id="aramex-sync-btn" onclick="aramexSyncUndelivered(true)" title="Refresh Aramex tracking for all undelivered AWBs now (auto-runs hourly)" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--accent);font-family:var(--mono);font-size:12px;cursor:pointer;white-space:nowrap">⟳ Aramex</button>
         <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px">
           <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">FROM</span>
           <input type="date" id="filter-date-from" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
@@ -1066,6 +1070,18 @@ select option{background:#1a1d27;color:#f0f2ff}
   </div>
 </div>
 
+<!-- ARAMEX TRACK MODAL (v13.54) -->
+<div class="overlay" id="aramex-track-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div class="modal-title" id="atm-title">🔍 Aramex Tracking</div>
+      <button class="close-btn" onclick="closeModal('aramex-track-modal')">&#10005;</button>
+    </div>
+    <div id="atm-body" style="max-height:62vh;overflow-y:auto"></div>
+    <div style="padding:8px 12px;font-size:10px;color:var(--muted);font-family:var(--mono);border-top:1px solid var(--border)">Times as reported by Aramex · auto-refresh runs hourly for undelivered AWBs</div>
+  </div>
+</div>
+
 <!-- ORDER MODAL -->
 <div class="overlay" id="order-modal">
   <div class="modal">
@@ -1492,7 +1508,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.53';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.55';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -2506,7 +2522,7 @@ function renderTable(){
         <td>${o.apt||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(o.villa||'')}">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
-        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a>`:((o.driver||'')==='Aramex'?` <span title="Planned for Aramex — AWB not created yet" style="font-size:10px;cursor:default">⏳</span>`:'')}</td>
+        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a><span onclick="event.stopPropagation();openAramexTrack('${o.id}')" title="Track Aramex${o.aramex_last_desc?`: ${escAttr(o.aramex_last_desc)}${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}`:''}" style="cursor:pointer">🔍</span>${o.aramex_problem_code?` <span title="Aramex problem: ${escAttr(o.aramex_problem_code)} — ${escAttr(o.aramex_last_desc||'')}" style="cursor:default">⚠️</span>`:(o.aramex_last_code==='SH005'?` <span title="Aramex: Delivered${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}" style="cursor:default">✅</span>`:'')}`:((o.driver||'')==='Aramex'?` <span title="Planned for Aramex — AWB not created yet" style="font-size:10px;cursor:default">⏳</span>`:'')}</td>
         <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
@@ -4490,7 +4506,7 @@ function _lhFieldLabel(f){
 }
 function _lhActionLabel(l){
   const d=l.details||{};
-  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver'};
+  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver',aramex_awb_created:'🚀 Aramex: AWB created',aramex_awb_failed:'⚠️ Aramex: AWB failed',aramex_track_update:'🚀 Aramex: tracking update',aramex_auto_delivered:'✅ Aramex: delivered (auto)'};
   if(d.action && sub[d.action]) return sub[d.action];
   const base={CREATE:'🆕 Created',UPDATE:'✏️ Updated',DELETE:'🗑 Deleted',LOGIN:'Login',LOGOUT:'Logout',EXPORT:'Export'};
   return base[l.action]||l.action||'—';
@@ -7313,6 +7329,193 @@ function openAramexLabel(url, orderNum) {
   if (!w) toast('⚠️ Popup blocked! Allow popups for this site, or use the 📄 button (Dispatch → Sent column, or the Driver column in the table)', true);
 }
 
+// ── v13.54: Aramex tracking ─────────────────────────────────────────────────
+// 🔍 Track button per order (modal with the checkpoint chain), hourly auto-poll
+// of undelivered AWBs, and an admin-only manual "⟳ Aramex" bulk refresh.
+// NOTE: our delivery_status is NOT changed automatically — the business status
+// mapping is still pending. We store & display the latest Aramex checkpoint.
+
+// Parse TrackShipments response (JSON, or XML wrapped in {"raw": "..."}).
+// Returns { awb: [ {code, desc, at, loc, comments, problem}, ... ] } newest first.
+function _aramexParseTrackEvents(text) {
+  const out = {};
+  const push = (awb, ev) => { if (!awb) return; (out[awb] = out[awb] || []).push(ev); };
+  let handled = false;
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j.raw === 'string') {
+      text = j.raw; // XML inside the wrapper
+    } else if (j && j.TrackingResults) {
+      const trs = Array.isArray(j.TrackingResults) ? j.TrackingResults : [];
+      trs.forEach(kv => (kv.Value || []).forEach(t => push(String(kv.Key || t.WaybillNumber || ''), {
+        code: t.UpdateCode || '', desc: t.UpdateDescription || '', at: t.UpdateDateTime || '',
+        loc: t.UpdateLocation || '', comments: t.Comments || '', problem: t.ProblemCode || ''
+      })));
+      handled = true;
+    }
+  } catch (e) { /* not JSON — fall through to XML */ }
+  if (!handled) {
+    try {
+      const doc = new DOMParser().parseFromString(text, 'text/xml');
+      const nodes = doc.getElementsByTagName('TrackingResult');
+      const gv = (n, tag) => { const el = n.getElementsByTagName(tag)[0]; return el ? (el.textContent || '') : ''; };
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        push(gv(n, 'WaybillNumber'), {
+          code: gv(n, 'UpdateCode'), desc: gv(n, 'UpdateDescription'), at: gv(n, 'UpdateDateTime'),
+          loc: gv(n, 'UpdateLocation'), comments: gv(n, 'Comments'), problem: gv(n, 'ProblemCode')
+        });
+      }
+    } catch (e) { /* leave empty */ }
+  }
+  Object.values(out).forEach(list => list.sort((a, b) => (b.at || '').localeCompare(a.at || '')));
+  return out;
+}
+
+async function _aramexTrackRequest(awbs) {
+  const resp = await fetch(SUPABASE_URL + '/functions/v1/aramex', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + _authToken,
+      'apikey': SUPABASE_ANON_KEY
+    },
+    body: JSON.stringify({ action: 'track', payload: { ref: 'TRACK-' + Date.now(), awbs: awbs.map(String), lastOnly: false } })
+  });
+  const text = await resp.text();
+  if (!resp.ok) throw new Error('Aramex track HTTP ' + resp.status + ': ' + text.slice(0, 200));
+  return _aramexParseTrackEvents(text);
+}
+
+// "2026-07-30T16:15:00" → "30.07.2026 16:15" (shown exactly as Aramex reports it)
+function _fmtAramexDt(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : (s || '');
+}
+
+// Persist the newest checkpoint on the order (DB + local cache). Logs only real changes.
+// v13.55: SH005 (Delivered) now also auto-updates OUR delivery status — see below.
+async function _applyAramexTrack(o, events) {
+  if (!events || !events.length) return false;
+  // If the chain contains SH005 (Delivered), store THAT as the checkpoint — it is the
+  // terminal business state (ties like SH394 "Customer ID received" share its timestamp).
+  const deliveredEv = events.find(e => e.code === 'SH005');
+  const latest = deliveredEv || events[0];
+  const problem = (events.find(e => e.problem) || {}).problem || '';
+  const changed = ((o.aramex_last_code || '') !== (latest.code || '')) || ((o.aramex_problem_code || '') !== problem);
+  const patch = {
+    aramex_last_code: latest.code || null,
+    aramex_last_desc: latest.desc || null,
+    aramex_last_at: latest.at || null,
+    aramex_problem_code: problem || null,
+    aramex_synced_at: new Date().toISOString()
+  };
+  await sb.from('orders').update(patch).eq('id', o.id);
+  Object.assign(o, patch);
+  if (changed) {
+    logEvent('UPDATE', 'order', o.id, { order_num: o.order_num, action: 'aramex_track_update', awb: o.aramex_awb, code: latest.code, status: latest.desc, problem: problem || undefined });
+  }
+  // ── v13.55: Aramex says Delivered → update our base automatically ──────────
+  // MINIMAL update: delivery_status field only (items are never touched).
+  // Only from 'En Route' — a manually set status (fail/reschedule, Cancelled…)
+  // is never overwritten by the sync.
+  if (deliveredEv && o.delivery_status === 'En Route') {
+    await sb.from('orders').update({ delivery_status: 'Delivered' }).eq('id', o.id);
+    o.delivery_status = 'Delivered';
+    logEvent('UPDATE', 'order', o.id, {
+      order_num: o.order_num,
+      action: 'aramex_auto_delivered',
+      awb: o.aramex_awb,
+      aramex_time: deliveredEv.at || undefined,
+      courier: (deliveredEv.comments || '').slice(0, 120) || undefined,
+      field_changes: { delivery_status: { before: 'En Route', after: 'Delivered' } }
+    });
+    toast(`✅ ${o.order_num}: Aramex delivered — status updated`);
+    return true;
+  }
+  return changed;
+}
+
+// 🔍 Per-order tracking modal (any role — read-only; also refreshes the stored checkpoint)
+async function openAramexTrack(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o || !o.aramex_awb) { toast('No Aramex AWB on this order', true); return; }
+  const modal = document.getElementById('aramex-track-modal');
+  const body = document.getElementById('atm-body');
+  const title = document.getElementById('atm-title');
+  if (title) title.textContent = `🔍 Aramex ${o.aramex_awb} — ${o.order_num || ''}`;
+  if (body) body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">Loading tracking…</div>`;
+  if (modal) modal.classList.add('open');
+  try {
+    const map = await _aramexTrackRequest([o.aramex_awb]);
+    const events = map[String(o.aramex_awb)] || Object.values(map)[0] || [];
+    if (!events.length) {
+      if (body) body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No tracking events yet (or AWB not found on Aramex side)</div>`;
+      return;
+    }
+    await _applyAramexTrack(o, events);
+    renderTable();
+    if (body) body.innerHTML = events.map((e, i) => {
+      const gps = (e.comments || '').match(/Lat:\s*(-?[0-9.]+)\s*,?\s*Lng:\s*(-?[0-9.]+)/i);
+      const gpsLink = gps ? ` <a href="https://maps.google.com/?q=${gps[1]},${gps[2]}" target="_blank" rel="noopener noreferrer" style="color:var(--blue);font-size:11px">📍 map</a>` : '';
+      const isDelivered = e.code === 'SH005';
+      const hasProblem = !!e.problem;
+      const dotColor = hasProblem ? 'var(--red)' : (isDelivered ? 'var(--green)' : (i === 0 ? 'var(--accent)' : 'var(--muted)'));
+      return `<div style="display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border)">
+        <div style="color:${dotColor};font-size:14px;line-height:1.4">&#9679;</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <span style="font-weight:600;font-size:13px;color:${hasProblem ? 'var(--red)' : (isDelivered ? 'var(--green)' : 'var(--text)')}">${escHtml(e.desc || e.code)}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${_fmtAramexDt(e.at)}</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${escHtml(e.code)}${e.problem ? ` · problem: ${escHtml(e.problem)}` : ''}${e.loc ? ` · ${escHtml(e.loc)}` : ''}</div>
+          ${e.comments ? `<div style="font-size:11px;color:var(--text);margin-top:2px;word-break:break-word">${escHtml(e.comments)}${gpsLink}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    if (body) body.innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px;font-family:var(--mono);word-break:break-word">Tracking failed: ${escHtml(String(err && err.message || err).slice(0, 300))}</div>`;
+  }
+}
+
+// Bulk refresh of undelivered Aramex orders. auto = hourly timer (any logged-in
+// session); manual = admin-only "⟳ Aramex" toolbar button.
+let _aramexSyncBusy = false;
+async function aramexSyncUndelivered(manual = false) {
+  if (manual && currentRole !== 'admin') { toast('Manual Aramex sync — admins only', true); return; }
+  if (_aramexSyncBusy || typeof currentUser === 'undefined' || !currentUser) return;
+  const targets = (orders || []).filter(o =>
+    o.aramex_awb &&
+    !['Delivered', 'Cancelled'].includes(o.delivery_status || '') &&
+    o.aramex_last_code !== 'SH005');
+  if (!targets.length) { if (manual) toast('No undelivered Aramex orders to check'); return; }
+  _aramexSyncBusy = true;
+  const btn = document.getElementById('aramex-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Aramex…'; }
+  try {
+    const awbs = [...new Set(targets.map(o => String(o.aramex_awb)))].slice(0, 100);
+    const map = await _aramexTrackRequest(awbs);
+    let changedN = 0;
+    for (const o of targets) {
+      const events = map[String(o.aramex_awb)];
+      if (!events || !events.length) continue;
+      if (await _applyAramexTrack(o, events)) changedN++;
+    }
+    renderTable();
+    if (manual) toast(`✅ Aramex: checked ${awbs.length} AWB, changes: ${changedN}`);
+  } catch (err) {
+    console.log('Aramex sync error:', err);
+    if (manual) toast('Aramex sync failed: ' + String(err && err.message || err).slice(0, 120), true);
+  } finally {
+    _aramexSyncBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = '⟳ Aramex'; }
+  }
+}
+// Hourly auto-poll while the app is open; first pass ~1 min after load.
+setInterval(() => { aramexSyncUndelivered(false); }, 60 * 60 * 1000);
+setTimeout(() => { aramexSyncUndelivered(false); }, 60 * 1000);
+// ────────────────────────────────────────────────────────────────────────────
+
 let dispatchMode = false;
 let dispatchSelected = []; // [{id, order, lat, lng}] in selection order
 let dispatchDriverName = '';
@@ -7586,7 +7789,7 @@ function renderDispatchSent() {
           <div style="font-size:11px;color:var(--text);margin-bottom:4px">${o.client_name||'—'}</div>
           <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
           <div style="display:flex;gap:4px">
-            ${o.aramex_awb ? `<button onclick="event.stopPropagation();openAramexLabel('${escAttr(o.aramex_label_url||'')}','${o.order_num||''}')" title="AWB ${o.aramex_awb}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">📄 Label</button>` : ''}
+            ${o.aramex_awb ? `<button onclick="event.stopPropagation();openAramexLabel('${escAttr(o.aramex_label_url||'')}','${o.order_num||''}')" title="AWB ${o.aramex_awb}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">📄 Label</button><button onclick="event.stopPropagation();openAramexTrack('${o.id}')" title="Aramex tracking${o.aramex_last_desc?': '+escAttr(o.aramex_last_desc):''}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:5px;cursor:pointer">🔍 Track</button>` : ''}
             <button onclick="event.stopPropagation();dispatchResend('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(37,211,102,.15);color:#25d366;border:1px solid rgba(37,211,102,.3);border-radius:5px;cursor:pointer">↺ Resend</button>
             <button onclick="event.stopPropagation();dispatchReassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">⇄ Reassign</button>
             <button onclick="event.stopPropagation();dispatchUnassign('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(255,80,80,.15);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:5px;cursor:pointer">✕ Unassign</button>
