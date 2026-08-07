@@ -1010,7 +1010,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctx-menu">
-  <div class="ctx-menu-item" onclick="ctxInvoice()">&#128203; Generate Invoice</div>
+  <div class="ctx-menu-item" id="ctx-invoice-item" onclick="ctxInvoice()">&#128203; Generate Invoice</div>
 </div>
 
 <!-- SELLER SELECT MODAL -->
@@ -1509,7 +1509,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.58';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.59';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -6615,6 +6615,12 @@ function openCtxMenu(e, orderId) {
   e.preventDefault();
   if (window._dispatcherMode) return; // dispatcher cannot edit orders
   ctxOrderId = orderId;
+  // v13.59: the invoice item says what it will actually do for THIS order
+  const _io = orders.find(x => x.id === orderId);
+  const _ii = document.getElementById('ctx-invoice-item');
+  if (_ii) _ii.innerHTML = (_io && _io.invoice_number)
+    ? `&#129534; View Invoice <span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${_io.invoice_number}</span>`
+    : '&#128203; Generate Invoice';
   const menu = document.getElementById('ctx-menu');
   menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
   menu.style.top = Math.min(e.clientY, window.innerHeight - 150) + 'px';
