@@ -1037,8 +1037,9 @@ select option{background:#1a1d27;color:#f0f2ff}
 <div class="overlay" id="invoice-modal">
   <div class="modal" style="max-width:800px;background:#fff;color:#000;padding:0;overflow-y:auto;max-height:92vh">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #eee;background:#fff">
-      <div style="font-size:15px;font-weight:700;color:#000">Invoice Preview</div>
+      <div style="font-size:15px;font-weight:700;color:#000">Invoice Preview <span id="inv-view-badge" style="display:none;font-size:11px;font-weight:600;color:#0057b8;background:#e8f1fb;border-radius:6px;padding:3px 8px;vertical-align:middle" title="This order already has an invoice — you are viewing it with its saved number. No new number was issued.">saved &#8470; &mdash; viewing</span></div>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" id="inv-reissue-btn" style="display:none;color:#b00020;border-color:#e5b8b8" onclick="reissueInvoice()" title="Issue a NEW invoice number for this order (the old number stays in the journal)">&#8635; Re-issue</button>
         <button class="btn" style="background:#0057b8;color:#fff;border:none" onclick="printInvoice()">&#128438; Print / Save PDF</button>
         <button class="btn btn-ghost" style="color:#000;border-color:#ddd" onclick="closeModal('invoice-modal')">Close</button>
       </div>
@@ -1508,7 +1509,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.57';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.58';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
@@ -4506,7 +4507,7 @@ function _lhFieldLabel(f){
 }
 function _lhActionLabel(l){
   const d=l.details||{};
-  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver',aramex_awb_created:'🚀 Aramex: AWB created',aramex_awb_failed:'⚠️ Aramex: AWB failed',aramex_track_update:'🚀 Aramex: tracking update',aramex_auto_delivered:'✅ Aramex: delivered (auto)'};
+  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver',aramex_awb_created:'🚀 Aramex: AWB created',aramex_awb_failed:'⚠️ Aramex: AWB failed',aramex_track_update:'🚀 Aramex: tracking update',aramex_auto_delivered:'✅ Aramex: delivered (auto)',invoice_issued:'🧾 Invoice issued',invoice_reissued:'🧾 Invoice re-issued (new №)'};
   if(d.action && sub[d.action]) return sub[d.action];
   const base={CREATE:'🆕 Created',UPDATE:'✏️ Updated',DELETE:'🗑 Deleted',LOGIN:'Login',LOGOUT:'Logout',EXPORT:'Export'};
   return base[l.action]||l.action||'—';
@@ -6584,6 +6585,8 @@ async function saveUser(){
 // ============================================================
 let ctxOrderId = null;
 let ctxSeller = null;
+let ctxInvNum = null;        // v13.58: number currently shown in the invoice modal
+let _invForceNew = false;    // v13.58: set by Re-issue — next generateInvoice takes a NEW number
 let invoiceCounter = 1111000000;
 
 // Get the next invoice number ATOMICALLY from the DB sequence via RPC.
@@ -6621,9 +6624,33 @@ function openCtxMenu(e, orderId) {
 document.addEventListener('click', () => document.getElementById('ctx-menu')?.classList.remove('open'));
 document.addEventListener('contextmenu', e => { if (!e.target.closest('#order-tbody')) document.getElementById('ctx-menu')?.classList.remove('open'); });
 
-function ctxInvoice() {
+async function ctxInvoice() {
   document.getElementById('ctx-menu').classList.remove('open');
+  _invForceNew = false;   // safety: a cancelled Re-issue must not leak into a plain view
+  const o = orders.find(x => x.id === ctxOrderId);
+  // v13.58: order already has an invoice → reopen it (same number, original letterhead).
+  if (o && o.invoice_number) {
+    const { data: inv } = await sb.from('invoices').select('seller').eq('invoice_number', o.invoice_number).limit(1);
+    const seller = inv && inv[0] && inv[0].seller;
+    if (seller) { generateInvoice(seller); return; }
+    // legacy: number saved but no journal row — pick the letterhead, number is still reused
+  }
   document.getElementById('seller-modal').classList.add('open');
+}
+
+// v13.58: Re-issue — deliberately burn a new number (order changed, old paper is void)
+function reissueInvoice() {
+  _invForceNew = true;
+  closeModal('invoice-modal');
+  document.getElementById('seller-modal').classList.add('open');
+}
+
+// v13.58: badge + Re-issue button visibility (re-issue: admin/operator only)
+function _syncInvViewUI(isView) {
+  const badge = document.getElementById('inv-view-badge');
+  if (badge) badge.style.display = isView ? 'inline-block' : 'none';
+  const rb = document.getElementById('inv-reissue-btn');
+  if (rb) rb.style.display = (isView && (currentRole === 'admin' || currentRole === 'operator')) ? 'inline-block' : 'none';
 }
 
 async function generateInvoice(seller) {
@@ -6631,13 +6658,18 @@ async function generateInvoice(seller) {
   ctxSeller = seller;
   const order = orders.find(o => o.id === ctxOrderId);
   if (!order) return;
+  const forceNew = _invForceNew; _invForceNew = false;
+  // v13.58: view mode — the order already has a number and Re-issue was not requested:
+  // show the SAVED number, don't touch the counter, don't write anything.
+  const isView = !!order.invoice_number && !forceNew;
   // Always fetch fresh items from DB
   const {data: freshItems} = await sb.from('order_items').select('*').eq('order_id', ctxOrderId);
   const items = freshItems || orderItems[ctxOrderId] || [];
-  
-  // Get next invoice number (atomic via DB sequence, with fallback)
-  const invNum = await getNextInvoiceNumber();
-  
+
+  // Get next invoice number (atomic via DB sequence, with fallback) — only when issuing
+  const invNum = isView ? order.invoice_number : await getNextInvoiceNumber();
+  ctxInvNum = invNum;
+
   document.getElementById('inv-delivery').value = order.delivery_charge || 0;
   document.getElementById('inv-discount').value = order.discount || 0;
   // v13.53: Apply-VAT checkbox — saved order choice wins; legacy orders (null)
@@ -6656,8 +6688,11 @@ async function generateInvoice(seller) {
   _syncInvVatUI();
   
   renderInvoiceContent(order, items, seller, invNum);
+  _syncInvViewUI(isView);
   document.getElementById('invoice-modal').classList.add('open');
-  
+
+  if (isView) return;   // v13.58: viewing — no journal row, no order update, counter untouched
+
   // Save invoice to DB
   await sb.from('invoices').insert({
     invoice_number: invNum,
@@ -6678,6 +6713,13 @@ async function generateInvoice(seller) {
     vat_applied: !!document.getElementById('inv-vat-apply')?.checked, // v13.53: materialize the default/choice on the order
     total: parseFloat((subtotal0 + (order.delivery_charge || 0) - (order.discount || 0)).toFixed(2))
   }).eq('id', order.id);
+  logEvent('UPDATE', 'order', order.id, {
+    order_num: order.order_num,
+    action: forceNew ? 'invoice_reissued' : 'invoice_issued',
+    invoice_number: invNum,
+    seller,
+    prev_invoice_number: (forceNew && order.invoice_number) ? order.invoice_number : undefined
+  });
   await loadOrders(); renderTable();
 }
 
@@ -6819,7 +6861,8 @@ async function updateInvoiceTotal() {
     total: parseFloat(total.toFixed(2))
   }).eq('id', order.id);
   await loadOrders(); renderTable();
-  renderInvoiceContent(order, items, ctxSeller, invoiceCounter);
+  // v13.58: redraw with the number actually on display (was: global counter — swapped the № in view mode)
+  renderInvoiceContent(order, items, ctxSeller, ctxInvNum || invoiceCounter);
 }
 
 function printInvoice() {
