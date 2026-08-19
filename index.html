@@ -336,7 +336,7 @@ select option{background:#1a1d27;color:#f0f2ff}
   <div class="topbar">
     <div class="logo">DELIVR <span>/ Order Control</span></div>
     <div id="app-version-label" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;align-self:center">v13.12</div>
-    <a href="https://vugar67.github.io/delivery/" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
+    <a href="./" target="_blank" rel="noopener noreferrer" title="Open new tab" style="margin-left:10px;align-self:center;color:var(--text);text-decoration:none;font-size:14px;line-height:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">⧉</a>
     <div id="main-nav" class="topnav"></div>
     <div class="topright">
       <div class="user-pill">
@@ -1509,7 +1509,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.59';  // single source of truth: logs + order stamp + visible label
+const APP_VERSION = 'v13.60';  // single source of truth: logs + order stamp + visible label
 try { const _vl = document.getElementById('app-version-label'); if (_vl) _vl.textContent = APP_VERSION; } catch(e){}
 const SUPABASE_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv'; // new-format publishable key (replaced legacy anon JWT, v13.16)
