@@ -1494,7 +1494,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Email</label><input id="u-email" type="email" placeholder="email@example.com"></div>
       <div class="form-group" id="u-pass-group"><label>Password</label><input id="u-pass" type="password" placeholder="min 6 characters"></div>
       <div class="form-group"><label>System Role</label>
-        <select id="u-role"><option value="operator">Operator</option><option value="dispatcher">Dispatcher</option><option value="warehouse">Warehouse</option><option value="admin">Admin</option></select>
+        <select id="u-role"></select>
       </div>
       <div class="form-group"><label>Staff Role / Position</label>
         <select id="u-staff-role"><option value="">— Select position —</option></select>
@@ -1535,7 +1535,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.63';
+const APP_VERSION = 'v13.64';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -1910,7 +1910,10 @@ setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60
   setTimeout(() => _authListeners.forEach(cb => cb('SIGNED_OUT', null)), 50);
 })();
 
-let currentUser=null, currentRole=null;
+let currentUser=null, currentRole=null;      // currentRole = BEHAVIOR base (admin/operator/dispatcher/warehouse)
+let currentRoleName=null;                     // v13.64: the assigned role name as stored on the profile (may be custom)
+let systemRoles=[];                           // v13.64: custom roles from system_roles table
+const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse'];
 let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[]};
 let products=[], orderItems={};
 let clients=[], editClientId=null;
@@ -2056,9 +2059,16 @@ async function loadProfile(){
     await sb.auth.signOut();
     return false;
   }
-  currentRole=data?.role||'operator';
-  document.title = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
-  logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRole});
+  currentRoleName=data?.role||'operator';
+  // v13.64: custom system role → resolve its behavior base (empty role = operator by default)
+  if(BUILTIN_ROLES.includes(currentRoleName)){
+    currentRole=currentRoleName;
+  } else {
+    const {data:sr}=await sb.from('system_roles').select('base_role').eq('name',currentRoleName).limit(1);
+    currentRole=(sr&&sr[0]&&BUILTIN_ROLES.includes(sr[0].base_role))?sr[0].base_role:'operator';
+  }
+  document.title = currentRoleName.charAt(0).toUpperCase() + currentRoleName.slice(1);
+  logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:currentRoleName,base_role:currentRole!==currentRoleName?currentRole:undefined});
   return true;
 }
 
@@ -2080,7 +2090,7 @@ async function enforceActiveUser() {
       setTimeout(() => sb.auth.signOut(), 800);
       return;
     }
-    if (data.role && data.role !== currentRole) {
+    if (data.role && data.role !== currentRoleName) {   // v13.64: compare assigned name, not behavior base
       toast('Your role was changed to "' + data.role + '" — reloading…');
       setTimeout(() => location.reload(), 1200);
     }
@@ -2094,7 +2104,7 @@ async function initApp(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
   document.getElementById('user-email-label').textContent=currentUser.email;
-  const rb=document.getElementById('role-badge');rb.textContent=currentRole;rb.className='role-badge role-'+currentRole;
+  const rb=document.getElementById('role-badge');rb.textContent=currentRoleName||currentRole;rb.className='role-badge role-'+currentRole;
   document.body.className = 'role-' + currentRole;
   if ((localStorage.getItem('mycrm_theme') || 'dark') === 'light') document.body.classList.add('theme-light'); // v13.62: role wipe must not kill the theme
   const nav=document.getElementById('main-nav');
@@ -2126,7 +2136,7 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
@@ -4463,6 +4473,12 @@ async function searchLogsServer() {
 }
 
 function renderLogs() {
+  const _lrf=document.getElementById('log-role-filter');
+  if(_lrf && !_lrf.dataset.sysrolesDone && typeof systemRoles!=='undefined' && systemRoles.length){
+    _lrf.innerHTML += systemRoles.map(r=>`<option value="${escAttr(r.name)}">${escHtml(r.name)}</option>`).join('');
+    _lrf.dataset.sysrolesDone='1';
+  }
+
   const q = (document.getElementById('log-search')?.value || '').toLowerCase();
   const actionF = document.getElementById('log-action-filter')?.value || '';
   const entityF = document.getElementById('log-entity-filter')?.value || '';
@@ -4646,7 +4662,7 @@ async function logEvent(action, entityType, entityId, details={}) {
     await sb.from('logs').insert({
       user_id: currentUser?.id || null,
       user_email: currentUser?.email || null,
-      role: currentRole || null,
+      role: currentRoleName || currentRole || null,
       action,
       entity_type: entityType,
       entity_id: String(entityId||''),
@@ -6387,6 +6403,70 @@ async function deleteDosageSuffix(id) {
   toast('Solvent deleted');
 }
 
+// ── SYSTEM ROLES (v13.64) — named roles, rights attached later ──────
+// An "empty" custom role behaves as its base_role (operator by default)
+// until the future permission matrix subtracts from it.
+async function loadSystemRoles(){
+  const {data} = await sb.from('system_roles').select('*').order('name');
+  systemRoles = data || [];
+}
+function _roleOptionsHtml(sel){
+  const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+  let h = BUILTIN_ROLES.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${cap(r)}</option>`).join('');
+  const custom = systemRoles.filter(r=>r.active!==false);
+  if(custom.length) h += custom.map(r=>`<option value="${escAttr(r.name)}" ${sel===r.name?'selected':''}>${escHtml(r.name)} · custom</option>`).join('');
+  return h;
+}
+function renderSystemRolesCard(){
+  const el = document.getElementById('sysroles-card-body');
+  if(!el) return;
+  if(!systemRoles.length){ el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px 0">No custom roles yet</div>'; return; }
+  el.innerHTML = systemRoles.map(r=>`<div class="dir-item">
+      <span>${escHtml(r.name)} <span style="color:var(--muted);font-size:10px;font-family:var(--mono)">base: ${escHtml(r.base_role||'operator')}${r.active===false?' · OFF':''}</span></span>
+      <span style="display:flex;gap:6px">
+        <button class="act-btn" onclick="toggleSystemRole(${r.id})" title="${r.active===false?'Reactivate — role becomes assignable again':'Deactivate — hidden from dropdowns; existing users keep working'}">${r.active===false?'⏻ on':'⏻ off'}</button>
+        <button class="dir-item-del" onclick="deleteSystemRole(${r.id})" title="Delete (blocked while any user has this role)">&#10005;</button>
+      </span>
+    </div>`).join('');
+}
+async function addSystemRole(){
+  if(currentRole!=='admin'){toast('Admins only',true);return;}
+  const inp=document.getElementById('sysrole-input');
+  const name=(inp.value||'').trim();
+  if(!name){toast('Enter a role name',true);return;}
+  if(BUILTIN_ROLES.includes(name.toLowerCase())){toast('This name is reserved by a built-in role',true);return;}
+  if(systemRoles.some(r=>r.name.toLowerCase()===name.toLowerCase())){toast('Role already exists',true);return;}
+  const {error}=await sb.from('system_roles').insert({name,base_role:'operator',active:true,created_by:currentUser.email});
+  if(error){console.log('DB error:',error);toast('Something went wrong. Please try again.',true);return;}
+  logEvent('CREATE','system_role',name,{name,base_role:'operator'});
+  inp.value='';
+  await loadSystemRoles();
+  renderSystemRolesCard();
+  toast(`✅ Role "${name}" created — empty for now, behaves as Operator until rights are configured`);
+}
+async function toggleSystemRole(id){
+  if(currentRole!=='admin'){toast('Admins only',true);return;}
+  const r=systemRoles.find(x=>x.id===id); if(!r)return;
+  const to=!(r.active!==false);
+  const {error}=await sb.from('system_roles').update({active:to?false:true}).eq('id',id);
+  if(error){toast('Something went wrong. Please try again.',true);return;}
+  logEvent('UPDATE','system_role',r.name,{name:r.name,action:to?'sysrole_deactivated':'sysrole_reactivated'});
+  await loadSystemRoles();
+  renderSystemRolesCard();
+}
+async function deleteSystemRole(id){
+  if(currentRole!=='admin'){toast('Admins only',true);return;}
+  const r=systemRoles.find(x=>x.id===id); if(!r)return;
+  const {data:used}=await sb.from('profiles').select('email').eq('role',r.name).is('deleted_at',null).limit(5);
+  if(used&&used.length){toast(`❌ Role "${r.name}" is assigned to ${used.length} user(s) — reassign them first`,true);return;}
+  if(!confirm(`Delete role "${r.name}"?`))return;
+  const {error}=await sb.from('system_roles').delete().eq('id',id);
+  if(error){toast('Something went wrong. Please try again.',true);return;}
+  logEvent('DELETE','system_role',r.name,{name:r.name});
+  await loadSystemRoles();
+  renderSystemRolesCard();
+}
+
 function renderDirectory(){
   const cats=[
     {key:'emirates',label:'Emirates'},
@@ -6402,6 +6482,17 @@ function renderDirectory(){
       <div class="dir-card-head"><div class="dir-card-title">${c.label}</div><button class="dir-add-btn" onclick="openDirAdd('${c.key}','${c.label}')">+</button></div>
       ${(refs[c.key]||[]).map(r=>`<div class="dir-item"><span>${r.value}</span><button class="dir-item-del" onclick="delDirItem(${r.id})">&#10005;</button></div>`).join('')}
     </div>`).join('');
+  // v13.64: System Roles — separate table, not refs
+  document.getElementById('dir-grid').innerHTML += `
+    <div class="dir-card" style="border-color:var(--accent)">
+      <div class="dir-card-head"><div class="dir-card-title">System Roles <span style="color:var(--muted);font-size:10px;font-weight:400">access roles — rights configured later</span></div></div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="sysrole-input" placeholder="New role name, e.g. Key Account Manager" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12px;outline:none" onkeydown="if(event.key==='Enter')addSystemRole()">
+        <button class="dir-add-btn" onclick="addSystemRole()" title="Create role — empty for now, behaves as Operator until rights are configured">+</button>
+      </div>
+      <div id="sysroles-card-body"></div>
+    </div>`;
+  renderSystemRolesCard();
 }
 
 function openDirAdd(key,label){
@@ -6437,6 +6528,14 @@ async function delDirItem(id){
 
 // USERS
 async function renderUsers(){
+  // v13.64: role filter = built-ins + custom system roles
+  const _rf=document.getElementById('u-filter-role');
+  if(_rf){
+    const _cur=_rf.value;
+    _rf.innerHTML='<option value="">All roles</option>'+_roleOptionsHtml('');
+    _rf.value=_cur;
+  }
+
   const{data}=await sb.from('profiles').select('*').order('created_at');
   const tbody=document.getElementById('users-tbody');
   if(!tbody)return;
@@ -6481,7 +6580,7 @@ function openNewUser(){
   document.getElementById('u-id').value='';
   document.getElementById('user-modal-title').textContent='Add Team Member';
   ['u-name','u-email','u-pass'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('u-role').value='operator';
+  document.getElementById('u-role').innerHTML=_roleOptionsHtml('operator');   // v13.64: built-ins + custom roles
   document.getElementById('u-email').readOnly=false;
   const sr=document.getElementById('u-staff-role');
   sr.innerHTML='<option value="">— Select position —</option>'+(refs.staffRoles||[]).map(r=>`<option value="${r.value}">${r.value}</option>`).join('');
@@ -6501,7 +6600,7 @@ async function editUser(userId){
   document.getElementById('u-email').value=u.email||'';
   document.getElementById('u-email').readOnly=true;
   document.getElementById('u-pass').value='';
-  document.getElementById('u-role').value=u.role||'operator';
+  document.getElementById('u-role').innerHTML=_roleOptionsHtml(u.role||'operator');   // v13.64
   const sr=document.getElementById('u-staff-role');
   sr.innerHTML='<option value="">— Select position —</option>'+(refs.staffRoles||[]).map(r=>`<option value="${r.value}" ${r.value===u.staff_role?'selected':''}>${r.value}</option>`).join('');
   document.getElementById('u-pass-group').style.display='none';
