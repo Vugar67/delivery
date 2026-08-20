@@ -327,6 +327,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .col-financial{display:none}
 #aramex-sync-btn{display:none} /* v13.54: manual Aramex sync — admin only */
 .role-admin #aramex-sync-btn{display:inline-block}
+/* v13.63: Products/Clients are read-only for operators — no add/export/edit/delete */
+.role-operator #prod-export-btn,.role-operator #prod-add-btn,.role-operator #cl-export-btn,.role-operator #cl-add-btn{display:none!important}
+.role-operator #view-products .act-btn,.role-operator #view-clients .act-btn{display:none!important}
 select option{background:#1a1d27;color:#f0f2ff}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:15px;font-weight:700}
@@ -535,8 +538,8 @@ select option{background:#1a1d27;color:#f0f2ff}
             <option value="">All Kinds</option>
           </select>
         </div>
-        <button class="btn btn-ghost" onclick="exportProductsCSV()">&#8595; XLSX</button>
-        <button class="btn btn-primary" onclick="openNewProduct()">+ Add Product</button>
+        <button class="btn btn-ghost" id="prod-export-btn" onclick="exportProductsCSV()">&#8595; XLSX</button>
+        <button class="btn btn-primary" id="prod-add-btn" onclick="openNewProduct()">+ Add Product</button>
       </div>
       <div id="prod-stats-row" class="stats" style="display:flex;margin-bottom:16px"></div>
       <div id="prod-view-list">
@@ -638,8 +641,8 @@ select option{background:#1a1d27;color:#f0f2ff}
             <option value="seller">Sellers only</option>
             <option value="both">Both (Client + Seller)</option>
           </select>
-          <button class="btn btn-ghost" onclick="exportClientsCSV()">&#8595; XLSX</button>
-          <button class="btn btn-primary" onclick="openNewClient()">+ Add Client</button>
+          <button class="btn btn-ghost" id="cl-export-btn" onclick="exportClientsCSV()">&#8595; XLSX</button>
+          <button class="btn btn-primary" id="cl-add-btn" onclick="openNewClient()">+ Add Client</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -1532,7 +1535,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.62';
+const APP_VERSION = 'v13.63';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2111,9 +2114,11 @@ async function initApp(){
   }
 
   nav.innerHTML=`<a class="tab-btn active" href="#orders" onclick="showView('orders');return false;">Orders</a>`;
-  if(isAdmin){
+  if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
+  }
+  if(isAdmin){
     nav.innerHTML+=`<a class="tab-btn" href="#directory" onclick="showView('directory');return false;">Directory</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#brands" onclick="showView('brands');return false;">Brand Profiles</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#storage" onclick="showView('storage');return false;">Storage</a>`;
@@ -2125,7 +2130,7 @@ async function initApp(){
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
-  const validViews = ['orders','products','clients','directory','brands','storage','users','logs'];
+  const validViews = isAdmin ? ['orders','products','clients','directory','brands','storage','users','logs'] : (isOperator ? ['orders','products','clients'] : ['orders']);   // v13.63
   const initView = validViews.includes(hash) ? hash : 'orders';
   if(!isDispatcher) renderTable();
   showView(initView);subscribeRealtime();
@@ -5817,10 +5822,10 @@ function renderProducts(){
       ${p.description?`<div class="product-desc">${p.description}</div>`:''}
       <div class="product-footer">
         <div><span class="product-price">${parseFloat(p.price).toFixed(2)} AED</span> <span class="product-unit">/ ${p.unit}</span></div>
-        <div class="product-actions">
+        ${currentRole==='admin'?`<div class="product-actions">
           <button class="act-btn" onclick="editProduct(${p.id})">Edit</button>
           <button class="act-btn del" onclick="deleteProduct(${p.id})">&#10005;</button>
-        </div>
+        </div>`:''}
       </div>
     </div>`).join('');
   }
@@ -5842,10 +5847,10 @@ function renderProducts(){
         <td class="col-financial" style="font-family:var(--mono)">${parseFloat(p.price||0).toFixed(2)}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${p.barcode||'&mdash;'}</td>
         <td>
-          <div class="product-actions">
+          ${currentRole==='admin'?`<div class="product-actions">
             <button class="act-btn" onclick="editProduct(${p.id})">Edit</button>
             <button class="act-btn del" onclick="deleteProduct(${p.id})">&#10005;</button>
-          </div>
+          </div>`:''}
         </td>
       </tr>`;
     }).join('');
@@ -5853,6 +5858,7 @@ function renderProducts(){
 }
 
 function openNewProduct(){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   editProductId=null;
   _productImageFile=null;
   _productCurrentImageUrl=null;
@@ -5872,6 +5878,7 @@ function openNewProduct(){
 }
 
 function editProduct(id){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const p=products.find(x=>x.id===id);if(!p)return;
   editProductId=id;
   _productImageFile=null;
@@ -5935,6 +5942,7 @@ async function uploadProductImage(file, productId) {
 }
 
 async function saveProduct(){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const get=id=>document.getElementById(id).value.trim();
   const name=get('p-name');if(!name){toast('Product name required',true);return;}
   const btn=document.getElementById('save-product-btn');
@@ -5973,6 +5981,7 @@ async function saveProduct(){
 }
 
 async function deleteProduct(id){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   if(!confirm('Delete this product?'))return;
   const p = products.find(x => x.id === id) || (window._allProducts||[]).find(x => x.id === id);
   await sb.from('products').update({active:false}).eq('id',id);
@@ -6080,6 +6089,7 @@ async function exportXLSX(){
 function exportCSV(){ exportXLSX(); }
 
 async function exportProductsCSV(){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const XL = await _loadXLSX();
   const headers = ['Name','Category','Type','Kind','Unit','Price','Shelf Position','Barcode','Description'];
   const data = [headers, ...products.map(p => [
@@ -6096,6 +6106,7 @@ async function exportProductsCSV(){
 }
 
 async function exportClientsCSV(){
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const XL = await _loadXLSX();
   const headers = ['Name','Category','Is Client','Is Seller','Phone','Emirate','District','Villa','Notes'];
   const data = [headers, ...clients.map(c => [
@@ -7117,10 +7128,10 @@ function renderClients() {
       <td style="font-size:12px">${c.villa||'—'}</td>
       <td style="font-size:11px;color:var(--muted)">${c.notes||'—'}</td>
       <td>
-        <div style="display:flex;gap:6px">
+        ${currentRole==='admin'?`<div style="display:flex;gap:6px">
           <button class="act-btn" onclick="editClient('${c.id}')">Edit</button>
           <button class="act-btn" onclick="deleteClient('${c.id}')" style="color:var(--red);border-color:var(--red)">✕</button>
-        </div>
+        </div>`:''}
       </td>
     </tr>`).join('');
 }
@@ -7192,6 +7203,7 @@ function onClientCityChange(preselectDistrict='') {
 }
 
 function openNewClient() {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   editClientId = null;
   document.getElementById('client-modal-title').textContent = 'Add Client';
   ['cl-name','cl-phone','cl-villa','cl-location','cl-trn','cl-notes'].forEach(id => {
@@ -7209,6 +7221,7 @@ function openNewClient() {
 }
 
 function editClient(id) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const c = clients.find(x => x.id === id);
   if (!c) return;
   editClientId = id;
@@ -7231,6 +7244,7 @@ function editClient(id) {
 }
 
 async function saveClient() {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const name = document.getElementById('cl-name').value.trim();
   if (!name) { toast('Name is required', true); return; }
   const trn = document.getElementById('cl-trn').value.trim();
@@ -7277,6 +7291,7 @@ async function saveClient() {
 }
 
 async function deleteClient(id) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   if (!confirm('Delete this client?')) return;
   const c = clients.find(x => x.id === id);
   const { error } = await sb.from('clients').delete().eq('id', id);
