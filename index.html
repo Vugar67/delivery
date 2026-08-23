@@ -1535,7 +1535,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.65';
+const APP_VERSION = 'v13.66';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7500,8 +7500,23 @@ function _aramexFailedHtml(id) {
 async function dispatchAramexOne(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return false;
+  // v13.66 (stale-tab guard): NEVER trust the open tab — re-read the order from
+  // the DB first. 21.08: two users dispatched the same queue within 40 minutes
+  // because the second tab still showed the orders as un-dispatched.
+  try {
+    const { data: fresh } = await sb.from('orders').select('aramex_awb,aramex_label_url,driver,delivery_status,payment_status,aramex_last_code,aramex_last_desc,aramex_last_at').eq('id', id).single();
+    if (fresh) Object.assign(o, fresh);
+  } catch (e) { /* network hiccup — proceed with the local copy */ }
   if (o.aramex_awb) {
-    if (!confirm(o.order_num + ' already has Aramex AWB ' + o.aramex_awb + '.\n\nCreate a NEW shipment anyway?')) return false;
+    // v13.66 (informed warning): show the LIVE status of the existing waybill,
+    // not a generic "anyway?" — the operator must know what they are replacing.
+    let live = 'status check failed — could not reach Aramex';
+    try {
+      const _lm = await _aramexTrackRequest([o.aramex_awb]);
+      const _ev = (_lm[String(o.aramex_awb)] || [])[0];
+      live = _ev ? `${_ev.desc || _ev.code}${_ev.at ? ' · ' + _fmtAramexDt(_ev.at) : ''}` : 'no data — not picked up yet, or already cancelled';
+    } catch (e) {}
+    if (!confirm('⚠️ ' + o.order_num + ' ALREADY has Aramex AWB ' + o.aramex_awb + '.\nLive Aramex status: ' + live + '.\n\nA new waybill will SUPERSEDE it. The old waybill keeps being tracked until its final status — but the parcel must NOT be shipped twice.\n\nIssue a NEW waybill anyway?')) return false;
   }
   if ((o.payment_status || '').toLowerCase().includes('on delivery')) {
     const ok = confirm('⚠️ ' + o.order_num + ' is CASH ON DELIVERY.\n\nCOD via Aramex is NOT set up yet — Aramex will NOT collect cash from the client.\n\nSend anyway?');
@@ -7517,6 +7532,7 @@ async function dispatchAramexOne(id) {
     return false;
   }
   const now = new Date().toISOString();
+  const prevAwb = o.aramex_awb || null;   // v13.66: remembered for history + audit
   await sb.from('orders').update({
     driver: ARAMEX_DRIVER,
     delivery_status: 'En Route',
@@ -7530,7 +7546,14 @@ async function dispatchAramexOne(id) {
   o.aramex_awb = ship.awb;
   o.aramex_label_url = ship.labelUrl || null;
   o.aramex_created_at = now;
-  logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_created', awb: ship.awb, driver: ARAMEX_DRIVER, delivery_status: 'En Route', label_url: ship.labelUrl || null });
+  // v13.66: waybill history — nothing gets lost on re-issue
+  try {
+    await sb.from('aramex_awbs').insert({ order_id: String(id), order_num: o.order_num || null, awb: String(ship.awb), label_url: ship.labelUrl || null, created_by: currentUser.email });
+    if (prevAwb && String(prevAwb) !== String(ship.awb)) {
+      await sb.from('aramex_awbs').update({ superseded: true }).eq('order_id', String(id)).neq('awb', String(ship.awb));
+    }
+  } catch (e) { console.log('AWB history write failed (non-fatal):', e); }
+  logEvent('UPDATE', 'order', id, { order_num: o.order_num, action: 'aramex_awb_created', awb: ship.awb, prev_awb: prevAwb || undefined, driver: ARAMEX_DRIVER, delivery_status: 'En Route', label_url: ship.labelUrl || null });
   openAramexLabel(ship.labelUrl, o.order_num);   // print the label right away
   toast('✅ Aramex AWB ' + ship.awb + ' — ' + (o.order_num || ''));
   return true;
@@ -7630,6 +7653,12 @@ async function _applyAramexTrack(o, events, via = 'auto-hourly') {   // v13.65: 
   };
   await sb.from('orders').update(patch).eq('id', o.id);
   Object.assign(o, patch);
+  // v13.66: keep the history row of the ACTIVE waybill in sync too
+  if (changed && o.aramex_awb) {
+    const histPatch = { last_code: patch.aramex_last_code, last_desc: patch.aramex_last_desc, last_at: patch.aramex_last_at, problem_code: patch.aramex_problem_code, synced_at: patch.aramex_synced_at };
+    if (patch.aramex_last_code === 'SH005') histPatch.final = true;
+    try { await sb.from('aramex_awbs').update(histPatch).eq('awb', String(o.aramex_awb)); } catch (e) {}
+  }
   if (changed) {
     logEvent('UPDATE', 'order', o.id, { order_num: o.order_num, action: 'aramex_track_update', awb: o.aramex_awb, code: latest.code, status: latest.desc, problem: problem || undefined , trigger: via });
   }
@@ -7656,6 +7685,41 @@ async function _applyAramexTrack(o, events, via = 'auto-hourly') {   // v13.65: 
 }
 
 // 🔍 Per-order tracking modal (any role — read-only; also refreshes the stored checkpoint)
+// v13.66: a SUPERSEDED waybill reached us with tracking data. The truth wins:
+// if the parcel was delivered under the OLD waybill, close the order and point
+// it back at that waybill — this is what breaks the re-issue vicious cycle.
+async function _applyOldAwbTrack(r, events) {
+  const deliveredEv = events.find(e => e.code === 'SH005');
+  const latest = deliveredEv || events[0];
+  const histPatch = { last_code: latest.code || null, last_desc: latest.desc || null, last_at: latest.at || null, problem_code: deliveredEv ? null : (latest.problem || null), synced_at: new Date().toISOString() };
+  if (deliveredEv) histPatch.final = true;
+  const changed = (r.last_code || '') !== (latest.code || '');
+  try { await sb.from('aramex_awbs').update(histPatch).eq('id', r.id); Object.assign(r, histPatch); } catch (e) {}
+  if (!deliveredEv) return changed;
+  const o = (orders || []).find(x => String(x.id) === String(r.order_id));
+  if (o && o.delivery_status === 'En Route') {
+    const patch = { delivery_status: 'Delivered', aramex_awb: r.awb, aramex_label_url: r.label_url || o.aramex_label_url || null, aramex_last_code: 'SH005', aramex_last_desc: latest.desc || 'Delivered', aramex_last_at: latest.at || null, aramex_problem_code: null, aramex_synced_at: new Date().toISOString() };
+    try { await sb.from('orders').update(patch).eq('id', o.id); Object.assign(o, patch); } catch (e) { return changed; }
+    try {
+      await sb.from('aramex_awbs').update({ superseded: true }).eq('order_id', String(r.order_id)).neq('awb', String(r.awb));
+      await sb.from('aramex_awbs').update({ superseded: false }).eq('awb', String(r.awb));
+    } catch (e) {}
+    logEvent('UPDATE', 'order', o.id, {
+      order_num: o.order_num,
+      action: 'aramex_auto_delivered',
+      awb: r.awb,
+      trigger: 'superseded-awb',
+      aramex_time: latest.at || undefined,
+      courier: (deliveredEv.comments || '').slice(0, 120) || undefined,
+      note: 'delivered under a PREVIOUS waybill — order repointed to it',
+      field_changes: { delivery_status: { before: 'En Route', after: 'Delivered' } }
+    });
+    toast(`✅ ${o.order_num}: delivered under previous AWB ${r.awb} — status updated`);
+    return true;
+  }
+  return changed;
+}
+
 async function openAramexTrack(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o || !o.aramex_awb) { toast('No Aramex AWB on this order', true); return; }
@@ -7674,6 +7738,20 @@ async function openAramexTrack(orderId) {
     }
     await _applyAramexTrack(o, events, 'track-view');
     renderTable();
+    // v13.66: waybill history — every AWB ever issued for this order
+    let histHtml = '';
+    try {
+      const { data: hist } = await sb.from('aramex_awbs').select('*').eq('order_id', String(o.id)).order('created_at', { ascending: false });
+      if (hist && hist.length > 1) {
+        histHtml = `<div style="border-top:2px solid var(--border);margin-top:6px;padding:10px 12px">
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">WAYBILL HISTORY — ${hist.length} issued for this order</div>` +
+          hist.map(h => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;font-family:var(--mono);padding:3px 0">
+            <span>${String(h.awb) === String(o.aramex_awb) ? '▶' : '&nbsp;&nbsp;'} ${escHtml(h.awb)}${h.label_url ? ` <a href="${escAttr(h.label_url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="Open label">📄</a>` : ''}</span>
+            <span style="color:${h.last_code === 'SH005' ? 'var(--green)' : (h.final ? 'var(--muted)' : 'var(--accent)')}">${escHtml(h.last_code || '—')}${h.superseded ? ' · superseded' : ''}${h.final && h.last_code !== 'SH005' ? ' · expired' : ''}</span>
+            <span style="color:var(--muted)" title="issued">${escHtml(toUAEDateTime(h.created_at) || '')}</span>
+          </div>`).join('') + `</div>`;
+      }
+    } catch (e) { /* pre-migration — no history section */ }
     if (body) body.innerHTML = events.map((e, i) => {
       const gps = (e.comments || '').match(/Lat:\s*(-?[0-9.]+)\s*,?\s*Lng:\s*(-?[0-9.]+)/i);
       const gpsLink = gps ? ` <a href="https://maps.google.com/?q=${gps[1]},${gps[2]}" target="_blank" rel="noopener noreferrer" style="color:var(--blue);font-size:11px">📍 map</a>` : '';
@@ -7691,7 +7769,7 @@ async function openAramexTrack(orderId) {
           ${e.comments ? `<div style="font-size:11px;color:var(--text);margin-top:2px;word-break:break-word">${escHtml(e.comments)}${gpsLink}</div>` : ''}
         </div>
       </div>`;
-    }).join('');
+    }).join('') + histHtml;
   } catch (err) {
     if (body) body.innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px;font-family:var(--mono);word-break:break-word">Tracking failed: ${escHtml(String(err && err.message || err).slice(0, 300))}</div>`;
   }
@@ -7707,14 +7785,30 @@ async function aramexSyncUndelivered(manual = false) {
     o.aramex_awb &&
     !['Delivered', 'Cancelled'].includes(o.delivery_status || '') &&
     o.aramex_last_code !== 'SH005');
-  if (!targets.length) { if (manual) toast('No undelivered Aramex orders to check'); return; }
+  // v13.66: superseded waybills are tracked to their FINAL status too — a
+  // delivery under an old waybill must close the order (breaks the re-issue cycle).
+  let oldRows = [];
+  try {
+    const { data: _or } = await sb.from('aramex_awbs').select('*').eq('superseded', true).eq('final', false);
+    for (const r of (_or || [])) {
+      const po = (orders || []).find(x => String(x.id) === String(r.order_id));
+      if (!po) continue;
+      if (['Delivered', 'Cancelled'].includes(po.delivery_status || '')) {
+        // parent order already resolved — retire the row quietly, stop polling it
+        try { await sb.from('aramex_awbs').update({ final: true }).eq('id', r.id); } catch (e) {}
+        continue;
+      }
+      oldRows.push(r);
+    }
+  } catch (e) { /* pre-migration or offline — old-awb pass just skips this round */ }
+  if (!targets.length && !oldRows.length) { if (manual) toast('No undelivered Aramex orders to check'); return; }
   _aramexSyncBusy = true;
   const btn = document.getElementById('aramex-sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Aramex…'; }
   try {
     // v13.56: NO overall cap — all pending AWBs are checked, in chunks of 25
     // per request (large batches risk WCF limits / silent empty responses).
-    const awbs = [...new Set(targets.map(o => String(o.aramex_awb)))];
+    const awbs = [...new Set([...targets.map(o => String(o.aramex_awb)), ...oldRows.map(r => String(r.awb))])];
     const CHUNK = 25;
     const map = {};
     let failedChunks = 0;
@@ -7733,6 +7827,19 @@ async function aramexSyncUndelivered(manual = false) {
       if (!events || !events.length) continue;
       gotData++;
       if (await _applyAramexTrack(o, events, manual ? 'manual-refresh' : 'auto-hourly')) changedN++;
+    }
+    // v13.66: old superseded waybills — deliveries close the order, silence expires
+    for (const r of oldRows) {
+      const events = map[String(r.awb)];
+      if (!events || !events.length) {
+        // Aramex has nothing on it and it is older than 14 days → auto-cancelled on their side
+        if (r.created_at && (Date.now() - new Date(r.created_at).getTime()) > 14 * 24 * 3600 * 1000) {
+          try { await sb.from('aramex_awbs').update({ final: true, synced_at: new Date().toISOString() }).eq('id', r.id); } catch (e) {}
+        }
+        continue;
+      }
+      gotData++;
+      if (await _applyOldAwbTrack(r, events)) changedN++;
     }
     renderTable();
     if (manual) toast(`✅ Aramex: ${awbs.length} AWB checked · data for ${gotData} · changes: ${changedN}${failedChunks ? ` · ${failedChunks} chunk(s) failed` : ''}`, failedChunks > 0);
