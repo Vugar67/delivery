@@ -1535,7 +1535,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.66';
+const APP_VERSION = 'v13.67';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4560,7 +4560,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',awb:'AWB',prev_awb:'replaces AWB',aramex_time:'aramex time',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4615,6 +4615,13 @@ function _lhChangesHtml(l){
     for(const [k,v] of Object.entries(d)){
       if(skip.has(k)||v==null||v===''||typeof v==='object') continue;
       out.push(`<div class="lh-row"><span class="lh-k">${_lhFieldLabel(k)}:</span> ${_lhEsc(v)}</div>`);
+    }
+  } else {
+    // v13.67: entries WITH field_changes used to hide the rest of the details —
+    // e.g. auto-delivered never showed WHICH waybill closed the order. Key
+    // context now always renders under the change lines.
+    for(const k of ['awb','prev_awb','code','aramex_time','courier','trigger','note']){
+      if(d[k]!=null && d[k]!=='') out.push(`<div class="lh-row"><span class="lh-k">${_lhFieldLabel(k)}:</span> ${_lhEsc(d[k])}</div>`);
     }
   }
   return out.join('');
