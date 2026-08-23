@@ -1535,7 +1535,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.64';
+const APP_VERSION = 'v13.65';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2575,7 +2575,7 @@ function renderTable(){
         <td>${o.apt||'&mdash;'}</td>
         <td style="font-family:var(--mono);font-size:12px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(o.villa||'')}">${o.villa||'&mdash;'}</td>
         <td class="client-cell">${o.client_number||'&mdash;'} ${o.location_url?`<a href="${escAttr(o.location_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;margin-left:4px" title="Open location">📍</a>`:''}</td>
-        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a><span onclick="event.stopPropagation();openAramexTrack('${o.id}')" title="Track Aramex${o.aramex_last_desc?`: ${escAttr(o.aramex_last_desc)}${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}`:''}" style="cursor:pointer">🔍</span>${o.aramex_problem_code?` <span title="Aramex problem: ${escAttr(o.aramex_problem_code)} — ${escAttr(o.aramex_last_desc||'')}" style="cursor:default">⚠️</span>`:(o.aramex_last_code==='SH005'?` <span title="Aramex: Delivered${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}" style="cursor:default">✅</span>`:'')}`:((o.driver||'')==='Aramex'?` <span title="Planned for Aramex — AWB not created yet" style="font-size:10px;cursor:default">⏳</span>`:'')}</td>
+        <td>${o.driver||'&mdash;'}${o.aramex_awb?` <a href="${escAttr(o.aramex_label_url||'#')}" target="_blank" rel="noopener noreferrer" title="Aramex AWB ${o.aramex_awb} — open label" style="text-decoration:none">📄</a><span onclick="event.stopPropagation();openAramexTrack('${o.id}')" title="Track Aramex${o.aramex_last_desc?`: ${escAttr(o.aramex_last_desc)}${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}`:''}" style="cursor:pointer">🔍</span>${(o.aramex_last_code==='SH005'||o.delivery_status==='Delivered')?(o.aramex_last_code==='SH005'?` <span title="Aramex: Delivered${o.aramex_last_at?' · '+_fmtAramexDt(o.aramex_last_at):''}" style="cursor:default">✅</span>`:''):(o.aramex_problem_code?` <span title="Aramex problem: ${escAttr(o.aramex_problem_code)} — ${escAttr(o.aramex_last_desc||'')}" style="cursor:default">⚠️</span>`:'')}`:((o.driver||'')==='Aramex'?` <span title="Planned for Aramex — AWB not created yet" style="font-size:10px;cursor:default">⏳</span>`:'')}</td>
         <td>${contentBadge(o.id)}</td>
         <td>${payBadge(o.payment_status)}</td>
         <td>${delBadge(o.delivery_status)}</td>
@@ -4838,6 +4838,19 @@ async function saveOrder(){
     btn.disabled = false; btn.textContent = 'Save Order'; return;
   }
   const _wt = parseFloat(get('f-weight'));  // Aramex actual weight in GRAMS; blank/≤0 → null (500 g default + /1000→kg applied at ship time)
+  // v13.65: reassigning driver away from Aramex on an order with a live AWB —
+  // the waybill is NOT cancelled by this; make the operator confirm consciously.
+  if (editId) {
+    const _orig = orders.find(x => x.id === editId);
+    const _newDrv = get('f-driver');
+    if (_orig && _orig.aramex_awb && (_orig.driver || '') === 'Aramex' && _newDrv !== 'Aramex'
+        && !['Delivered', 'Cancelled'].includes(_orig.delivery_status || '')) {
+      const _st = _orig.aramex_last_desc
+        ? `${_orig.aramex_last_desc}${_orig.aramex_last_at ? ' · ' + _fmtAramexDt(_orig.aramex_last_at) : ''}`
+        : 'no tracking data yet';
+      if (!confirm(`⚠️ ${_orig.order_num || 'This order'} has Aramex AWB ${_orig.aramex_awb}.\nCurrent Aramex status: ${_st}.\n\nChanging the driver does NOT cancel the waybill — make sure the parcel is physically with us, not with Aramex.\n\nChange driver to "${_newDrv || '—'}" anyway?`)) return;
+    }
+  }
   const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),vat_applied:!!document.getElementById('f-vat-apply')?.checked,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
@@ -7598,13 +7611,15 @@ function _fmtAramexDt(s) {
 
 // Persist the newest checkpoint on the order (DB + local cache). Logs only real changes.
 // v13.55: SH005 (Delivered) now also auto-updates OUR delivery status — see below.
-async function _applyAramexTrack(o, events) {
+async function _applyAramexTrack(o, events, via = 'auto-hourly') {   // v13.65: honest audit attribution
   if (!events || !events.length) return false;
   // If the chain contains SH005 (Delivered), store THAT as the checkpoint — it is the
   // terminal business state (ties like SH394 "Customer ID received" share its timestamp).
   const deliveredEv = events.find(e => e.code === 'SH005');
   const latest = deliveredEv || events[0];
-  const problem = (events.find(e => e.problem) || {}).problem || '';
+  // v13.65: problem = CURRENT state, not history. Only the checkpoint we store
+  // carries it — a failed attempt that was later delivered must not flag ⚠️.
+  const problem = deliveredEv ? '' : (latest.problem || '');
   const changed = ((o.aramex_last_code || '') !== (latest.code || '')) || ((o.aramex_problem_code || '') !== problem);
   const patch = {
     aramex_last_code: latest.code || null,
@@ -7616,7 +7631,7 @@ async function _applyAramexTrack(o, events) {
   await sb.from('orders').update(patch).eq('id', o.id);
   Object.assign(o, patch);
   if (changed) {
-    logEvent('UPDATE', 'order', o.id, { order_num: o.order_num, action: 'aramex_track_update', awb: o.aramex_awb, code: latest.code, status: latest.desc, problem: problem || undefined });
+    logEvent('UPDATE', 'order', o.id, { order_num: o.order_num, action: 'aramex_track_update', awb: o.aramex_awb, code: latest.code, status: latest.desc, problem: problem || undefined , trigger: via });
   }
   // ── v13.55: Aramex says Delivered → update our base automatically ──────────
   // MINIMAL update: delivery_status field only (items are never touched).
@@ -7629,6 +7644,7 @@ async function _applyAramexTrack(o, events) {
       order_num: o.order_num,
       action: 'aramex_auto_delivered',
       awb: o.aramex_awb,
+      trigger: via,
       aramex_time: deliveredEv.at || undefined,
       courier: (deliveredEv.comments || '').slice(0, 120) || undefined,
       field_changes: { delivery_status: { before: 'En Route', after: 'Delivered' } }
@@ -7656,7 +7672,7 @@ async function openAramexTrack(orderId) {
       if (body) body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No tracking events yet (or AWB not found on Aramex side)</div>`;
       return;
     }
-    await _applyAramexTrack(o, events);
+    await _applyAramexTrack(o, events, 'track-view');
     renderTable();
     if (body) body.innerHTML = events.map((e, i) => {
       const gps = (e.comments || '').match(/Lat:\s*(-?[0-9.]+)\s*,?\s*Lng:\s*(-?[0-9.]+)/i);
@@ -7716,7 +7732,7 @@ async function aramexSyncUndelivered(manual = false) {
       const events = map[String(o.aramex_awb)];
       if (!events || !events.length) continue;
       gotData++;
-      if (await _applyAramexTrack(o, events)) changedN++;
+      if (await _applyAramexTrack(o, events, manual ? 'manual-refresh' : 'auto-hourly')) changedN++;
     }
     renderTable();
     if (manual) toast(`✅ Aramex: ${awbs.length} AWB checked · data for ${gotData} · changes: ${changedN}${failedChunks ? ` · ${failedChunks} chunk(s) failed` : ''}`, failedChunks > 0);
