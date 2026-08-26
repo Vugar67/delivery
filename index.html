@@ -1162,6 +1162,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
       </div>
       <div class="form-group"><label>Client Number</label><input id="f-client" inputmode="tel" maxlength="16" placeholder="+9715XXXXXXXX" oninput="this.value=normalizePhoneInput(this.value)" onfocus="if(!this.value)this.value='+971'" onblur="if(this.value==='+971'||this.value==='+')this.value=''"></div>
+      <div class="form-group"><label>PO Number</label><input id="f-po-number" inputmode="numeric" maxlength="8" placeholder="digits only — e.g. 20225" oninput="this.value=this.value.replace(/\D/g,'').slice(0,8)" title="Digits only, max 8. Printed on the invoice as PO&lt;number&gt; (prefix added automatically) together with the client&#39;s TRN"></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group" style="position:relative">
@@ -1535,7 +1536,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.67';
+const APP_VERSION = 'v13.70';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2342,6 +2343,12 @@ function populateFormRefs(o){
     `<option value="Aramex" ${o?.driver==='Aramex'?'selected':''}>🚀 Aramex (API — AWB + label)</option>` +
     drivers.filter(d=>(d.name||'').trim().toLowerCase()!=='aramex')
       .map(d=>`<option value="${d.name}" ${o?.driver===d.name?'selected':''}>${d.name}${d.phone?' ('+d.phone+')':''}</option>`).join('');
+  // v13.68: drivers are assigned via Dispatch (dispatcher/admin). Operators SEE
+  // the driver — to answer the client, to call him — but cannot set or change it.
+  driverEl.disabled = (currentRole === 'operator');
+  driverEl.title = (currentRole === 'operator')
+    ? 'Read-only for operators — drivers are assigned via Dispatch by dispatchers and admins'
+    : '';
 
   // v13.53: Apply-VAT checkbox is toggleable by operators + admin only
   const _va = document.getElementById('f-vat-apply');
@@ -2437,7 +2444,7 @@ function getFiltered(){
     }
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
-    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.emirate,o.confirmed,o.order_date,o.aramex_awb].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.po_number,(o.po_number?'PO'+o.po_number:''),o.emirate,o.confirmed,o.order_date,o.aramex_awb].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
   const dOrd={'Not Confirmed':0,'Processing in Lab':1,'Ready in Lab':2,'In the Warehouse':3,'Ready for Pick-up':4,'En Route':5,'Delivered':6,'Cancelled':7,'Delivery fail/reschedule':8};
@@ -4231,6 +4238,7 @@ async function openNewOrder(){
   const dg=document.getElementById('f-driver-group');
   if(dg) dg.style.display=(currentRole==='admin')?'':'none';
   populateFormRefs(null);
+  {const _po=document.getElementById('f-po-number');if(_po)_po.value='';} // v13.69
   // Populate emirate select with Dubai as default
   const emirateEl = document.getElementById('f-emirate');
   emirateEl.innerHTML = '<option value="">— Select Emirate —</option>';
@@ -4333,6 +4341,7 @@ async function editOrder(id){
   document.getElementById('f-priority').value=o.priority||3;
   document.getElementById('f-delivery-charge').value=o.delivery_charge||0;
   {const _di=document.getElementById('f-discount');if(_di)_di.value=o.discount||0;} // v13.51: show saved discount in the calc
+  {const _po=document.getElementById('f-po-number');if(_po)_po.value=String(o.po_number||'').replace(/\D/g,'').slice(0,8);} // v13.69/70: digits only
   {const _va=document.getElementById('f-vat-apply'); // v13.53: saved choice wins; legacy (null) → rule default
    if(_va)_va.checked=(o.vat_applied===true||o.vat_applied===false)?o.vat_applied:vatDefaultFor(o.emirate,o.payment_status);}
   resetDeliveryPresets(o.delivery_charge); // editing: reflect saved delivery on buttons
@@ -4560,7 +4569,7 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',awb:'AWB',prev_awb:'replaces AWB',aramex_time:'aramex time',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',po_number:'PO number',awb:'AWB',prev_awb:'replaces AWB',aramex_time:'aramex time',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
@@ -4858,7 +4867,13 @@ async function saveOrder(){
       if (!confirm(`⚠️ ${_orig.order_num || 'This order'} has Aramex AWB ${_orig.aramex_awb}.\nCurrent Aramex status: ${_st}.\n\nChanging the driver does NOT cancel the waybill — make sure the parcel is physically with us, not with Aramex.\n\nChange driver to "${_newDrv || '—'}" anyway?`)) return;
     }
   }
-  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),vat_applied:!!document.getElementById('f-vat-apply')?.checked,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),vat_applied:!!document.getElementById('f-vat-apply')?.checked,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,po_number:(document.getElementById('f-po-number')?.value||'').replace(/\D/g,'').slice(0,8)||null,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  // v13.68: operators cannot change the driver — the stored value always wins,
+  // whatever the (disabled) select happens to hold. New orders start unassigned.
+  if (currentRole === 'operator') {
+    const _po = editId ? orders.find(x => x.id === editId) : null;
+    payload.driver = _po ? (_po.driver || '') : '';
+  }
   if (editId) {
     // Keep existing order_num — take from local state, not from disabled field
     const existingOrder = orders.find(x => x.id === editId);
@@ -4976,7 +4991,7 @@ async function saveOrder(){
   const _prevOrder = editId ? orders.find(x => x.id === orderId) : null;
   const _fieldDiff = {};
   if (_prevOrder) {
-    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to','delivery_charge','discount','vat_applied'].forEach(f => {
+    ['delivery_status','payment_status','driver','confirmed','priority','emirate','city','notes','driver_note','client_name','seller_name','sched_date','sched_from','sched_to','delivery_charge','discount','vat_applied','po_number'].forEach(f => {
       if (String(_prevOrder[f]||'') !== String(payload[f]||'')) {
         _fieldDiff[f] = { before: _prevOrder[f], after: payload[f] };
       }
@@ -6961,6 +6976,17 @@ function renderInvoiceContent(order, items, seller, invNum) {
           <div style="margin-top:4px">
             <div>${escHtml(order.client_name || order.client_number || '—')}</div>
             <div>${billAddress}</div>
+            ${(() => {
+              // v13.69: corporate billing block — client's own TRN (live from the
+              // Clients card, matched by phone) + the PO number saved on the order.
+              // Empty values print nothing: retail invoices are unchanged.
+              const _digits = s => String(s || '').replace(/\D/g, '');
+              const _cl = _digits(order.client_number) ? (clients || []).find(c => _digits(c.phone) && _digits(c.phone) === _digits(order.client_number)) : null;
+              const _trn = _cl && _cl.trn ? String(_cl.trn).trim() : '';
+              const _po = String(order.po_number || '').replace(/\D/g, '');   // v13.70: digits stored, PO prefix added here
+              return (_trn ? `<div style="margin-top:6px"><b>TRN:</b> ${escHtml(_trn)}</div>` : '') +
+                     (_po ? `<div${_trn ? '' : ' style="margin-top:6px"'}><b>PO</b>${escHtml(_po)}</div>` : '');
+            })()}
           </div>
         </div>
         <div style="text-align:right">
