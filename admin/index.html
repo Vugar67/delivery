@@ -71,6 +71,13 @@ body.theme-light .login-btn{background:#B26A00;color:#fff}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle}
 @keyframes sp{to{transform:rotate(360deg)}}
 a{color:var(--blue)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center;padding:16px}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;width:100%;max-width:430px;max-height:92vh;overflow:auto}
+.modal h4{font-size:15px;margin-bottom:14px}
+.fg{margin-bottom:10px}
+.fg label{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.fg input,.fg select{width:100%}
 </style>
 </head>
 <body>
@@ -103,6 +110,7 @@ a{color:var(--blue)}
   <div class="tabs">
     <div class="tab active" data-v="dash" onclick="showTab('dash')">Dashboard</div>
     <div class="tab" data-v="prices" onclick="showTab('prices')">Seller Catalog</div>
+    <div class="tab" data-v="users" onclick="showTab('users')">Users</div>
     <div class="tab" data-v="cs" onclick="showTab('cs')">Customer Service</div>
     <div class="tab" data-v="reports" onclick="showTab('reports')">Reports</div>
   </div>
@@ -138,6 +146,46 @@ a{color:var(--blue)}
     <div class="card"><div id="sp-table"><span class="muted" style="font-size:12px">Select a seller to see the price list.</span></div></div>
   </div>
 
+  <div class="wrap" id="view-users" style="display:none">
+    <div class="card">
+      <h3>Team</h3>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <select id="u-f-status" onchange="renderUsersA()">
+          <option value="active_inactive">Active + inactive</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+          <option value="deleted">Show deleted</option>
+        </select>
+        <select id="u-f-role" onchange="renderUsersA()"><option value="">All roles</option></select>
+        <button class="btn btn-primary" onclick="openUserModal('')">+ Add User</button>
+      </div>
+      <div id="users-table"><span class="spin"></span></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="user-modal">
+    <div class="modal">
+      <h4 id="um-title">Add Team Member</h4>
+      <input type="hidden" id="um-id">
+      <div class="fg"><label>Full name</label><input id="um-name" placeholder="e.g. Ahmed Al Rashid"></div>
+      <div class="fg"><label>Email</label><input id="um-email" type="email" placeholder="email@example.com"></div>
+      <div class="fg" id="um-pass-g"><label>Password</label><input id="um-pass" type="password" placeholder="min 6 characters" autocomplete="new-password"></div>
+      <div class="fg"><label>System role</label><select id="um-role"></select></div>
+      <div class="fg"><label>Staff role / position</label><select id="um-staff"><option value="">— Select position —</option></select></div>
+      <div id="um-reset" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+        <div class="fg"><label>New password</label><input id="um-np1" type="password" placeholder="min 8 chars, incl. a special character" autocomplete="new-password"></div>
+        <div class="fg"><label>Confirm new password</label><input id="um-np2" type="password" autocomplete="new-password"></div>
+        <div class="fg"><label>Confirm with YOUR admin password</label><input id="um-ap" type="password" autocomplete="off"></div>
+        <button class="btn btn-ghost" style="width:100%" id="um-setpass" onclick="setPasswordA()">🔑 Set Password</button>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" onclick="closeUserModal()">Cancel</button>
+        <button class="btn btn-ghost" id="um-toggle" style="display:none" onclick="toggleActiveA()"></button>
+        <button class="btn btn-primary" id="um-save" onclick="saveUserA()">Create User</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap" id="view-cs" style="display:none">
     <div class="card">
       <h3>Client lookup</h3>
@@ -156,7 +204,7 @@ a{color:var(--blue)}
 <div class="toast" id="toast"></div>
 
 <script>
-const ADMIN_VERSION = 'admin v1.1';
+const ADMIN_VERSION = 'admin v1.2';
 const SB_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SB_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv';
 const BUILTIN_ROLES = ['admin','operator','dispatcher','warehouse'];
@@ -240,11 +288,11 @@ function enterApp(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('who').textContent = _me.email;
-  fetchCoreVersion(); loadDash(); loadSellersAndProducts();
+  fetchCoreVersion(); loadDash(); loadSellersAndProducts(); loadUsersTab();
 }
 function showTab(v){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.v===v));
-  ['dash','prices','cs','reports'].forEach(x=>document.getElementById('view-'+x).style.display = x===v?'':'none');
+  ['dash','prices','users','cs','reports'].forEach(x=>document.getElementById('view-'+x).style.display = x===v?'':'none');
 }
 
 /* ── live core version + team versions ── */
@@ -505,6 +553,148 @@ async function spApply(){
     spCancelImport();
     await spLoad();
   }catch(e){ toast('Import failed: '+e.message, true); }
+}
+
+/* ── users (admin v1.2 — Users tab moved from the core app) ── */
+let profilesA = [], systemRolesA = [], staffRolesA = [];
+async function loadUsersTab(){
+  try{
+    [profilesA, systemRolesA, staffRolesA] = await Promise.all([
+      api('profiles?select=*&order=created_at'),
+      api('system_roles?select=*&order=name'),
+      api('refs?select=id,value&category=eq.staffRoles&order=value'),
+    ]);
+    const rf=document.getElementById('u-f-role');
+    const cur=rf.value;
+    rf.innerHTML='<option value="">All roles</option>'+roleOptionsA('');
+    rf.value=cur;
+    renderUsersA();
+  }catch(e){ document.getElementById('users-table').innerHTML='<span class="muted">failed: '+esc(e.message)+'</span>'; }
+}
+function roleOptionsA(sel){
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  let x=BUILTIN_ROLES.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${cap(r)}</option>`).join('');
+  x+=(systemRolesA||[]).filter(r=>r.active!==false).map(r=>`<option value="${esc(r.name)}" ${sel===r.name?'selected':''}>${esc(r.name)} · custom</option>`).join('');
+  return x;
+}
+function renderUsersA(){
+  const fS=document.getElementById('u-f-status').value, fR=document.getElementById('u-f-role').value;
+  const rows=(profilesA||[]).filter(u=>{
+    const del=!!u.deleted_at;
+    if(fS==='deleted'){ if(!del) return false; }
+    else { if(del) return false;
+      if(fS==='active'&&u.active===false) return false;
+      if(fS==='inactive'&&u.active!==false) return false; }
+    if(fR&&u.role!==fR) return false;
+    return true;
+  });
+  document.getElementById('users-table').innerHTML = rows.length ? '<table class="t"><tr><th>Name</th><th>Email</th><th>System role</th><th>Position</th><th>Status</th><th></th></tr>'+rows.map(u=>{
+    const del=!!u.deleted_at, off=(u.active===false||del);
+    const st=del?'<span class="pill warn">deleted</span>':(u.active===false?'<span class="pill" style="background:var(--surface2);color:var(--muted)">inactive</span>':'<span class="pill ok">active</span>');
+    const act=del?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="restoreA('${esc(u.id)}')">Restore</button>`
+                 :`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="openUserModal('${esc(u.id)}')">Edit</button> <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;color:var(--red)" onclick="softDeleteA('${esc(u.id)}')">✕</button>`;
+    return `<tr style="${off?'opacity:.55':''}"><td>${esc(u.name||'—')}</td><td class="mono" style="font-size:11.5px;color:var(--muted)">${esc(u.email||'')}</td><td>${esc(u.role||'—')}</td><td style="font-size:12px">${esc(u.staff_role||'—')}</td><td>${st}</td><td>${act}</td></tr>`;
+  }).join('')+'</table>' : '<span class="muted" style="font-size:12px">No users match these filters</span>';
+}
+function openUserModal(id){
+  const u=(profilesA||[]).find(x=>String(x.id)===String(id));
+  document.getElementById('um-id').value=u?u.id:'';
+  document.getElementById('um-title').textContent=u?'Edit Team Member':'Add Team Member';
+  document.getElementById('um-name').value=u?(u.name||''):'';
+  document.getElementById('um-email').value=u?(u.email||''):'';
+  document.getElementById('um-email').disabled=!!u;
+  document.getElementById('um-pass').value='';
+  document.getElementById('um-pass-g').style.display=u?'none':'';
+  document.getElementById('um-role').innerHTML=roleOptionsA(u?(u.role||'operator'):'operator');
+  document.getElementById('um-staff').innerHTML='<option value="">— Select position —</option>'+(staffRolesA||[]).map(r=>`<option value="${esc(r.value)}" ${u&&u.staff_role===r.value?'selected':''}>${esc(r.value)}</option>`).join('');
+  document.getElementById('um-reset').style.display=u?'':'none';
+  ['um-np1','um-np2','um-ap'].forEach(x=>document.getElementById(x).value='');
+  const tg=document.getElementById('um-toggle');
+  if(u){ tg.style.display=''; tg.textContent=(u.active===false)?'Activate':'Deactivate'; tg.style.color=(u.active===false)?'var(--green)':'var(--red)'; } else tg.style.display='none';
+  document.getElementById('um-save').textContent=u?'Save Changes':'Create User';
+  document.getElementById('user-modal').classList.add('open');
+}
+function closeUserModal(){ document.getElementById('user-modal').classList.remove('open'); }
+async function saveUserA(){
+  const id=document.getElementById('um-id').value;
+  const name=document.getElementById('um-name').value.trim();
+  const email=document.getElementById('um-email').value.trim();
+  const pass=document.getElementById('um-pass').value;
+  const role=document.getElementById('um-role').value;
+  const staff=document.getElementById('um-staff').value;
+  const btn=document.getElementById('um-save');
+  btn.disabled=true;
+  try{
+    if(id){
+      await api('profiles?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body:{name, role, staff_role:staff}});
+      logEvent('UPDATE','user',id,{action:'user_updated', email, role, staff_role:staff});
+      toast('✅ User updated');
+    } else {
+      if(!email||!pass){ toast('Email and password required', true); btn.disabled=false; return; }
+      if(pass.length<6){ toast('Password must be at least 6 characters', true); btn.disabled=false; return; }
+      const r=await fetch(SB_URL+'/auth/v1/signup',{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,data:{name,role,staff_role:staff}})});
+      const d=await r.json();
+      if(!r.ok || !(d.user||d.id)) throw new Error(d.error_description||d.msg||'Signup failed');
+      const uid=(d.user&&d.user.id)||d.id;
+      await api('profiles?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:{id:uid,email,name,role,staff_role:staff,active:true}});
+      logEvent('CREATE','user',uid,{action:'user_created', email, role, staff_role:staff});
+      toast('✅ User created');
+    }
+    closeUserModal();
+    await loadUsersTab();
+  }catch(e){ toast('❌ '+String(e.message||e), true); }
+  btn.disabled=false;
+}
+async function toggleActiveA(){
+  const id=document.getElementById('um-id').value; if(!id) return;
+  const u=(profilesA||[]).find(x=>String(x.id)===String(id));
+  const to=u&&u.active===false?true:false;
+  try{
+    await api('profiles?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:{active:to}});
+    logEvent('UPDATE','user',id,{action:to?'user_activated':'user_deactivated', email:u?.email});
+    toast(to?'✅ User activated':'User deactivated — they will be signed out within 30 seconds');
+    closeUserModal(); await loadUsersTab();
+  }catch(e){ toast('❌ '+e.message, true); }
+}
+async function softDeleteA(id){
+  const u=(profilesA||[]).find(x=>String(x.id)===String(id));
+  if(!confirm('Delete '+(u?.email||'this user')+'? They will be blocked from logging in. Restorable via "Show deleted".')) return;
+  try{
+    await api('profiles?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:{deleted_at:new Date().toISOString()}});
+    logEvent('DELETE','user',id,{action:'user_deleted', email:u?.email});
+    toast('User deleted'); await loadUsersTab();
+  }catch(e){ toast('❌ '+e.message, true); }
+}
+async function restoreA(id){
+  const u=(profilesA||[]).find(x=>String(x.id)===String(id));
+  try{
+    await api('profiles?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:{deleted_at:null}});
+    logEvent('UPDATE','user',id,{action:'user_restored', email:u?.email});
+    toast('✅ User restored'); await loadUsersTab();
+  }catch(e){ toast('❌ '+e.message, true); }
+}
+async function setPasswordA(){
+  const id=document.getElementById('um-id').value;
+  const email=document.getElementById('um-email').value;
+  const p1=document.getElementById('um-np1').value, p2=document.getElementById('um-np2').value, ap=document.getElementById('um-ap').value;
+  if(!id){ toast('No user selected', true); return; }
+  if(p1.length<8 || !/[^A-Za-z0-9]/.test(p1)){ toast('Password must be at least 8 characters and include a special character', true); return; }
+  if(p1!==p2){ toast('❌ New passwords do not match', true); return; }
+  if(!ap){ toast('Confirm with your own admin password', true); return; }
+  const btn=document.getElementById('um-setpass'); btn.disabled=true;
+  try{
+    const vr=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email:_me.email,password:ap})});
+    if(!vr.ok){ toast('❌ Wrong admin password', true); btn.disabled=false; return; }
+    const res=await fetch(SB_URL+'/functions/v1/set-user-password',{method:'POST',headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+_token},body:JSON.stringify({userId:id,password:p1})});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok || d.error) toast('❌ '+(d.error||'Failed to set password'), true);
+    else{
+      toast('✅ Password updated for '+email);
+      ['um-np1','um-np2','um-ap'].forEach(x=>document.getElementById(x).value='');
+      logEvent('UPDATE','user',id,{action:'set_password', email});
+    }
+  }catch(e){ toast('❌ '+String(e.message||e), true); }
+  btn.disabled=false;
 }
 
 /* ── customer service ── */
