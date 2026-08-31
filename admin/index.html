@@ -150,7 +150,10 @@ a{color:var(--blue)}
   <div class="wrap" id="view-prod" style="display:none">
     <div class="card">
       <h3>Product categories</h3>
-      <div class="muted" style="font-size:11px;margin-bottom:10px">Categories live on the products themselves (free text, UPPERCASE). Renaming a category updates every product in it; renaming into an existing category merges the two. New categories appear by typing them on a product card.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <button class="btn btn-primary" onclick="addCategory()">+ Add category</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Categories live on products (free text, UPPERCASE). «Add category» registers an empty one — it waits here until products are assigned to it. Renaming updates every product in the category; renaming into an existing one merges them.</div>
       <div id="cat-table"><span class="spin"></span></div>
     </div>
     <div class="card"><h3>Products</h3><div class="muted" style="font-size:12px">Full product editing moves here next (name, category, price, shelf, barcode, active). For now products are edited in Order Control.</div></div>
@@ -214,7 +217,7 @@ a{color:var(--blue)}
 <div class="toast" id="toast"></div>
 
 <script>
-const ADMIN_VERSION = 'admin v1.3';
+const ADMIN_VERSION = 'admin v1.3.1';
 const SB_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SB_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv';
 const BUILTIN_ROLES = ['admin','operator','dispatcher','warehouse'];
@@ -571,35 +574,80 @@ async function spApply(){
   finally{ spApply._busy=false; if(btn){ btn.disabled=false; btn.textContent='✔ Apply'; } }
 }
 
-/* ── product categories (admin v1.3) ── */
-let allProductsA = [];
+/* ── product categories (admin v1.3.1) ──
+   Two sources merged: categories on products (free text) + the registry in
+   refs (category='productCategory') for empty ones added ahead of products.
+   The core app ignores unknown refs categories — zero impact on operators. */
+let allProductsA = [], catRegistry = [];
 async function loadCategories(){
   try{
-    allProductsA = await api('products?select=id,category,active&limit=3000');
+    [allProductsA, catRegistry] = await Promise.all([
+      api('products?select=id,category,active&limit=3000'),
+      api('refs?select=id,value&category=eq.productCategory&order=value'),
+    ]);
     renderCategories();
   }catch(e){ document.getElementById('cat-table').innerHTML='<span class="muted">failed: '+esc(e.message)+'</span>'; }
 }
-function renderCategories(){
+function _catData(){
   const by={};
   (allProductsA||[]).forEach(p=>{
     const c=(p.category||'').trim().toUpperCase()||'(no category)';
-    (by[c]=by[c]||{n:0,act:0}); by[c].n++; if(p.active!==false) by[c].act++;
+    (by[c]=by[c]||{n:0,act:0,reg:false}); by[c].n++; if(p.active!==false) by[c].act++;
   });
+  (catRegistry||[]).forEach(r=>{
+    const c=String(r.value||'').trim().toUpperCase(); if(!c) return;
+    (by[c]=by[c]||{n:0,act:0,reg:false}); by[c].reg=true; by[c].regId=r.id;
+  });
+  return by;
+}
+function renderCategories(){
+  const by=_catData();
   const rows=Object.entries(by).sort((a,b)=>a[0].localeCompare(b[0]));
   document.getElementById('cat-table').innerHTML = rows.length ? '<table class="t"><tr><th>Category</th><th>Products</th><th>Active</th><th></th></tr>'+rows.map(([c,i])=>
-    `<tr><td class="mono" style="font-size:12px">${esc(c)}</td><td class="mono">${i.n}</td><td class="mono">${i.act}</td>
-     <td>${c==='(no category)'?'':`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="renameCategory('${esc(c)}')">Rename</button>`}</td></tr>`).join('')+'</table>'
-    : '<span class="muted" style="font-size:12px">No products yet</span>';
+    `<tr><td class="mono" style="font-size:12px">${esc(c)}${i.reg&&!i.n?' <span class="pill" style="background:var(--surface2);color:var(--muted)">empty — registered</span>':''}</td><td class="mono">${i.n}</td><td class="mono">${i.act}</td>
+     <td style="display:flex;gap:6px">${c==='(no category)'?'':`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="renameCategory('${esc(c)}')">Rename</button>`}
+     ${i.reg&&!i.n?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;color:var(--red)" onclick="deleteEmptyCategory(${i.regId}, '${esc(c)}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+    : '<span class="muted" style="font-size:12px">No categories yet — add one</span>';
+}
+async function addCategory(){
+  const raw=prompt('New category name:');
+  if(raw==null) return;
+  const name=String(raw).trim().toUpperCase();
+  if(!name) return;
+  const by=_catData();
+  if(by[name]){ toast('Category "'+name+'" already exists', true); return; }
+  try{
+    await api('refs',{method:'POST',headers:{'Prefer':'return=minimal'},body:{category:'productCategory', value:name}});
+    logEvent('CREATE','product_category',name,{action:'category_added', name});
+    toast('✅ Category "'+name+'" registered — assign it to products on their cards');
+    await loadCategories();
+  }catch(e){ toast('Add failed: '+e.message, true); }
+}
+async function deleteEmptyCategory(regId, name){
+  if(!confirm('Remove empty category "'+name+'" from the registry?')) return;
+  try{
+    await api('refs?id=eq.'+regId,{method:'DELETE',headers:{'Prefer':'return=minimal'}});
+    logEvent('DELETE','product_category',name,{action:'category_removed', name});
+    toast('Category removed');
+    await loadCategories();
+  }catch(e){ toast('Delete failed: '+e.message, true); }
 }
 async function renameCategory(oldName){
   const raw=prompt('New name for category "'+oldName+'":', oldName);
   if(raw==null) return;
   const newName=String(raw).trim().toUpperCase();
   if(!newName || newName===oldName) return;
-  const exists=(allProductsA||[]).some(p=>(p.category||'').trim().toUpperCase()===newName);
+  const by=_catData();
+  const exists=!!by[newName];
   if(exists && !confirm('Category "'+newName+'" already exists — the two will be MERGED. Continue?')) return;
   try{
     await api('products?category=eq.'+encodeURIComponent(oldName), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body:{category:newName}});
+    // keep the registry in sync: rename its row, or drop it when merging into an existing name
+    const reg=(catRegistry||[]).find(r=>String(r.value||'').trim().toUpperCase()===oldName);
+    if(reg){
+      if(exists) await api('refs?id=eq.'+reg.id,{method:'DELETE',headers:{'Prefer':'return=minimal'}});
+      else await api('refs?id=eq.'+reg.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:{value:newName}});
+    }
     logEvent('UPDATE','product_category',oldName,{action:'category_renamed', from:oldName, to:newName, merged:exists||undefined});
     toast('✅ '+oldName+' → '+newName);
     await loadCategories();
