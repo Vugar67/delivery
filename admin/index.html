@@ -110,6 +110,7 @@ a{color:var(--blue)}
   <div class="tabs">
     <div class="tab active" data-v="dash" onclick="showTab('dash')">Dashboard</div>
     <div class="tab" data-v="prices" onclick="showTab('prices')">Seller Catalog</div>
+    <div class="tab" data-v="prod" onclick="showTab('prod')">Products</div>
     <div class="tab" data-v="users" onclick="showTab('users')">Users</div>
     <div class="tab" data-v="cs" onclick="showTab('cs')">Customer Service</div>
     <div class="tab" data-v="reports" onclick="showTab('reports')">Reports</div>
@@ -139,11 +140,20 @@ a{color:var(--blue)}
       <h3>Import preview — <span id="sp-preview-title"></span></h3>
       <div id="sp-preview"></div>
       <div style="margin-top:12px;display:flex;gap:10px">
-        <button class="btn btn-primary" onclick="spApply()">✔ Apply</button>
+        <button class="btn btn-primary" id="sp-apply-btn" onclick="spApply()">✔ Apply</button>
         <button class="btn btn-ghost" onclick="spCancelImport()">Cancel</button>
       </div>
     </div>
     <div class="card"><div id="sp-table"><span class="muted" style="font-size:12px">Select a seller to see the price list.</span></div></div>
+  </div>
+
+  <div class="wrap" id="view-prod" style="display:none">
+    <div class="card">
+      <h3>Product categories</h3>
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Categories live on the products themselves (free text, UPPERCASE). Renaming a category updates every product in it; renaming into an existing category merges the two. New categories appear by typing them on a product card.</div>
+      <div id="cat-table"><span class="spin"></span></div>
+    </div>
+    <div class="card"><h3>Products</h3><div class="muted" style="font-size:12px">Full product editing moves here next (name, category, price, shelf, barcode, active). For now products are edited in Order Control.</div></div>
   </div>
 
   <div class="wrap" id="view-users" style="display:none">
@@ -204,7 +214,7 @@ a{color:var(--blue)}
 <div class="toast" id="toast"></div>
 
 <script>
-const ADMIN_VERSION = 'admin v1.2';
+const ADMIN_VERSION = 'admin v1.3';
 const SB_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SB_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv';
 const BUILTIN_ROLES = ['admin','operator','dispatcher','warehouse'];
@@ -288,11 +298,11 @@ function enterApp(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('who').textContent = _me.email;
-  fetchCoreVersion(); loadDash(); loadSellersAndProducts(); loadUsersTab();
+  fetchCoreVersion(); loadDash(); loadSellersAndProducts(); loadUsersTab(); loadCategories();
 }
 function showTab(v){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.v===v));
-  ['dash','prices','users','cs','reports'].forEach(x=>document.getElementById('view-'+x).style.display = x===v?'':'none');
+  ['dash','prices','prod','users','cs','reports'].forEach(x=>document.getElementById('view-'+x).style.display = x===v?'':'none');
 }
 
 /* ── live core version + team versions ── */
@@ -540,19 +550,61 @@ function spPreview(parsed){
 function spCancelImport(){ spPending=null; document.getElementById('sp-preview-card').style.display='none'; }
 async function spApply(){
   if(!spPending || !spSellerId) return;
+  if(spApply._busy) return;                       // v1.2.1: double-click on Apply raced itself → 23505
+  spApply._busy = true;
+  const btn=document.getElementById('sp-apply-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Applying…'; }
   const s=sellers.find(x=>String(x.id)===String(spSellerId));
   try{
     await api('seller_prices?seller_id=eq.'+encodeURIComponent(spSellerId), {method:'DELETE', headers:{'Prefer':'return=minimal'}});
     const entries=Object.entries(spPending.map);
     for(let i=0;i<entries.length;i+=100){
       const chunk=entries.slice(i,i+100).map(([pid,price])=>({seller_id:String(spSellerId), product_id:parseInt(pid), price, updated_by:_me.email}));
-      if(chunk.length) await api('seller_prices', {method:'POST', headers:{'Prefer':'return=minimal'}, body:chunk});
+      // v1.2.1: upsert — a retry or a concurrent run can never hit 23505 again
+      if(chunk.length) await api('seller_prices?on_conflict=seller_id,product_id', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body:chunk});
     }
     logEvent('UPDATE','seller_prices',spSellerId,{action:'seller_prices_import', seller:s?.name, ...spPending.summary, total:entries.length});
     toast(`✅ ${s?.name}: price list imported — ${entries.length} special prices`);
     spCancelImport();
     await spLoad();
-  }catch(e){ toast('Import failed: '+e.message, true); }
+  }catch(e){ toast('Import failed: '+e.message+' — press Apply once more to re-run safely', true); }
+  finally{ spApply._busy=false; if(btn){ btn.disabled=false; btn.textContent='✔ Apply'; } }
+}
+
+/* ── product categories (admin v1.3) ── */
+let allProductsA = [];
+async function loadCategories(){
+  try{
+    allProductsA = await api('products?select=id,category,active&limit=3000');
+    renderCategories();
+  }catch(e){ document.getElementById('cat-table').innerHTML='<span class="muted">failed: '+esc(e.message)+'</span>'; }
+}
+function renderCategories(){
+  const by={};
+  (allProductsA||[]).forEach(p=>{
+    const c=(p.category||'').trim().toUpperCase()||'(no category)';
+    (by[c]=by[c]||{n:0,act:0}); by[c].n++; if(p.active!==false) by[c].act++;
+  });
+  const rows=Object.entries(by).sort((a,b)=>a[0].localeCompare(b[0]));
+  document.getElementById('cat-table').innerHTML = rows.length ? '<table class="t"><tr><th>Category</th><th>Products</th><th>Active</th><th></th></tr>'+rows.map(([c,i])=>
+    `<tr><td class="mono" style="font-size:12px">${esc(c)}</td><td class="mono">${i.n}</td><td class="mono">${i.act}</td>
+     <td>${c==='(no category)'?'':`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="renameCategory('${esc(c)}')">Rename</button>`}</td></tr>`).join('')+'</table>'
+    : '<span class="muted" style="font-size:12px">No products yet</span>';
+}
+async function renameCategory(oldName){
+  const raw=prompt('New name for category "'+oldName+'":', oldName);
+  if(raw==null) return;
+  const newName=String(raw).trim().toUpperCase();
+  if(!newName || newName===oldName) return;
+  const exists=(allProductsA||[]).some(p=>(p.category||'').trim().toUpperCase()===newName);
+  if(exists && !confirm('Category "'+newName+'" already exists — the two will be MERGED. Continue?')) return;
+  try{
+    await api('products?category=eq.'+encodeURIComponent(oldName), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body:{category:newName}});
+    logEvent('UPDATE','product_category',oldName,{action:'category_renamed', from:oldName, to:newName, merged:exists||undefined});
+    toast('✅ '+oldName+' → '+newName);
+    await loadCategories();
+    await loadSellersAndProducts();   // Seller Catalog shows fresh categories too
+  }catch(e){ toast('Rename failed: '+e.message, true); }
 }
 
 /* ── users (admin v1.2 — Users tab moved from the core app) ── */
