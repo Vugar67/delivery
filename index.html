@@ -1433,7 +1433,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="Custom">Custom</option>
         </select>
       </div>
-      <div class="form-group"><label>Type <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Vial, Injection Pen...)</span></label>
+      <div class="form-group"><label>Kind <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Vial, Injection Pen...)</span></label>
         <select id="p-product-type">
           <option value="">— Not specified —</option>
         </select>
@@ -1536,7 +1536,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.70';
+const APP_VERSION = 'v13.70.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3445,7 +3445,7 @@ function renderCustomItemPickers() {
 // directory may be used elsewhere). Fixed order per business spec. The chosen
 // chip goes into the name UPPERCASE: "THYMOSIN ALPHA PEN 10mg/2ml". Click the
 // active chip again to unset.
-const CUSTOM_ITEM_TYPES = ['Pen', 'Vial', 'Spray', 'Serum', 'Derma Roller', 'Cartridge', 'Miscellaneous'];
+const CUSTOM_ITEM_TYPES = ['Pen', 'Vial', 'Spray', 'Serum', 'Derma Roller', 'Cartridge', 'Miscellaneous', 'Pack.Mat.'];   // v13.73: Pack.Mat. = Packaging Materials (short form)
 let customItemType = '';
 function renderCustomTypeChips() {
   const el = document.getElementById('custom-item-types');
@@ -3790,6 +3790,7 @@ function onClientNameInput(val, type='client') {
 }
 
 function filterSellerDropdown(q) {
+
   const dd = document.getElementById('seller-suggest');
   const list = document.getElementById('seller-suggest-list');
   const sellers = clients.filter(c => c.is_seller);
