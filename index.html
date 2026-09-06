@@ -327,6 +327,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .col-financial{display:none}
 #aramex-sync-btn{display:none} /* v13.54: manual Aramex sync — admin only */
 .role-admin #aramex-sync-btn{display:inline-block}
+#orders-export-btn{display:none}
+.role-admin #orders-export-btn{display:inline-flex}
 /* v13.63: Products/Clients are read-only for operators — no add/export/edit/delete */
 .role-operator #prod-export-btn,.role-operator #prod-add-btn,.role-operator #cl-export-btn,.role-operator #cl-add-btn{display:none!important}
 .role-operator #view-products .act-btn,.role-operator #view-clients .act-btn{display:none!important}
@@ -435,7 +437,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
-        <button class="btn btn-ghost" onclick="exportXLSX()">&#8595; XLSX</button>
+        <button class="btn btn-ghost" id="orders-export-btn" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
       <div id="dispatch-panel" style="display:none;margin-bottom:12px">
@@ -1338,7 +1340,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
           </div>
           <div style="margin-top:8px">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">TYPE</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">KIND</div>
             <div id="custom-item-types" class="shop-cats"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
@@ -1536,7 +1538,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.70.1';
+const APP_VERSION = 'v13.70.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2125,6 +2127,8 @@ async function initApp(){
   }
 
   nav.innerHTML=`<a class="tab-btn active" href="#orders" onclick="showView('orders');return false;">Orders</a>`;
+  // v13.70.2: Dispatch belongs to dispatchers and admins — operators lose the button
+  if(isOperator){ const _db=document.getElementById('dispatch-btn'); if(_db) _db.style.display='none'; }
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
@@ -2316,7 +2320,9 @@ function populateFormRefs(o){
   const frozen        = ['Ready in Lab', 'In the Warehouse'];        // process pending
   const systemOnly    = ['Ready for Pick-up', 'En Route'];           // set by warehouse/dispatcher
   const pendingBP     = ['Delivery fail/reschedule', 'Cancelled'];   // coming soon
-  const manualOK      = ['Delivered'];                               // the only manually selectable status
+  // v13.70.2: manual "Delivered" is ADMIN-ONLY. Operators never move status by
+  // hand — delivery statuses come from the process (warehouse, dispatch, Aramex).
+  const manualOK      = (currentRole === 'admin') ? ['Delivered'] : [];
 
   const deliveryEl = document.getElementById('f-delivery');
   deliveryEl.innerHTML = refs.deliveryStatus.map(r => {
@@ -2329,6 +2335,7 @@ function populateFormRefs(o){
     else if (systemOnly.includes(r.value)) hint = ` — set by ${r.value==='Ready for Pick-up'?'warehouse':'dispatcher'}`;
     else if (frozen.includes(r.value)) hint = ' — process pending';
     else if (pendingBP.includes(r.value)) hint = ' (coming soon)';
+    else if (r.value === 'Delivered') hint = ' — admin only';
     return `<option value="${r.value}" ${sel} disabled style="color:var(--muted)">${r.value}${hint}</option>`;
   }).join('');
   // ────────────────────────────────────────────────────────────────
@@ -4869,6 +4876,15 @@ async function saveOrder(){
     }
   }
   const payload={priority:parseInt(document.getElementById('f-priority').value)||3,delivery_charge:parseFloat(document.getElementById('f-delivery-charge').value)||0,discount:parseFloat((parseFloat(document.getElementById('f-discount')?.value)||0).toFixed(2)),vat_applied:!!document.getElementById('f-vat-apply')?.checked,location_url:document.getElementById('f-location-url').value||null,wa_show_items:document.getElementById('f-wa-show-items').checked,order_date:get('f-date')||null,sched_date:_schedDate||null,sched_from:_schedFrom||null,sched_to:_schedTo||null,emirate:get('f-emirate'),city:document.getElementById('f-city')?.value||'',apt:getDistrictValue(),villa:get('f-apt')||null,client_name:get('f-client-name')||null,seller_name:get('f-seller-name')||null,client_number:_phoneNorm,po_number:(document.getElementById('f-po-number')?.value||'').replace(/\D/g,'').slice(0,8)||null,driver:get('f-driver'),payment_status:get('f-payment'),delivery_status:get('f-delivery'),confirmed:get('f-confirmed'),notes:get('f-notes'),driver_note:get('f-driver-note')||null,actual_weight:(isFinite(_wt)&&_wt>0)?_wt:null,app_version:APP_VERSION,raw_message:document.getElementById('f-raw-message')?.value||null,updated_by:currentUser.email,updated_at:new Date().toISOString()};
+  // v13.70.2: operators cannot hand-set delivery statuses — process only.
+  if (currentRole !== 'admin' && editId) {
+    const _os = orders.find(x => x.id === editId);
+    const _lockedTo = ['Delivered', 'En Route', 'Ready for Pick-up', 'Ready in Lab', 'In the Warehouse', 'Delivery fail/reschedule'];
+    if (_os && payload.delivery_status !== (_os.delivery_status || '') && _lockedTo.includes(payload.delivery_status)) {
+      toast('🔒 Delivery status "' + payload.delivery_status + '" is set by the process (warehouse / dispatch / Aramex) or an admin', true);
+      return;
+    }
+  }
   // v13.68: operators cannot change the driver — the stored value always wins,
   // whatever the (disabled) select happens to hold. New orders start unassigned.
   if (currentRole === 'operator') {
@@ -6070,6 +6086,7 @@ async function _loadXLSX(){
 }
 
 async function exportXLSX(){
+  if (currentRole !== 'admin') { toast('🔒 Export — admins only', true); return; }   // v13.70.2: full client base leaves only through the admin
   // Export exactly what the operator/admin currently sees under the active
   // filters (search, emirate, delivery statuses, driver, confirmed, content,
   // date range) in the on-screen sort order — all pages, not just the visible one.
@@ -7532,6 +7549,7 @@ function _aramexFailedHtml(id) {
 // One order through the Aramex path: COD guard → create AWB → save → open label.
 // Returns true on success; on failure the order is left completely untouched.
 async function dispatchAramexOne(id) {
+  if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return false; }
   const o = orders.find(x => x.id === id);
   if (!o) return false;
   // v13.66 (stale-tab guard): NEVER trust the open tab — re-read the order from
@@ -7906,6 +7924,7 @@ function extractCoordsFromUrl(url) {
 }
 
 function toggleDispatchMode() {
+  if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return; }
   dispatchMode = !dispatchMode;
   dispatchSelected = [];
   dispatchDriverName = '';
@@ -8373,6 +8392,7 @@ function openDispatchModal() {
 }
 
 async function dispatchSendOne(id) {
+  if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return; }
   const btn = document.getElementById('dsm-btn-' + id);
   const statusEl = document.getElementById('dsm-status-' + id);
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
