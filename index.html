@@ -1538,7 +1538,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.70.2';
+const APP_VERSION = 'v13.70.3';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4577,12 +4577,12 @@ function renderLogs() {
 // ─── LOG HISTORY SIDE PANEL ────────────────────────────────────────
 function _lhEsc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function _lhFieldLabel(f){
-  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',po_number:'PO number',awb:'AWB',prev_awb:'replaces AWB',aramex_time:'aramex time',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT'};
+  const m={delivery_status:'delivery status',payment_status:'payment',driver:'driver',confirmed:'confirmed',priority:'priority',emirate:'emirate',city:'city',notes:'internal note',driver_note:'driver note',po_number:'PO number',awb:'AWB',prev_awb:'replaces AWB',aramex_time:'aramex time',client_name:'client',seller_name:'seller',total:'total',client:'client',seller:'seller',warehouse_status:'warehouse status',sched_date:'scheduled date',sched_from:'scheduled from',sched_to:'scheduled to',delivery_charge:'delivery charge',discount:'discount',vat_applied:'5% VAT',reason:'reason',driver_failed:'driver (failed attempt)',driver_removed:'driver removed',driver_new:'new driver'};
   return m[f]||f;
 }
 function _lhActionLabel(l){
   const d=l.details||{};
-  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver',aramex_awb_created:'🚀 Aramex: AWB created',aramex_awb_failed:'⚠️ Aramex: AWB failed',aramex_track_update:'🚀 Aramex: tracking update',aramex_auto_delivered:'✅ Aramex: delivered (auto)',invoice_issued:'🧾 Invoice issued',invoice_reissued:'🧾 Invoice re-issued (new №)'};
+  const sub={warehouse_packed:'📦 Warehouse: packed',warehouse_problem:'⚠️ Warehouse: problem',warehouse_status:'📦 Warehouse: status',priority_change:'⭐ Priority changed',wa_sent_to_client:'📱 WhatsApp to client',wa_sent_to_driver:'🚚 WhatsApp to driver',aramex_awb_created:'🚀 Aramex: AWB created',aramex_awb_failed:'⚠️ Aramex: AWB failed',aramex_track_update:'🚀 Aramex: tracking update',aramex_auto_delivered:'✅ Aramex: delivered (auto)',invoice_issued:'🧾 Invoice issued',invoice_reissued:'🧾 Invoice re-issued (new №)',dispatch_sent:'🚚 Dispatch: sent to driver',dispatch_reassign:'⇄ Dispatch: driver reassigned',dispatch_unassign:'✕ Dispatch: unassigned — back to queue',dispatch_mark_delivered:'✅ Delivered by driver (dispatch)',dispatch_delivery_failed:'↩ Delivery failed — back to queue'};
   if(d.action && sub[d.action]) return sub[d.action];
   const base={CREATE:'🆕 Created',UPDATE:'✏️ Updated',DELETE:'🗑 Deleted',LOGIN:'Login',LOGOUT:'Logout',EXPORT:'Export'};
   return base[l.action]||l.action||'—';
@@ -8101,6 +8101,108 @@ async function dispatchUnassign(orderId) {
   toast(o.order_num + ' unassigned — returned to queue');
 }
 
+// ─── v13.70.3: own-driver delivery outcome (dispatcher's legitimate close) ───
+// Aramex orders close themselves on SH005; OWN drivers (WhatsApp path) have no
+// automatic signal, and since v13.70.2 operators cannot set Delivered manually.
+// The dispatcher — the one person actually talking to the drivers — closes them
+// here, in his own interface, fully logged. A failed attempt returns the order
+// TO THE QUEUE (Ready for Pick-up) for re-dispatch; the Delivery fail/reschedule
+// status stays reserved until its business process is designed.
+
+async function dispatchMarkDelivered(orderId) {
+  if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return; }
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  if ((o.driver || '') === ARAMEX_DRIVER) { toast('Aramex orders are closed automatically by tracking (SH005)', true); return; }
+  // v13.66-style stale-tab guard: re-read from the DB before acting
+  try {
+    const { data: fresh } = await sb.from('orders').select('delivery_status,driver,client_name').eq('id', orderId).single();
+    if (fresh) Object.assign(o, fresh);
+  } catch (e) { /* network hiccup — proceed with the local copy */ }
+  if (o.delivery_status !== 'En Route') {
+    toast(o.order_num + ' is no longer En Route (' + (o.delivery_status || '—') + ')', true);
+    renderDispatchSent(); renderDispatchQueue(); return;
+  }
+  if (!confirm('Mark ' + o.order_num + ' as DELIVERED?\nDriver: ' + (o.driver || '—') + '\nClient: ' + (o.client_name || '—'))) return;
+  await sb.from('orders').update({ delivery_status: 'Delivered', updated_by: currentUser.email }).eq('id', orderId);
+  o.delivery_status = 'Delivered';
+  logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_mark_delivered', driver: o.driver, delivery_status: 'Delivered' });
+  renderDispatchSent();
+  renderDispatchQueue();
+  toast('✅ ' + o.order_num + ' — delivered by ' + (o.driver || 'driver'));
+}
+
+async function dispatchMarkFailed(orderId) {
+  if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return; }
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  if ((o.driver || '') === ARAMEX_DRIVER) { toast('Aramex delivery problems arrive via tracking (⚠️ problem codes)', true); return; }
+  try {
+    const { data: fresh } = await sb.from('orders').select('delivery_status,driver').eq('id', orderId).single();
+    if (fresh) Object.assign(o, fresh);
+  } catch (e) { /* network hiccup — proceed with the local copy */ }
+  if (o.delivery_status !== 'En Route') {
+    toast(o.order_num + ' is no longer En Route (' + (o.delivery_status || '—') + ')', true);
+    renderDispatchSent(); renderDispatchQueue(); return;
+  }
+  const reason = await pickFailReason(o.order_num);
+  if (!reason) return;
+  const failedDriver = o.driver;
+  // Same reset as Unassign, but the failed ATTEMPT is recorded with its reason —
+  // Unassign means "we cancelled the dispatch", Failed means "driver went and could not".
+  await sb.from('orders').update({ driver: null, wa_sent: false, wa_sent_at: null, wa_sent_by: null, delivery_status: 'Ready for Pick-up', updated_by: currentUser.email }).eq('id', orderId);
+  o.driver = null; o.wa_sent = false; o.wa_sent_at = null; o.delivery_status = 'Ready for Pick-up';
+  logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_delivery_failed', driver_failed: failedDriver, reason: reason, delivery_status: 'Ready for Pick-up' });
+  renderDispatchSent();
+  renderDispatchQueue();
+  toast('↩ ' + o.order_num + ' back to queue — ' + reason);
+}
+
+function pickFailReason(orderNum) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('pick-fail-overlay');
+    if (existing) existing.remove();
+    const REASONS = ['Customer not answering', 'Customer postponed', 'Customer refused', 'Address problem', 'Driver could not finish route'];
+    const overlay = document.createElement('div');
+    overlay.id = 'pick-fail-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:center;justify-content:center';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;width:320px;max-height:420px;overflow-y:auto';
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;display:flex;justify-content:space-between';
+    header.innerHTML = '<span>↩ ' + orderNum + ' — why failed?</span>';
+    const closeBtn = document.createElement('span');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'cursor:pointer;color:var(--muted)';
+    closeBtn.onclick = () => { overlay.remove(); resolve(null); };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+    REASONS.forEach(rs => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)';
+      row.textContent = rs;
+      row.onmouseover = () => row.style.background = 'var(--surface2)';
+      row.onmouseout = () => row.style.background = '';
+      row.onclick = () => { overlay.remove(); resolve(rs); };
+      modal.appendChild(row);
+    });
+    const other = document.createElement('div');
+    other.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;color:var(--muted)';
+    other.textContent = 'Other…';
+    other.onmouseover = () => other.style.background = 'var(--surface2)';
+    other.onmouseout = () => other.style.background = '';
+    other.onclick = () => {
+      const t = prompt('Reason:');
+      if (t == null) return; // cancelled the prompt — stay in the picker
+      overlay.remove();
+      resolve((t || '').trim() || 'Other');
+    };
+    modal.appendChild(other);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  });
+}
+
 async function sendCancellationToDriver(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o || !o.driver) return;
@@ -8181,6 +8283,10 @@ function renderDispatchSent() {
           </div>
           <div style="font-size:11px;color:var(--text);margin-bottom:4px">${o.client_name||'—'}</div>
           <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+          ${(o.driver || '') !== ARAMEX_DRIVER ? `<div style="display:flex;gap:4px;margin-bottom:4px">
+            <button onclick="event.stopPropagation();dispatchMarkDelivered('${o.id}')" title="Driver delivered this order — close it" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);font-weight:700;background:rgba(74,222,128,.18);color:var(--green);border:1px solid rgba(74,222,128,.45);border-radius:5px;cursor:pointer">✓ Delivered</button>
+            <button onclick="event.stopPropagation();dispatchMarkFailed('${o.id}')" title="Driver could not deliver — pick a reason, order returns to the queue" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(255,80,80,.12);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:5px;cursor:pointer">↩ Failed</button>
+          </div>` : ''}
           <div style="display:flex;gap:4px">
             ${o.aramex_awb ? `<button onclick="event.stopPropagation();openAramexLabel('${escAttr(o.aramex_label_url||'')}','${o.order_num||''}')" title="AWB ${o.aramex_awb}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(245,166,35,.15);color:var(--accent);border:1px solid rgba(245,166,35,.3);border-radius:5px;cursor:pointer">📄 Label</button><button onclick="event.stopPropagation();openAramexTrack('${o.id}')" title="Aramex tracking${o.aramex_last_desc?': '+escAttr(o.aramex_last_desc):''}" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3);border-radius:5px;cursor:pointer">🔍 Track</button>` : ''}
             <button onclick="event.stopPropagation();dispatchResend('${o.id}')" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(37,211,102,.15);color:#25d366;border:1px solid rgba(37,211,102,.3);border-radius:5px;cursor:pointer">↺ Resend</button>
