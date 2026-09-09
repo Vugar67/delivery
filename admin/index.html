@@ -210,14 +210,61 @@ a{color:var(--blue)}
   </div>
 
   <div class="wrap" id="view-reports" style="display:none">
-    <div class="card"><h3>Reports</h3><div class="muted" style="font-size:12px">Export catalog coming next — the report list is being agreed with the admin.</div></div>
+    <div class="card">
+      <h3>Report builder <span style="text-transform:none;letter-spacing:0" class="muted">— orders</span></h3>
+      <div id="rp-presets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <span class="muted" style="font-size:11px;letter-spacing:.5px">PERIOD</span>
+        <span id="rp-quick"></span>
+        <input type="date" id="rp-from" onchange="rpCustomPeriod()" style="padding:6px 8px;font-size:12px">
+        <span class="muted">—</span>
+        <input type="date" id="rp-to" onchange="rpCustomPeriod()" style="padding:6px 8px;font-size:12px">
+        <select id="rp-basis" onchange="rpRun()" style="padding:6px 8px;font-size:12px" title="Which date the period applies to">
+          <option value="created">by created date</option>
+          <option value="delivered">by delivered date</option>
+          <option value="sched">by scheduled date</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <span class="muted" style="font-size:11px;letter-spacing:.5px">STATUS</span>
+        <span id="rp-status-chips"></span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <select id="rp-payment" onchange="rpApply()" style="padding:6px 8px;font-size:12px"><option value="">Payment — all</option></select>
+        <select id="rp-seller" onchange="rpApply()" style="padding:6px 8px;font-size:12px"><option value="">Seller — all</option></select>
+        <select id="rp-driver" onchange="rpApply()" style="padding:6px 8px;font-size:12px"><option value="">Driver — all</option></select>
+        <select id="rp-emirate" onchange="rpApply()" style="padding:6px 8px;font-size:12px"><option value="">Emirate — all</option></select>
+        <input id="rp-q" placeholder="Client / phone / order №" oninput="rpApplyDebounced()" style="padding:6px 10px;font-size:12px;width:190px">
+        <label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="rp-probs" onchange="rpApply()" style="width:auto;padding:0">⚠️ Aramex problems only</label>
+        <label style="font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="rp-po" onchange="rpApply()" style="width:auto;padding:0">PO only</label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="rp-group" onchange="rpApply()" style="padding:6px 8px;font-size:12px">
+          <option value="">No grouping</option>
+          <option value="day">Group by day</option>
+          <option value="seller_name">Group by seller</option>
+          <option value="driver">Group by driver</option>
+          <option value="emirate">Group by emirate</option>
+          <option value="delivery_status">Group by status</option>
+          <option value="payment_status">Group by payment</option>
+        </select>
+        <details id="rp-cols-dd" style="position:relative">
+          <summary class="btn btn-ghost" style="padding:6px 10px;font-size:12px;list-style:none;cursor:pointer">Columns ▾</summary>
+          <div id="rp-cols" style="position:absolute;z-index:50;top:110%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;min-width:210px;max-height:300px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.35)"></div>
+        </details>
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="rpSavePreset()">★ Save as report</button>
+        <button class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="rpExport()">⬇ XLSX</button>
+        <span class="muted mono" style="font-size:11px" id="rp-meta"></span>
+      </div>
+    </div>
+    <div class="card" id="rp-result"><div class="muted" style="font-size:12px">Pick a period (or a saved report above) — the table builds instantly.</div></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-const ADMIN_VERSION = 'admin v1.3.1';
+const ADMIN_VERSION = 'admin v1.4';
 const SB_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SB_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv';
 const BUILTIN_ROLES = ['admin','operator','dispatcher','warehouse'];
@@ -306,6 +353,7 @@ function enterApp(){
 function showTab(v){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.v===v));
   ['dash','prices','prod','users','cs','reports'].forEach(x=>document.getElementById('view-'+x).style.display = x===v?'':'none');
+  if(v==='reports') rpEnsure();
 }
 
 /* ── live core version + team versions ── */
@@ -795,6 +843,354 @@ async function setPasswordA(){
     }
   }catch(e){ toast('❌ '+String(e.message||e), true); }
   btn.disabled=false;
+}
+
+/* ── reports: order report builder (v1.4) ─────────────────────────
+   One constructor instead of canned reports: period + date basis +
+   combinable filters + grouping + sortable columns + shared presets.
+   Fetch is server-side by period/basis only; every other control works
+   on the loaded set in memory — instant. delivered_at may be null for
+   orders closed before the core stamps it: ≈ falls back to updated_at. */
+const RP_STATUSES = ['Not Confirmed','Processing in Lab','Ready in Lab','In the Warehouse','Ready for Pick-up','En Route','Delivered','Delivery fail/reschedule','Cancelled'];
+const RP_PERIODS = [['today','Today'],['yest','Yesterday'],['7','7 days'],['30','30 days'],['month','This month'],['lastmonth','Last month']];
+const RP_COLS = [
+  {k:'order_num',l:'Order'},{k:'created',l:'Created'},{k:'delivered',l:'Delivered'},{k:'sched_date',l:'Scheduled'},
+  {k:'delivery_status',l:'Status'},{k:'payment_status',l:'Payment'},{k:'client_name',l:'Client'},{k:'client_number',l:'Phone'},
+  {k:'seller_name',l:'Seller'},{k:'emirate',l:'Emirate'},{k:'city',l:'City'},{k:'driver',l:'Driver'},
+  {k:'aramex',l:'AWB'},{k:'po',l:'PO'},{k:'invoice_number',l:'Invoice'},
+  {k:'subtotal',l:'Subtotal',num:1},{k:'delivery_charge',l:'Delivery',num:1},{k:'discount',l:'Discount',num:1},{k:'total',l:'Net AED',num:1}
+];
+const RP_DEFAULT_COLS = ['order_num','created','delivered','delivery_status','payment_status','client_name','seller_name','emirate','driver','total'];
+const RP_BUILTINS = [
+  {name:'Delivered — this month',        config:{period:'month', basis:'delivered', group:'day'}},
+  {name:'Delivered — last 7 days',       config:{period:'7', basis:'delivered', group:'day'}},
+  {name:'Revenue by seller — this month',config:{period:'month', basis:'created', group:'seller_name'}},
+  {name:'Cancelled — this month',        config:{period:'month', basis:'created', status:['Cancelled']}},
+  {name:'Aramex problems (open)',        config:{period:'30', basis:'created', probs:true, status:['Ready for Pick-up','En Route','Delivery fail/reschedule']}},
+];
+let rpState = {period:'7', from:'', to:'', basis:'created', status:[], group:'', sort:{k:'created', dir:'desc'}, cols:RP_DEFAULT_COLS.slice()};
+let rpRaw = [], rpRows = [], rpPresets = [], rpInited = false, rpLoading = false;
+
+function rpUaeDay(msOrIso, shiftDays=0){ const t=(typeof msOrIso==='number'?msOrIso:new Date(msOrIso).getTime())+UAE_OFF-(shiftDays*86400000); return new Date(t).toISOString().slice(0,10); }
+function rpDayStartISO(d){ return new Date(d+'T00:00:00+04:00').toISOString(); }
+function rpNextDayISO(d){ return new Date(new Date(d+'T00:00:00+04:00').getTime()+86400000).toISOString(); }
+function rpResolvePeriod(){
+  const today = rpUaeDay(Date.now());
+  let f = today, t = today;
+  const p = rpState.period;
+  if(p==='yest'){ f=t=rpUaeDay(Date.now(),1); }
+  else if(p==='7'){ f=rpUaeDay(Date.now(),6); }
+  else if(p==='30'){ f=rpUaeDay(Date.now(),29); }
+  else if(p==='month'){ f=today.slice(0,8)+'01'; }
+  else if(p==='lastmonth'){ const d=new Date(today.slice(0,8)+'01T00:00:00Z'); const last=new Date(d.getTime()-86400000); f=last.toISOString().slice(0,8)+'01'; t=last.toISOString().slice(0,10); }
+  else if(p==='custom'){ f=document.getElementById('rp-from').value||today; t=document.getElementById('rp-to').value||today; if(f>t){const x=f;f=t;t=x;} }
+  return {f, t};
+}
+function rpCustomPeriod(){ rpState.period='custom'; rpRun(); }
+
+function rpEnsure(){
+  if(rpInited) return; rpInited = true;
+  document.getElementById('rp-quick').innerHTML = RP_PERIODS.map(([v,l]) =>
+    `<button class="btn btn-ghost rp-qp" data-p="${v}" style="padding:5px 9px;font-size:12px;margin-right:4px" onclick="rpQuick('${v}')">${l}</button>`).join('');
+  rpRenderStatusChips();
+  document.getElementById('rp-cols').innerHTML = RP_COLS.map(c =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;cursor:pointer"><input type="checkbox" data-col="${c.k}" ${rpState.cols.includes(c.k)?'checked':''} onchange="rpColsChanged()" style="width:auto;padding:0">${c.l}</label>`).join('');
+  rpLoadPresets();
+  rpRun();
+}
+function rpQuick(p){ rpState.period = p; rpRun(); }
+function rpRenderStatusChips(){
+  const dis = rpState.basis==='delivered';
+  document.getElementById('rp-status-chips').innerHTML = RP_STATUSES.map(s => {
+    const on = dis ? s==='Delivered' : rpState.status.includes(s);
+    return `<button class="btn ${on?'btn-primary':'btn-ghost'}" ${dis?'disabled title="Period is by delivered date — only Delivered orders"':''} style="padding:3px 8px;font-size:11px;margin:0 4px 4px 0;${dis?'opacity:.55;':''}" onclick="rpToggleStatus('${s.replace(/'/g,"\\'")}')">${s}</button>`;
+  }).join('') + `<span class="muted" style="font-size:11px;margin-left:4px">${dis?'':'none selected = all'}</span>`;
+}
+function rpToggleStatus(s){
+  if(rpState.basis==='delivered') return;
+  const i = rpState.status.indexOf(s);
+  if(i===-1) rpState.status.push(s); else rpState.status.splice(i,1);
+  rpRenderStatusChips(); rpApply();
+}
+function rpColsChanged(){
+  rpState.cols = Array.from(document.querySelectorAll('#rp-cols input:checked')).map(x=>x.dataset.col);
+  rpRender();
+}
+
+async function rpRun(){
+  if(rpLoading) return;
+  rpState.basis = document.getElementById('rp-basis').value;
+  const {f, t} = rpResolvePeriod();
+  rpState.from = f; rpState.to = t;
+  document.getElementById('rp-from').value = f;
+  document.getElementById('rp-to').value = t;
+  document.querySelectorAll('.rp-qp').forEach(b=>b.classList.toggle('btn-primary', b.dataset.p===rpState.period && rpState.period!=='custom'));
+  document.querySelectorAll('.rp-qp').forEach(b=>b.classList.toggle('btn-ghost', !(b.dataset.p===rpState.period && rpState.period!=='custom')));
+  rpRenderStatusChips();
+  rpLoading = true;
+  document.getElementById('rp-result').innerHTML = '<div style="padding:18px"><span class="spin"></span></div>';
+  const t0 = Date.now();
+  try{
+    const sel = 'select=id,order_num,created_at,updated_at,delivered_at,sched_date,delivery_status,payment_status,client_name,client_number,seller_name,emirate,city,driver,aramex_awb,aramex_problem_code,po_number,invoice_number,subtotal,delivery_charge,discount,total';
+    const fISO = rpDayStartISO(f), tISO = rpNextDayISO(t);
+    let base;
+    if(rpState.basis==='delivered')
+      base = 'orders?'+sel+'&deleted=is.null&delivery_status=eq.Delivered&or=(and(delivered_at.gte.'+fISO+',delivered_at.lt.'+tISO+'),and(delivered_at.is.null,updated_at.gte.'+fISO+',updated_at.lt.'+tISO+'))';
+    else if(rpState.basis==='sched')
+      base = 'orders?'+sel+'&deleted=is.null&sched_date=gte.'+f+'&sched_date=lte.'+t;
+    else
+      base = 'orders?'+sel+'&deleted=is.null&created_at=gte.'+fISO+'&created_at=lt.'+tISO;
+    let all=[], off=0;
+    for(;;){
+      const page = await api(base+'&order=created_at.desc&limit=1000&offset='+off);
+      all = all.concat(page||[]);
+      if(!page || page.length<1000 || off>20000) break;
+      off += 1000;
+    }
+    rpRaw = all;
+    rpFillFilterOptions();
+    document.getElementById('rp-meta').textContent = all.length+' orders loaded · '+(Date.now()-t0)+'ms';
+    rpApply();
+  }catch(e){
+    document.getElementById('rp-result').innerHTML = '<div class="muted" style="font-size:12px;padding:8px">❌ '+esc(e.message||e)+'</div>';
+  }
+  rpLoading = false;
+}
+function rpFillFilterOptions(){
+  const fill = (id, key, label) => {
+    const el = document.getElementById(id);
+    const cur = el.value;
+    const vals = [...new Set(rpRaw.map(o=>o[key]||''))].filter(Boolean).sort((a,b)=>a.localeCompare(b));
+    el.innerHTML = '<option value="">'+label+'</option>' + vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    if(vals.includes(cur)) el.value = cur;
+  };
+  fill('rp-payment','payment_status','Payment — all');
+  fill('rp-seller','seller_name','Seller — all');
+  fill('rp-driver','driver','Driver — all');
+  fill('rp-emirate','emirate','Emirate — all');
+}
+
+let _rpQT = null;
+function rpApplyDebounced(){ clearTimeout(_rpQT); _rpQT = setTimeout(rpApply, 250); }
+function rpDeliveredIso(o){ return o.delivery_status==='Delivered' ? (o.delivered_at || o.updated_at || '') : ''; }
+function rpVal(o, k){
+  if(k==='created') return o.created_at||'';
+  if(k==='delivered') return rpDeliveredIso(o);
+  if(k==='aramex') return o.aramex_awb||'';
+  if(k==='po') return o.po_number ? 'PO'+o.po_number : '';
+  const c = RP_COLS.find(x=>x.k===k);
+  if(c && c.num) return parseFloat(o[k])||0;
+  return o[k]==null?'':String(o[k]);
+}
+function rpApply(){
+  const g = id => document.getElementById(id);
+  const payment=g('rp-payment').value, seller=g('rp-seller').value, driver=g('rp-driver').value, emirate=g('rp-emirate').value;
+  const q=g('rp-q').value.trim(), probs=g('rp-probs').checked, po=g('rp-po').checked;
+  rpState.group = g('rp-group').value;
+  let rows = rpRaw;
+  if(rpState.basis==='delivered') rows = rows.filter(o=>o.delivery_status==='Delivered');   // belt over the server-side filter
+  else if(rpState.status.length) rows = rows.filter(o=>rpState.status.includes(o.delivery_status||''));
+  if(payment) rows = rows.filter(o=>(o.payment_status||'')===payment);
+  if(seller) rows = rows.filter(o=>(o.seller_name||'')===seller);
+  if(driver) rows = rows.filter(o=>(o.driver||'')===driver);
+  if(emirate) rows = rows.filter(o=>(o.emirate||'')===emirate);
+  if(probs) rows = rows.filter(o=>o.aramex_problem_code);
+  if(po) rows = rows.filter(o=>o.po_number);
+  if(q){
+    const ql=q.toLowerCase(), qd=digits(q).replace(/^0+/,'');   // "052 999…" matches "+971 52 999…"
+    rows = rows.filter(o => (o.client_name||'').toLowerCase().includes(ql)
+      || (o.order_num||'').toLowerCase().includes(ql)
+      || (qd.length>=4 && digits(o.client_number).includes(qd)));
+  }
+  const {k, dir} = rpState.sort;
+  const col = RP_COLS.find(x=>x.k===k) || {};
+  rows = rows.slice().sort((a,b)=>{
+    const av=rpVal(a,k), bv=rpVal(b,k);
+    let c;
+    if(col.num) c = av-bv;
+    else { if(av===''&&bv!=='') return 1; if(bv===''&&av!=='') return -1; c = String(av).localeCompare(String(bv)); }
+    return dir==='desc' ? -c : c;
+  });
+  rpRows = rows;
+  rpRender();
+}
+function rpSort(k){
+  if(rpState.sort.k===k) rpState.sort.dir = rpState.sort.dir==='desc'?'asc':'desc';
+  else rpState.sort = {k, dir: (RP_COLS.find(x=>x.k===k)||{}).num||k==='created'||k==='delivered' ? 'desc':'asc'};
+  rpApply();
+}
+function rpBasisIso(o){ return rpState.basis==='delivered' ? rpDeliveredIso(o) : rpState.basis==='sched' ? o.sched_date : o.created_at; }
+function rpGroupKey(o){
+  if(rpState.group==='day'){ const v=rpBasisIso(o); if(!v) return '—'; return rpState.basis==='sched' ? v : rpUaeDay(v); }
+  return String(o[rpState.group]||'—');
+}
+function rpCell(o, k){
+  if(k==='order_num') return '<td class="mono" style="color:var(--accent);font-size:12px">'+esc(o.order_num)+'</td>';
+  if(k==='created') return '<td class="mono muted" style="font-size:11px">'+uaeDT(o.created_at)+'</td>';
+  if(k==='delivered'){
+    if(o.delivery_status!=='Delivered') return '<td class="muted">—</td>';
+    return o.delivered_at ? '<td class="mono" style="font-size:11px">'+uaeDT(o.delivered_at)+'</td>'
+      : '<td class="mono muted" style="font-size:11px" title="Exact stamp not recorded yet — approximated by the last order update">≈ '+uaeDT(o.updated_at)+'</td>';
+  }
+  if(k==='sched_date') return '<td class="mono muted" style="font-size:11px">'+esc(o.sched_date||'—')+'</td>';
+  if(k==='aramex') return '<td class="mono" style="font-size:11px">'+esc(o.aramex_awb||'—')+(o.aramex_problem_code?' <span title="'+esc(o.aramex_problem_code)+'">⚠️</span>':'')+'</td>';
+  if(k==='po') return '<td class="mono" style="font-size:11px">'+(o.po_number?'PO'+esc(o.po_number):'—')+'</td>';
+  const c = RP_COLS.find(x=>x.k===k);
+  if(c && c.num) return '<td class="mono" style="text-align:right">'+fmtAed(o[k])+'</td>';
+  return '<td style="font-size:12px">'+esc(o[k]||'—')+'</td>';
+}
+function rpSums(rows){
+  const s = {n:rows.length, subtotal:0, delivery_charge:0, discount:0, total:0};
+  rows.forEach(o=>{ s.subtotal+=parseFloat(o.subtotal)||0; s.delivery_charge+=parseFloat(o.delivery_charge)||0; s.discount+=parseFloat(o.discount)||0; s.total+=parseFloat(o.total)||0; });
+  return s;
+}
+function rpSumRow(label, s, cls){
+  const cols = RP_COLS.filter(c=>rpState.cols.includes(c.k));
+  return '<tr class="'+(cls||'')+'" style="font-weight:700;background:var(--surface2)">'+cols.map((c,i)=>{
+    if(i===0) return '<td style="font-size:12px">'+label+'</td>';
+    if(c.num) return '<td class="mono" style="text-align:right">'+fmtAed(s[c.k])+'</td>';
+    return '<td></td>';
+  }).join('')+'</tr>';
+}
+function rpRender(){
+  const el = document.getElementById('rp-result');
+  const cols = RP_COLS.filter(c=>rpState.cols.includes(c.k));
+  if(!rpRows.length){ el.innerHTML = '<div class="muted" style="font-size:12px;padding:6px">No orders match — widen the period or clear filters.</div>'; return; }
+  const head = '<tr>'+cols.map(c=>{
+    const active = rpState.sort.k===c.k;
+    return '<th onclick="rpSort(\''+c.k+'\')" style="cursor:pointer;white-space:nowrap;user-select:none'+(c.num?';text-align:right':'')+'">'+c.l+(active?(rpState.sort.dir==='desc'?' ▼':' ▲'):'')+'</th>';
+  }).join('')+'</tr>';
+  let body = '';
+  if(rpState.group){
+    const groups = {};
+    rpRows.forEach(o=>{ const k=rpGroupKey(o); (groups[k]=groups[k]||[]).push(o); });
+    const names = Object.keys(groups).sort((a,b)=> rpState.group==='day' ? b.localeCompare(a) : rpSums(groups[b]).total - rpSums(groups[a]).total);
+    names.forEach(nm=>{
+      const rows = groups[nm];
+      const label = rpState.group==='day' && nm!=='—' ? nm.split('-').reverse().join('.') : nm;
+      body += '<tr><td colspan="'+cols.length+'" style="background:var(--surface2);font-weight:700;font-size:12px;color:var(--accent);padding:7px 10px">'+esc(label)+' <span class="muted" style="font-weight:400">· '+rows.length+' orders</span></td></tr>';
+      rows.forEach(o=>{ body += '<tr>'+cols.map(c=>rpCell(o,c.k)).join('')+'</tr>'; });
+      body += rpSumRow('Subtotal — '+esc(label), rpSums(rows));
+    });
+  } else {
+    rpRows.forEach(o=>{ body += '<tr>'+cols.map(c=>rpCell(o,c.k)).join('')+'</tr>'; });
+  }
+  const tot = rpSums(rpRows);
+  const canc = rpRows.filter(o=>o.delivery_status==='Cancelled');
+  let note = '';
+  if(canc.length){
+    const cs = rpSums(canc);
+    note = '<div class="muted" style="font-size:11px;margin-top:6px">Includes '+canc.length+' Cancelled totaling '+fmtAed(cs.total)+' AED — revenue figures on the dashboard exclude Cancelled ('+fmtAed(tot.total-cs.total)+' AED without them).</div>';
+  }
+  el.innerHTML = '<div style="overflow:auto;max-height:64vh"><table class="t" style="min-width:700px">'+head+body+rpSumRow('TOTAL — '+tot.n+' orders', tot)+'</table></div>'+note;
+}
+
+/* ── reports: shared presets ── */
+async function rpLoadPresets(){
+  try{ rpPresets = await api('report_presets?select=id,name,config,created_by&order=name.asc') || []; }
+  catch(e){ rpPresets = []; }
+  const el = document.getElementById('rp-presets');
+  el.innerHTML =
+    RP_BUILTINS.map((p,i)=>`<button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="rpApplyBuiltin(${i})">${esc(p.name)}</button>`).join('') +
+    rpPresets.map(p=>`<span style="display:inline-flex;align-items:stretch"><button class="btn btn-ghost" style="padding:5px 8px 5px 10px;font-size:12px;border-radius:8px 0 0 8px;border-right:none" title="Saved by ${esc(p.created_by||'—')}" onclick="rpApplyPreset(${p.id})">★ ${esc(p.name)}</button><button class="btn btn-ghost" style="padding:5px 7px;font-size:11px;border-radius:0 8px 8px 0;color:var(--muted)" title="Delete this saved report" onclick="rpDeletePreset(${p.id})">✕</button></span>`).join('');
+}
+function rpApplyConfig(cfg){
+  rpState.period = cfg.period || 'custom';
+  rpState.basis  = cfg.basis || 'created';
+  rpState.status = (cfg.status||[]).slice();
+  rpState.group  = cfg.group || '';
+  rpState.sort   = cfg.sort || {k:'created', dir:'desc'};
+  if(cfg.cols) rpState.cols = cfg.cols.slice();
+  document.getElementById('rp-basis').value = rpState.basis;
+  document.getElementById('rp-group').value = rpState.group;
+  if(cfg.period==='custom'){ document.getElementById('rp-from').value=cfg.from||''; document.getElementById('rp-to').value=cfg.to||''; }
+  document.getElementById('rp-payment').value = cfg.payment||'';
+  document.getElementById('rp-seller').value = cfg.seller||'';
+  document.getElementById('rp-driver').value = cfg.driver||'';
+  document.getElementById('rp-emirate').value = cfg.emirate||'';
+  document.getElementById('rp-q').value = cfg.q||'';
+  document.getElementById('rp-probs').checked = !!cfg.probs;
+  document.getElementById('rp-po').checked = !!cfg.po;
+  document.querySelectorAll('#rp-cols input').forEach(x=>x.checked = rpState.cols.includes(x.dataset.col));
+  rpRun();
+}
+function rpApplyBuiltin(i){ rpApplyConfig(RP_BUILTINS[i].config); }
+function rpApplyPreset(id){ const p = rpPresets.find(x=>x.id===id); if(p) rpApplyConfig(p.config||{}); }
+async function rpSavePreset(){
+  const name = (prompt('Name for this report (visible to all admins):')||'').trim();
+  if(!name) return;
+  const g = id => document.getElementById(id);
+  const cfg = {
+    period: rpState.period, from: rpState.from, to: rpState.to, basis: rpState.basis,
+    status: rpState.status.slice(), payment: g('rp-payment').value, seller: g('rp-seller').value,
+    driver: g('rp-driver').value, emirate: g('rp-emirate').value, q: g('rp-q').value.trim(),
+    probs: g('rp-probs').checked, po: g('rp-po').checked,
+    group: rpState.group, sort: rpState.sort, cols: rpState.cols.slice()
+  };
+  try{
+    await api('report_presets', {method:'POST', body:{name, config:cfg, created_by:_me?.email||null}, headers:{'Prefer':'return=minimal'}});
+    logEvent('CREATE','report_preset','',{name});
+    toast('★ Report "'+name+'" saved — every admin now has it');
+    rpLoadPresets();
+  }catch(e){ toast('❌ '+String(e.message||e), true); }
+}
+async function rpDeletePreset(id){
+  const p = rpPresets.find(x=>x.id===id); if(!p) return;
+  if(!confirm('Delete saved report "'+p.name+'" for all admins?')) return;
+  try{
+    await api('report_presets?id=eq.'+id, {method:'DELETE', headers:{'Prefer':'return=minimal'}});
+    logEvent('DELETE','report_preset',id,{name:p.name});
+    rpLoadPresets();
+  }catch(e){ toast('❌ '+String(e.message||e), true); }
+}
+
+/* ── reports: export ── */
+function rpExport(){
+  if(typeof XLSX==='undefined'){ toast('Spreadsheet library not loaded', true); return; }
+  if(!rpRows.length){ toast('Nothing to export — the table is empty', true); return; }
+  const cols = RP_COLS.filter(c=>rpState.cols.includes(c.k));
+  const cellVal = (o,c)=>{
+    if(c.k==='created') return uaeDT(o.created_at);
+    if(c.k==='delivered'){ const v=rpDeliveredIso(o); return v ? (o.delivered_at?'':'≈ ')+uaeDT(v) : ''; }
+    if(c.num) return parseFloat(o[c.k])||0;
+    return String(rpVal(o,c.k)||'');
+  };
+  const g = id => document.getElementById(id);
+  const filtParts = [];
+  if(rpState.basis!=='delivered' && rpState.status.length) filtParts.push('status: '+rpState.status.join('/'));
+  ['rp-payment','rp-seller','rp-driver','rp-emirate'].forEach(id=>{ if(g(id).value) filtParts.push(g(id).value); });
+  if(g('rp-q').value.trim()) filtParts.push('search "'+g('rp-q').value.trim()+'"');
+  if(g('rp-probs').checked) filtParts.push('Aramex problems only');
+  if(g('rp-po').checked) filtParts.push('PO only');
+  const rows = [
+    ['ORDERS REPORT'],
+    ['Period', rpState.from+' — '+rpState.to+'  (by '+rpState.basis+' date)'],
+    ['Filters', filtParts.join(' · ')||'none'],
+    ['Generated', new Date().toISOString().slice(0,16).replace('T',' ')+' UTC by '+(_me?.email||'')],
+    [],
+    cols.map(c=>c.l)
+  ];
+  const pushSum = (label,s)=>{ rows.push(cols.map((c,i)=> i===0?label : c.num?+s[c.k].toFixed(2) : '')); };
+  if(rpState.group){
+    const groups = {};
+    rpRows.forEach(o=>{ const k=rpGroupKey(o); (groups[k]=groups[k]||[]).push(o); });
+    const names = Object.keys(groups).sort((a,b)=> rpState.group==='day' ? b.localeCompare(a) : rpSums(groups[b]).total - rpSums(groups[a]).total);
+    names.forEach(nm=>{
+      rows.push([nm+' — '+groups[nm].length+' orders']);
+      groups[nm].forEach(o=>rows.push(cols.map(c=>cellVal(o,c))));
+      pushSum('Subtotal — '+nm, rpSums(groups[nm]));
+    });
+  } else {
+    rpRows.forEach(o=>rows.push(cols.map(c=>cellVal(o,c))));
+  }
+  rows.push([]);
+  pushSum('TOTAL — '+rpRows.length+' orders', rpSums(rpRows));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = cols.map(c=>({wch: c.num?11:(c.k==='client_name'||c.k==='seller_name'?20:14)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'REPORT');
+  XLSX.writeFile(wb, 'orders_report_'+rpState.from+'_'+rpState.to+'.xlsx');
+  logEvent('EXPORT','report','',{rows:rpRows.length, period:rpState.from+'..'+rpState.to, basis:rpState.basis, filters:filtParts.join(' · ')||'none'});
 }
 
 /* ── customer service ── */
