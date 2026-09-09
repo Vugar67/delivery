@@ -1538,7 +1538,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.70.4';
+const APP_VERSION = 'v13.70.5';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4896,6 +4896,14 @@ async function saveOrder(){
     const existingOrder = orders.find(x => x.id === editId);
     payload.order_num = existingOrder?.order_num || get('f-num');
   }
+  // v13.70.5: stamp the physical delivery moment on a manual close, clear it on
+  // a reopen — Reports (admin app) build "delivered per period" from this field.
+  {
+    const _prevD = editId ? ((orders.find(x => x.id === editId)?.delivery_status || '') === 'Delivered') : false;
+    const _nowD = payload.delivery_status === 'Delivered';
+    if (_nowD && !_prevD) payload.delivered_at = new Date().toISOString();
+    else if (!_nowD && _prevD) payload.delivered_at = null;
+  }
   // On create: order_num is intentionally omitted — DB trigger assigns it
   let orderId=editId;
   if(editId){
@@ -7684,6 +7692,16 @@ function _fmtAramexDt(s) {
   return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : (s || '');
 }
 
+// v13.70.5: Aramex event times are UAE-local wall time — convert to a real UTC
+// instant for orders.delivered_at; unparseable → the moment we learned about it.
+function _aramexAtToISO(at) {
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(at || ''))) {
+    const d = new Date(String(at).slice(0, 19) + '+04:00');
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  return new Date().toISOString();
+}
+
 // Persist the newest checkpoint on the order (DB + local cache). Logs only real changes.
 // v13.55: SH005 (Delivered) now also auto-updates OUR delivery status — see below.
 async function _applyAramexTrack(o, events, via = 'auto-hourly') {   // v13.65: honest audit attribution
@@ -7719,8 +7737,9 @@ async function _applyAramexTrack(o, events, via = 'auto-hourly') {   // v13.65: 
   // Only from 'En Route' — a manually set status (fail/reschedule, Cancelled…)
   // is never overwritten by the sync.
   if (deliveredEv && o.delivery_status === 'En Route') {
-    await sb.from('orders').update({ delivery_status: 'Delivered' }).eq('id', o.id);
-    o.delivery_status = 'Delivered';
+    const _dAt = _aramexAtToISO(deliveredEv.at);   // v13.70.5
+    await sb.from('orders').update({ delivery_status: 'Delivered', delivered_at: _dAt }).eq('id', o.id);
+    o.delivery_status = 'Delivered'; o.delivered_at = _dAt;
     logEvent('UPDATE', 'order', o.id, {
       order_num: o.order_num,
       action: 'aramex_auto_delivered',
@@ -7750,7 +7769,7 @@ async function _applyOldAwbTrack(r, events) {
   if (!deliveredEv) return changed;
   const o = (orders || []).find(x => String(x.id) === String(r.order_id));
   if (o && o.delivery_status === 'En Route') {
-    const patch = { delivery_status: 'Delivered', aramex_awb: r.awb, aramex_label_url: r.label_url || o.aramex_label_url || null, aramex_last_code: 'SH005', aramex_last_desc: latest.desc || 'Delivered', aramex_last_at: latest.at || null, aramex_problem_code: null, aramex_synced_at: new Date().toISOString() };
+    const patch = { delivery_status: 'Delivered', delivered_at: _aramexAtToISO(latest.at), aramex_awb: r.awb, aramex_label_url: r.label_url || o.aramex_label_url || null, aramex_last_code: 'SH005', aramex_last_desc: latest.desc || 'Delivered', aramex_last_at: latest.at || null, aramex_problem_code: null, aramex_synced_at: new Date().toISOString() };
     try { await sb.from('orders').update(patch).eq('id', o.id); Object.assign(o, patch); } catch (e) { return changed; }
     try {
       await sb.from('aramex_awbs').update({ superseded: true }).eq('order_id', String(r.order_id)).neq('awb', String(r.awb));
@@ -8124,8 +8143,9 @@ async function dispatchMarkDelivered(orderId) {
     renderDispatchSent(); renderDispatchQueue(); return;
   }
   if (!confirm('Mark ' + o.order_num + ' as DELIVERED?\nDriver: ' + (o.driver || '—') + '\nClient: ' + (o.client_name || '—'))) return;
-  await sb.from('orders').update({ delivery_status: 'Delivered', updated_by: currentUser.email }).eq('id', orderId);
-  o.delivery_status = 'Delivered';
+  const _dAt = new Date().toISOString();   // v13.70.5: physical delivery moment for Reports
+  await sb.from('orders').update({ delivery_status: 'Delivered', delivered_at: _dAt, updated_by: currentUser.email }).eq('id', orderId);
+  o.delivery_status = 'Delivered'; o.delivered_at = _dAt;
   logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_mark_delivered', driver: o.driver, delivery_status: 'Delivered' });
   renderDispatchSent();
   renderDispatchQueue();
