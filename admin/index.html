@@ -264,12 +264,13 @@ a{color:var(--blue)}
 <div class="toast" id="toast"></div>
 
 <script>
-const ADMIN_VERSION = 'admin v1.4';
+const ADMIN_VERSION = 'admin v1.4.1';
 const SB_URL = 'https://ivngarkbqgbxacnjhxey.supabase.co';
 const SB_KEY = 'sb_publishable_sa3Aj22mxJNMMPy4X1V4_A_bQJ577wv';
 const BUILTIN_ROLES = ['admin','operator','dispatcher','warehouse'];
 let _token = null, _me = null;
 let sellers = [], products = [], spRows = [], spSellerId = '', spPending = null, sellerAliases = [];
+let spFilter = 'all';   // v1.4.1: all | special | catalog
 let coreLiveVersion = '';
 
 document.getElementById('v-admin').textContent = ADMIN_VERSION.replace('admin ','');
@@ -451,6 +452,7 @@ async function spLoad(){
   const dl=document.getElementById('sp-dl'), ul=document.getElementById('sp-ul');
   dl.disabled=!spSellerId; ul.style.opacity=spSellerId?'1':'.5'; ul.style.pointerEvents=spSellerId?'auto':'none';
   if(!spSellerId){ document.getElementById('sp-table').innerHTML='<span class="muted" style="font-size:12px">Select a seller to see the price list.</span>'; document.getElementById('sp-meta').textContent=''; return; }
+  spFilter = 'all';
   try{
     spRows = await api('seller_prices?select=*&seller_id=eq.'+encodeURIComponent(spSellerId));
     renderSpTable();
@@ -458,12 +460,28 @@ async function spLoad(){
 }
 function spMap(){ const m={}; (spRows||[]).forEach(r=>m[String(r.product_id)]=parseFloat(r.price)); return m; }
 function spAliasMap(){ const m={}; (sellerAliases||[]).filter(a=>String(a.seller_id)===String(spSellerId)).forEach(a=>m[String(a.product_id)]=a.alias_name); return m; }
+function spSetFilter(f){ spFilter = f; renderSpTable(); }
 function renderSpTable(){
   const m = spMap(), am = spAliasMap();
   const n = Object.keys(m).length, na = Object.keys(am).length;
   document.getElementById('sp-meta').textContent = (n ? n+' special price'+(n>1?'s':'') : 'no special prices') + ' · ' + (na ? na+' brand name'+(na>1?'s':'') : 'no brand names');
-  document.getElementById('sp-table').innerHTML = '<table class="t"><tr><th>Product</th><th>Category</th><th>Base AED</th><th>Seller AED</th><th></th><th>Brand name (alias)</th></tr>'+
-    products.map(p=>{
+  // v1.4.1: filter chips — all / with seller price / on catalog price
+  const nSpecial = products.filter(p=>m[String(p.id)]!=null).length;
+  const nCatalog = products.length - nSpecial;
+  const chip = (f,label) => `<button class="btn ${spFilter===f?'btn-primary':'btn-ghost'}" style="padding:4px 10px;font-size:12px;margin-right:6px" onclick="spSetFilter('${f}')">${label}</button>`;
+  const chips = '<div style="margin-bottom:10px">'
+    + chip('all','All ('+products.length+')')
+    + chip('special','Seller price ('+nSpecial+')')
+    + chip('catalog','Catalog price ('+nCatalog+')')
+    + '</div>';
+  const shown = products.filter(p=>{
+    const has = m[String(p.id)]!=null;
+    return spFilter==='special' ? has : spFilter==='catalog' ? !has : true;
+  });
+  document.getElementById('sp-table').innerHTML = chips
+    + (shown.length ? '' : '<div class="muted" style="font-size:12px;padding:6px 0">No products under this filter.</div>')
+    + '<table class="t"><tr><th>Product</th><th>Category</th><th>Base AED</th><th>Seller AED</th><th></th><th>Brand name (alias)</th></tr>'+
+    shown.map(p=>{
       const sp=m[String(p.id)];
       const has = sp!=null;
       const al = am[String(p.id)]||'';
