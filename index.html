@@ -1589,7 +1589,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.71.3';
+const APP_VERSION = 'v13.71.4';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -1968,7 +1968,7 @@ let currentUser=null, currentRole=null;      // currentRole = BEHAVIOR base (adm
 let currentRoleName=null;                     // v13.64: the assigned role name as stored on the profile (may be custom)
 let systemRoles=[];                           // v13.64: custom roles from system_roles table
 const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse'];
-let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[]};
+let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[]};  // v13.71.4: productCategory = registry kept by the admin app
 let products=[], orderItems={};
 let clients=[], editClientId=null;
 let editId=null, editProductId=null;
@@ -2096,8 +2096,17 @@ function _fillCategoryDatalist() {
   const dl = document.getElementById('p-category-list');
   if (!dl) return;
   const src = (window._allProducts && window._allProducts.length) ? window._allProducts : products;
-  const cats = [...new Set((src || []).map(p => (p.category || '').trim().toUpperCase()).filter(Boolean))].sort();
-  dl.innerHTML = cats.map(c => `<option value="${c}"></option>`).join('');
+  dl.innerHTML = _allProductCategories(src).map(c => `<option value="${c}"></option>`).join('');
+}
+
+// v13.71.4: product categories = the ones actually used on products ∪ the registry the admin app
+// keeps in refs (category 'productCategory'). Uppercased, deduped, sorted. A registered category
+// with no products yet (e.g. a brand-new ACCESSORIES) is therefore visible in the filter and in
+// the product-card suggestions before the first product is assigned to it.
+function _allProductCategories(src) {
+  const fromProducts = (src || []).map(p => (p.category || '').trim().toUpperCase());
+  const fromRegistry = ((refs && refs.productCategory) || []).map(r => String(r.value || '').trim().toUpperCase());
+  return [...new Set(fromProducts.concat(fromRegistry).filter(Boolean))].sort();
 }
 
 async function loadProfile(){
@@ -2216,7 +2225,7 @@ async function initApp(){
 async function loadRefs(){
   const{data}=await sb.from('refs').select('*').order('sort_order',{ascending:true}).order('value',{ascending:true});
   if(!data)return;
-  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[]};
+  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[]};  // v13.71.4: productCategory = registry kept by the admin app
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
@@ -5915,8 +5924,8 @@ function renderProducts(){
   const cat=document.getElementById('prod-cat-filter').value;
   const typeF=document.getElementById('prod-type-filter')?.value||'';
   const kindF=document.getElementById('prod-kind-filter')?.value||'';
-  // update cat filter
-  const cats=[...new Set(products.map(p=>p.category).filter(Boolean))];
+  // update cat filter — v13.71.4: real product categories ∪ the admin-app registry (refs.productCategory)
+  const cats=_allProductCategories(products);
   const catFilter=document.getElementById('prod-cat-filter');
   const curCat=catFilter.value;
   catFilter.innerHTML='<option value="">All Categories</option>'+cats.map(c=>`<option value="${c}" ${curCat===c?'selected':''}>${c}</option>`).join('');
@@ -5927,7 +5936,7 @@ function renderProducts(){
     kindFilter.innerHTML='<option value="">All Kinds</option>'+(refs.productType||[]).map(r=>`<option value="${r.value}" ${curKind===r.value?'selected':''}>${r.value}</option>`).join('');
   }
   const filtered=products.filter(p=>{
-    if(cat&&p.category!==cat)return false;
+    if(cat&&(p.category||'').trim().toUpperCase()!==cat)return false;  // v13.71.4: options are uppercased — compare case-insensitively
     if(typeF&&(p.product_type||'Regular')!==typeF)return false;
     if(kindF&&(p.type||'')!==kindF)return false;
     if(q&&!p.name.toLowerCase().includes(q))return false;
