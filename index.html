@@ -198,8 +198,18 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .shop-qty-inp{font-family:var(--mono);font-size:12px;width:38px;text-align:center;background:var(--bg);border:1px solid var(--accent);border-radius:4px;color:var(--accent);outline:none;padding:1px 3px}
 .shop-cart-item-price{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:70px;text-align:right}
 .shop-cart-item-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;transition:.1s}
-.shop-cart-split{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 3px;line-height:1;transition:.1s}  /* v13.71.5 */
-.shop-cart-split:hover{color:var(--accent)}
+.shop-cart-split,.shop-cart-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 3px;line-height:1;transition:.1s}  /* v13.71.5 split · v13.71.6 edit */
+.shop-cart-split:hover,.shop-cart-edit:hover{color:var(--accent)}
+/* v13.71.6: inline line-name editor */
+.cart-name-edit{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cart-name-edit input{background:var(--surface2);border:1px solid var(--accent);border-radius:6px;padding:4px 7px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box}
+.cart-name-edit .cne-name{width:100%}
+.cart-name-edit .cne-row{display:flex;gap:4px;align-items:center}
+.cart-name-edit .cne-unit{width:64px}
+.cart-name-edit button{border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:6px;padding:3px 8px;font-family:var(--mono);font-size:11px;cursor:pointer}
+.cart-name-edit .cne-ok{color:var(--green);border-color:rgba(74,222,128,.5)}
+.cart-name-edit .cne-cancel{color:#ff6666}
+.cart-name-edit .cne-reset{color:var(--muted);margin-left:auto}
 .shop-cart-item-del:hover{color:var(--red)}
 .shop-cart-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 
@@ -1591,7 +1601,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.71.5';
+const APP_VERSION = 'v13.71.6';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3710,13 +3720,15 @@ function renderCart() {
 
   const getPrice = item => item.is_custom ? item.price : (item.customPrice !== undefined ? parseFloat(item.customPrice) : parseFloat(item.product.price));
   const getQty   = item => item.is_custom ? item.quantity : item.qty;
-  const getUnit  = item => item.is_custom ? (item.unit || '') : item.product.unit;
+  const getUnit  = item => item.is_custom ? (item.unit || '') : (item.unitOverride || item.product.unit);  // v13.71.6: per-line unit edit
   const _sellerEl = document.getElementById('f-seller-id') || {};
   const _sellerId = window._selectedSellerId || '';
+  const _editedTag = ' <span title="Name edited for this order only — catalog is untouched" style="font-size:9px;color:var(--accent);font-family:var(--mono);background:rgba(245,166,35,.15);padding:1px 5px;border-radius:3px">EDITED</span>';
   const getName = item => {
-    if (item.is_custom) return item.product_name;
+    if (item.is_custom) return escAttr(item.product_name);
+    if (item.nameOverride) return escAttr(item.nameOverride) + _editedTag;   // v13.71.6: manual name wins over alias
     const alias = _sellerId ? getAlias(_sellerId, item.product.id) : null;
-    return alias ? item.product.name + ' <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">→ ' + alias + '</span>' : item.product.name;
+    return alias ? escAttr(item.product.name) + ' <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">→ ' + escAttr(alias) + '</span>' : escAttr(item.product.name);
   };
 
   updateCartTotals();
@@ -3724,7 +3736,7 @@ function renderCart() {
   
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
-      <div class="shop-cart-item-name">
+      <div class="shop-cart-item-name" id="cart-name-${i}">
         ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
         ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
@@ -3743,7 +3755,7 @@ function renderCart() {
         <span style="font-size:10px;color:var(--muted)">AED</span>
       </div>
       <div class="shop-cart-item-price">${(getPrice(item)*getQty(item)).toFixed(2)}</div>
-      ${!item.is_custom ? `<button onclick="openCustomize(${i})" title="Customize composition" style="background:${item.customComponents?'rgba(245,166,35,.2)':'none'};border:1px solid ${item.customComponents?'var(--accent)':'var(--border)'};border-radius:6px;padding:3px 6px;color:${item.customComponents?'var(--accent)':'var(--muted)'};cursor:pointer;font-size:11px;font-family:var(--mono)">🧪</button>` : ''}
+      <button class="shop-cart-edit" onclick="startCartNameEdit(${i})" title="Edit the line name / unit for this order (catalog is not changed)">&#9998;</button>
       <button class="shop-cart-split" onclick="splitCartLine(${i})" title="Split: move 1 unit to a new line with its own price (gift, discount)">&#10697;</button>
       <button class="shop-cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
     </div>`).join('');
@@ -3787,6 +3799,60 @@ function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
 // (a gift unit at 0, one unit at a discount…). Qty > 1: one unit moves to the new line;
 // qty = 1: a second unit is added. The new line starts at the source line's price and
 // its own composition (customComponents) is copied, so the operator only edits the price.
+// v13.71.6: inline edit of a cart line's NAME and UNIT — for this order only, the catalog is
+// untouched. Regular product: stored as nameOverride/unitOverride (product_id stays, so stock,
+// committed qty and seller prices keep working; a manual name beats the seller alias).
+// Custom item: edits product_name/unit directly. Enter / ✓ = save, Esc / ✕ / blur-away = cancel.
+// Replaced the "Customize composition" (syringe) entry point — that flow is done via Custom Items.
+function _cartLineCatalogName(item) {
+  if (item.is_custom) return item.product_name || '';
+  const sid = window._selectedSellerId || '';
+  const alias = sid ? getAlias(sid, item.product.id) : null;
+  return alias || item.product.name || '';
+}
+function startCartNameEdit(i) {
+  const item = cart[i]; if (!item) return;
+  const cell = document.getElementById('cart-name-' + i); if (!cell) return;
+  if (cell.querySelector('.cart-name-edit')) return;            // already editing
+  const curName = item.is_custom ? (item.product_name || '') : (item.nameOverride || _cartLineCatalogName(item));
+  const curUnit = item.is_custom ? (item.unit || '') : (item.unitOverride || item.product.unit || '');
+  cell.innerHTML = `
+    <div class="cart-name-edit">
+      <input class="cne-name" value="${escAttr(curName)}" placeholder="Line name (as it will print on the invoice)" maxlength="200">
+      <div class="cne-row">
+        <input class="cne-unit" value="${escAttr(curUnit)}" placeholder="unit" maxlength="20">
+        <button type="button" class="cne-ok" title="Save (Enter)">&#10003;</button>
+        <button type="button" class="cne-cancel" title="Cancel (Esc)">&#10005;</button>
+        ${!item.is_custom ? `<button type="button" class="cne-reset" title="Back to the catalog name">catalog</button>` : ''}
+      </div>
+    </div>`;
+  const nameInp = cell.querySelector('.cne-name'), unitInp = cell.querySelector('.cne-unit');
+  const commit = () => commitCartNameEdit(i, nameInp.value, unitInp.value);
+  const cancel = () => renderCart();
+  cell.querySelector('.cne-ok').onclick = commit;
+  cell.querySelector('.cne-cancel').onclick = cancel;
+  const rst = cell.querySelector('.cne-reset');
+  if (rst) rst.onclick = () => { delete item.nameOverride; delete item.unitOverride; renderCart(); };
+  [nameInp, unitInp].forEach(inp => inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  }));
+  nameInp.focus(); nameInp.select();
+}
+function commitCartNameEdit(i, name, unit) {
+  const item = cart[i]; if (!item) return;
+  name = String(name || '').trim(); unit = String(unit || '').trim();
+  if (!name) { toast('Line name cannot be empty', true); return; }
+  if (item.is_custom) {
+    item.product_name = name; item.unit = unit || 'pcs';
+  } else {
+    // Same as the catalog/alias text → no override (keeps the line "clean")
+    if (name === _cartLineCatalogName(item)) delete item.nameOverride; else item.nameOverride = name;
+    if (!unit || unit === (item.product.unit || '')) delete item.unitOverride; else item.unitOverride = unit;
+  }
+  renderCart();
+}
+
 function splitCartLine(i) {
   const src = cart[i]; if (!src) return;
   const qty = parseFloat(src.is_custom ? src.quantity : src.qty) || 0;
@@ -3796,6 +3862,8 @@ function splitCartLine(i) {
   } else {
     clone = { product: src.product, qty: 1 };
     if (src.customPrice !== undefined) clone.customPrice = src.customPrice;
+    if (src.nameOverride) clone.nameOverride = src.nameOverride;   // v13.71.6
+    if (src.unitOverride) clone.unitOverride = src.unitOverride;
     if (src.customComponents) clone.customComponents = JSON.parse(JSON.stringify(src.customComponents));
   }
   if (qty > 1) { if (src.is_custom) src.quantity = qty - 1; else src.qty = qty - 1; }
@@ -4491,7 +4559,13 @@ async function editOrder(id){
     const savedPrice = parseFloat(item.price);
     const originalPrice = parseFloat(p.price);
     const customPrice = (savedPrice !== originalPrice) ? savedPrice : undefined;
-    return{product:p,qty:parseFloat(item.quantity),customPrice};
+    const line = {product:p,qty:parseFloat(item.quantity),customPrice};
+    // v13.71.6: a saved name that is neither the catalog name nor the seller alias = a manual edit → keep it
+    const _alias = o.seller_id ? getAlias(o.seller_id, p.id) : null;
+    const _savedName = String(item.product_name || '').trim();
+    if (_savedName && _savedName !== String(p.name || '').trim() && _savedName !== String(_alias || '').trim()) line.nameOverride = _savedName;
+    if (item.unit && String(item.unit) !== String(p.unit || '')) line.unitOverride = String(item.unit);
+    return line;
   });
   initShop();
   const modal = document.getElementById('order-modal');
@@ -5032,8 +5106,8 @@ async function saveOrder(){
     return {
       order_id: orderId,
       product_id: item.product.id,
-      product_name: alias || item.product.name,
-      unit: item.product.unit,
+      product_name: item.nameOverride || alias || item.product.name,   // v13.71.6: manual line name wins
+      unit: item.unitOverride || item.product.unit,
       price: item.customPrice !== undefined ? item.customPrice : item.product.price,
       quantity: item.qty,
       item_type: itemType,
@@ -5079,7 +5153,7 @@ async function saveOrder(){
   const _prevItems = editId ? (orderItems[orderId] || []) : [];
   const _newItems  = cart.filter(i => (i.is_custom ? i.quantity : i.qty) > 0).map(i => ({
     product_id:   i.is_custom ? null : i.product.id,
-    product_name: i.is_custom ? i.product_name : (i.product.name),
+    product_name: i.is_custom ? i.product_name : (i.nameOverride || i.product.name),
     qty:          i.is_custom ? i.quantity : i.qty,
     price:        i.is_custom ? i.price : (i.customPrice !== undefined ? i.customPrice : i.product.price)
   }));
@@ -5892,6 +5966,8 @@ async function saveProductComponents(productId) {
 let _customizeCartIdx = null;
 let _customizeRows = [];
 
+// v13.71.6: the cart button that opened this dialog was replaced by the line-name pencil —
+// custom compositions are handled via Custom Items now. Kept intact (harmless) in case it returns.
 function openCustomize(cartIdx) {
   _customizeCartIdx = cartIdx;
   const item = cart[cartIdx];
