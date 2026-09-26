@@ -198,6 +198,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .shop-qty-inp{font-family:var(--mono);font-size:12px;width:38px;text-align:center;background:var(--bg);border:1px solid var(--accent);border-radius:4px;color:var(--accent);outline:none;padding:1px 3px}
 .shop-cart-item-price{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:70px;text-align:right}
 .shop-cart-item-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;transition:.1s}
+.shop-cart-split{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 3px;line-height:1;transition:.1s}  /* v13.71.5 */
+.shop-cart-split:hover{color:var(--accent)}
 .shop-cart-item-del:hover{color:var(--red)}
 .shop-cart-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 
@@ -1589,7 +1591,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.71.4';
+const APP_VERSION = 'v13.71.5';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3631,9 +3633,9 @@ function renderShopProducts() {
   }
   
   grid.innerHTML = filtered.map(p => {
-    const inCart = cart.find(item => !item.is_custom && item.product && item.product.id === p.id);
+    const inCartQty = cart.filter(item => !item.is_custom && item.product && item.product.id === p.id).reduce((s, item) => s + (parseFloat(item.qty) || 0), 0); // v13.71.5: summed over split lines
     return `<div class="shop-product-card">
-      ${inCart ? `<span class="shop-in-cart">×${inCart.qty}</span>` : ''}
+      ${inCartQty ? `<span class="shop-in-cart">×${inCartQty}</span>` : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
       <div class="shop-product-name">${p.name}</div>
 
@@ -3742,6 +3744,7 @@ function renderCart() {
       </div>
       <div class="shop-cart-item-price">${(getPrice(item)*getQty(item)).toFixed(2)}</div>
       ${!item.is_custom ? `<button onclick="openCustomize(${i})" title="Customize composition" style="background:${item.customComponents?'rgba(245,166,35,.2)':'none'};border:1px solid ${item.customComponents?'var(--accent)':'var(--border)'};border-radius:6px;padding:3px 6px;color:${item.customComponents?'var(--accent)':'var(--muted)'};cursor:pointer;font-size:11px;font-family:var(--mono)">🧪</button>` : ''}
+      <button class="shop-cart-split" onclick="splitCartLine(${i})" title="Split: move 1 unit to a new line with its own price (gift, discount)">&#10697;</button>
       <button class="shop-cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
     </div>`).join('');
   
@@ -3779,6 +3782,27 @@ function startQtyEdit(span, i) {
 }
 
 function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
+
+// v13.71.5: Split a cart line — the same product on a second line with its own price
+// (a gift unit at 0, one unit at a discount…). Qty > 1: one unit moves to the new line;
+// qty = 1: a second unit is added. The new line starts at the source line's price and
+// its own composition (customComponents) is copied, so the operator only edits the price.
+function splitCartLine(i) {
+  const src = cart[i]; if (!src) return;
+  const qty = parseFloat(src.is_custom ? src.quantity : src.qty) || 0;
+  let clone;
+  if (src.is_custom) {
+    clone = Object.assign({}, src, { quantity: 1 });
+  } else {
+    clone = { product: src.product, qty: 1 };
+    if (src.customPrice !== undefined) clone.customPrice = src.customPrice;
+    if (src.customComponents) clone.customComponents = JSON.parse(JSON.stringify(src.customComponents));
+  }
+  if (qty > 1) { if (src.is_custom) src.quantity = qty - 1; else src.qty = qty - 1; }
+  cart.splice(i + 1, 0, clone);
+  renderCart();
+  toast('⧉ Line split — set the price on the new line');
+}
 function updateCartPrice(i, val) {
   const p = parseFloat(parseFloat(val).toFixed(2)) || 0;
   if (cart[i].is_custom) cart[i].price = p;
@@ -4278,7 +4302,10 @@ async function warehouseAction(orderId, newStatus) {
 
 function addToCart(productId) {
   const p = products.find(x => x.id === productId); if (!p) return;
-  const existing = cart.find(item => item.product && item.product.id === productId);
+  // v13.71.5: the same product may sit on several lines (Split) — "+" tops up the line at the
+  // catalog price (customPrice unset); if every line has a custom price, the first one.
+  const lines = cart.filter(item => !item.is_custom && item.product && item.product.id === productId);
+  const existing = lines.find(item => item.customPrice === undefined) || lines[0];
   if (existing) { existing.qty += 1; } else { cart.push({product: p, qty: 1}); }
   // Clear search after adding
   const ss = document.getElementById('shop-search');
@@ -5059,16 +5086,27 @@ async function saveOrder(){
   let itemDiff = null, _hasItemChange = false;
   if (editId) {
     const _keyOf = i => i.product_id ? ('id:'+i.product_id) : ('nm:'+(i.product_name||''));
-    const _prevMap = new Map(_prevItems.map(p => [_keyOf(p), p]));
-    const _newMap  = new Map(_newItems.map(n => [_keyOf(n), n]));
-    const added   = _newItems.filter(n => !_prevMap.has(_keyOf(n)));
-    const removed = _prevItems.filter(p => !_newMap.has(_keyOf(p)));
-    const changed = _newItems.filter(n => {
+    // v13.71.5: the same product may be on several lines (Split) — the diff is per PRODUCT with
+    // quantities summed over its lines, so a split never shows up as a phantom add/remove.
+    const _agg = (list, qtyField) => {
+      const m = new Map();
+      list.forEach(x => {
+        const k = _keyOf(x);
+        if (!m.has(k)) m.set(k, Object.assign({}, x, { quantity: 0 }));
+        m.get(k).quantity += Number(x[qtyField]) || 0;
+      });
+      return m;
+    };
+    const _prevMap = _agg(_prevItems, 'quantity');
+    const _newMap  = _agg(_newItems, 'qty');
+    const added   = [..._newMap.values()].filter(n => !_prevMap.has(_keyOf(n))).map(n => ({ product_id: n.product_id, product_name: n.product_name, qty: n.quantity, price: n.price }));
+    const removed = [..._prevMap.values()].filter(p => !_newMap.has(_keyOf(p)));
+    const changed = [..._newMap.values()].filter(n => {
       const prev = _prevMap.get(_keyOf(n));
-      return prev && Number(prev.quantity) !== Number(n.qty);
+      return prev && Number(prev.quantity) !== Number(n.quantity);
     }).map(n => {
       const prev = _prevMap.get(_keyOf(n));
-      return { product_name: n.product_name, qty_before: prev.quantity, qty_after: n.qty };
+      return { product_name: n.product_name, qty_before: prev.quantity, qty_after: n.quantity };
     });
     itemDiff = { added, removed, changed };
     _hasItemChange = !!(added.length || removed.length || changed.length);
