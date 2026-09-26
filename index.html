@@ -335,6 +335,22 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 select option{background:#1a1d27;color:#f0f2ff}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:15px;font-weight:700}
+/* v13.71: Dispatch column filter panel (search + emirate chips) — shared by Queue and Dispatched */
+.dfilter{flex-shrink:0;padding:8px 8px 6px;border-bottom:1px solid var(--border);background:var(--surface)}
+.dfilter-search{position:relative}
+.dfilter-search input{width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 26px 6px 9px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none}
+.dfilter-search input:focus{border-color:var(--accent)}
+.dfilter-search input::-webkit-search-cancel-button{display:none}
+.dfilter-search button{position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 5px;line-height:1}
+.dfilter-search button:hover{color:var(--text)}
+.dfilter-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.dfilter-chips:empty{display:none}
+.dchip{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;transition:.12s}
+.dchip:hover{color:var(--text);border-color:var(--muted)}
+.dchip.on{background:rgba(245,166,35,.18);border-color:var(--accent);color:var(--accent);font-weight:700}
+.dchip b{font-weight:400;opacity:.75;margin-left:3px}
+.dfilter-empty{padding:24px 12px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;line-height:1.6}
+.dfilter-empty a{color:var(--accent);cursor:pointer;text-decoration:underline}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -475,6 +491,14 @@ select option{background:#1a1d27;color:#f0f2ff}
           <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0">
             📋 Queue — <span id="dcol-queue-count">0</span> orders
           </div>
+          <!-- v13.71: filter panel (search + emirate chips), same as the Dispatched column -->
+          <div class="dfilter" id="dfilter-queue">
+            <div class="dfilter-search">
+              <input id="dfilter-queue-q" type="search" placeholder="🔍 Order # or phone (any part)" autocomplete="off" oninput="dispatchFilterInput('queue', this.value)">
+              <button type="button" id="dfilter-queue-clear" title="Clear search" onclick="dispatchFilterClear('queue')" style="display:none">✕</button>
+            </div>
+            <div class="dfilter-chips" id="dfilter-queue-chips"></div>
+          </div>
           <div id="dcol-queue" style="overflow-y:auto;flex:1;padding:6px"></div>
         </div>
 
@@ -495,6 +519,14 @@ select option{background:#1a1d27;color:#f0f2ff}
         <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:10px">
           <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0">
             ✅ Dispatched — <span id="dcol-sent-count">0</span>
+          </div>
+          <!-- v13.71: filter panel (search + emirate chips), same as the Queue column -->
+          <div class="dfilter" id="dfilter-sent">
+            <div class="dfilter-search">
+              <input id="dfilter-sent-q" type="search" placeholder="🔍 Order # or phone (any part)" autocomplete="off" oninput="dispatchFilterInput('sent', this.value)">
+              <button type="button" id="dfilter-sent-clear" title="Clear search" onclick="dispatchFilterClear('sent')" style="display:none">✕</button>
+            </div>
+            <div class="dfilter-chips" id="dfilter-sent-chips"></div>
           </div>
           <div id="dcol-sent" style="overflow-y:auto;flex:1;padding:6px"></div>
         </div>
@@ -1538,7 +1570,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.70.5';
+const APP_VERSION = 'v13.71';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -8025,16 +8057,111 @@ function onDispatchCheck(chk) {
 
 // ─── DISPATCH 3-COL RENDER ───────────────────────────────────────
 
+// ═══════════════════════════════════════════════════════════════════════
+// v13.71: Dispatch column filters — search (order # / phone fragment) + emirate chips.
+// One state per column ('queue' | 'sent'); it lives here, not in the DOM, so it survives
+// every re-render of the column (and the columns re-render a lot: select, send, sync…).
+// The search <input> is static HTML, only the chips row is re-rendered — keeps focus/caret.
+// ═══════════════════════════════════════════════════════════════════════
+const _dispatchFilter = { queue: { q: '', emirate: '' }, sent: { q: '', emirate: '' } };
+const DFILTER_NO_EMIRATE = '— no emirate —';
+
+function _dfEmirateOf(o) { return String(o.emirate || '').trim() || DFILTER_NO_EMIRATE; }
+function _dfDigits(s) { return String(s || '').replace(/\D/g, ''); }
+
+// Does order `o` match the free-text query `q`?
+//  • order number: case-insensitive substring ('ord-1205', '120586', 'ORD-120586' all hit ORD-120586)
+//  • phone: any digit fragment of client_number; spaces / dashes / '+' in the query are ignored,
+//    and a local-format query with a leading 0 ('0501234') matches the stored 971501234…
+function dispatchOrderMatchesQuery(o, q) {
+  q = String(q || '').trim();
+  if (!q) return true;
+  const qL = q.toLowerCase();
+  const num = String(o.order_num || '').toLowerCase();
+  if (num.includes(qL)) return true;
+  const qd = _dfDigits(q);
+  if (!qd) return false;                       // letters only and not part of the order number
+  if (_dfDigits(num).includes(qd)) return true; // digits of the order number
+  const ph = _dfDigits(o.client_number);
+  if (!ph) return false;
+  if (ph.includes(qd)) return true;
+  if (qd.length > 1 && qd.startsWith('0') && ph.includes(qd.slice(1))) return true;
+  return false;
+}
+
+function dispatchApplyFilter(list, col) {
+  const f = _dispatchFilter[col];
+  return list.filter(o => (!f.emirate || _dfEmirateOf(o) === f.emirate) && dispatchOrderMatchesQuery(o, f.q));
+}
+
+function _dfCountText(shown, total) { return shown === total ? String(total) : shown + ' / ' + total; }
+
+// Emirate chips with counts, built from the WHOLE column (independent of the search text),
+// so the numbers stay stable while the dispatcher types.
+function _dfRenderChips(col, list) {
+  const el = document.getElementById('dfilter-' + col + '-chips');
+  if (!el) return;
+  const f = _dispatchFilter[col];
+  const counts = {};
+  list.forEach(o => { const e = _dfEmirateOf(o); counts[e] = (counts[e] || 0) + 1; });
+  // The selected emirate has no orders left in this column → back to All, silently.
+  if (f.emirate && !counts[f.emirate]) f.emirate = '';
+  const names = Object.keys(counts).sort((a, b) => {
+    if (a === DFILTER_NO_EMIRATE) return 1;
+    if (b === DFILTER_NO_EMIRATE) return -1;
+    return a.localeCompare(b);
+  });
+  if (!names.length) { el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<span class="dchip${f.emirate ? '' : ' on'}" onclick="dispatchFilterEmirate('${col}','')">All<b>${list.length}</b></span>` +
+    names.map(n => `<span class="dchip${f.emirate === n ? ' on' : ''}" data-em="${escAttr(n)}" onclick="dispatchFilterEmirate('${col}',this.dataset.em)">${escAttr(n)}<b>${counts[n]}</b></span>`).join('');
+}
+
+function _dfEmptyHtml(col) {
+  return `<div class="dfilter-empty">No orders match the filter<br><a onclick="dispatchFilterReset('${col}')">Clear search &amp; emirate</a></div>`;
+}
+
+function _dfRerender(col) { if (col === 'queue') renderDispatchQueue(); else renderDispatchSent(); }
+
+function dispatchFilterInput(col, val) {
+  if (!_dispatchFilter[col]) return;
+  _dispatchFilter[col].q = String(val || '');
+  const clr = document.getElementById('dfilter-' + col + '-clear');
+  if (clr) clr.style.display = _dispatchFilter[col].q ? '' : 'none';
+  _dfRerender(col);
+}
+
+function dispatchFilterClear(col) {
+  const inp = document.getElementById('dfilter-' + col + '-q');
+  if (inp) { inp.value = ''; inp.focus(); }
+  dispatchFilterInput(col, '');
+}
+
+function dispatchFilterEmirate(col, em) {
+  if (!_dispatchFilter[col]) return;
+  _dispatchFilter[col].emirate = String(em || '');
+  _dfRerender(col);
+}
+
+function dispatchFilterReset(col) {
+  if (!_dispatchFilter[col]) return;
+  _dispatchFilter[col].emirate = '';
+  dispatchFilterClear(col);
+}
+
 function renderDispatchQueue() {
   const el = document.getElementById('dcol-queue');
   const countEl = document.getElementById('dcol-queue-count');
   if (!el) return;
-  const queue = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
-  if (countEl) countEl.textContent = queue.length;
-  if (!queue.length) {
+  const allQueue = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
+  _dfRenderChips('queue', allQueue);                       // v13.71
+  const queue = dispatchApplyFilter(allQueue, 'queue');    // v13.71
+  if (countEl) countEl.textContent = _dfCountText(queue.length, allQueue.length);
+  if (!allQueue.length) {
     el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No orders in queue</div>';
     return;
   }
+  if (!queue.length) { el.innerHTML = _dfEmptyHtml('queue'); return; }
   el.innerHTML = queue.map(o => {
     const isSelected = dispatchSelected.find(s => s.id === o.id);
     const items = orderItems[o.id] || [];
@@ -8133,19 +8260,39 @@ async function dispatchMarkDelivered(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
   if ((o.driver || '') === ARAMEX_DRIVER) { toast('Aramex orders are closed automatically by tracking (SH005)', true); return; }
-  // v13.66-style stale-tab guard: re-read from the DB before acting
+  // v13.66-style stale-tab guard: re-read from the DB before acting.
+  // v13.71: the whole row (the confirm dialog shows address/phone/payment — must be fresh) + the items.
+  let items = orderItems[orderId] || [];
   try {
-    const { data: fresh } = await sb.from('orders').select('delivery_status,driver,client_name').eq('id', orderId).single();
+    const [{ data: fresh }, { data: freshItems }] = await Promise.all([
+      sb.from('orders').select('*').eq('id', orderId).single(),
+      sb.from('order_items').select('*').eq('order_id', orderId)
+    ]);
     if (fresh) Object.assign(o, fresh);
+    if (freshItems) { items = freshItems; orderItems[orderId] = freshItems; }
   } catch (e) { /* network hiccup — proceed with the local copy */ }
   if (o.delivery_status !== 'En Route') {
     toast(o.order_num + ' is no longer En Route (' + (o.delivery_status || '—') + ')', true);
     renderDispatchSent(); renderDispatchQueue(); return;
   }
-  if (!confirm('Mark ' + o.order_num + ' as DELIVERED?\nDriver: ' + (o.driver || '—') + '\nClient: ' + (o.client_name || '—'))) return;
+  if (!(await confirmDeliveredDialog(o, items))) return;   // v13.71: full-info dialog instead of confirm()
   const _dAt = new Date().toISOString();   // v13.70.5: physical delivery moment for Reports
-  await sb.from('orders').update({ delivery_status: 'Delivered', delivered_at: _dAt, updated_by: currentUser.email }).eq('id', orderId);
-  o.delivery_status = 'Delivered'; o.delivered_at = _dAt;
+  // v13.71: the dialog can stay open for a while — the PATCH is conditional on the order STILL
+  // being En Route, so a change made meanwhile (another tab, Aramex sync, admin) is never overwritten.
+  // Our PostgREST client returns no body/row-count for PATCH, so the outcome is verified by re-reading.
+  const { error: _updErr } = await sb.from('orders')
+    .update({ delivery_status: 'Delivered', delivered_at: _dAt, updated_by: currentUser.email })
+    .eq('id', orderId).eq('delivery_status', 'En Route');
+  if (_updErr) { console.log('DB error:', _updErr); toast('Could not save — please try again', true); return; }
+  let _after = null;
+  try { const { data } = await sb.from('orders').select('delivery_status,delivered_at,driver').eq('id', orderId).single(); _after = data; } catch (e) { /* re-read failed — trust the PATCH */ }
+  if (_after && _after.delivery_status !== 'Delivered') {
+    // 0 rows matched: the order left En Route while the dialog was open — nothing was written
+    Object.assign(o, _after);
+    toast(o.order_num + ' changed while the dialog was open (' + (o.delivery_status || '—') + ') — not closed', true);
+    renderDispatchSent(); renderDispatchQueue(); return;
+  }
+  o.delivery_status = 'Delivered'; o.delivered_at = (_after && _after.delivered_at) || _dAt;
   logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_mark_delivered', driver: o.driver, delivery_status: 'Delivered' });
   renderDispatchSent();
   renderDispatchQueue();
@@ -8176,6 +8323,93 @@ async function dispatchMarkFailed(orderId) {
   renderDispatchSent();
   renderDispatchQueue();
   toast('↩ ' + o.order_num + ' back to queue — ' + reason);
+}
+
+// v13.71: full-information confirm dialog for ✓ Delivered (replaces the bare confirm()).
+// Resolves true only on the explicit "Confirm delivered" click; ✕ / Cancel / Esc / click outside → false.
+// Enter is deliberately NOT bound — closing an order must be a click.
+function confirmDeliveredDialog(o, items) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('confirm-delivered-overlay');
+    if (existing) existing.remove();
+    const e = v => escAttr(v == null ? '' : v);
+    items = Array.isArray(items) ? items : [];
+
+    const address = [o.emirate, o.city, o.apt, o.villa].filter(x => x && String(x).trim()).map(x => String(x).trim());
+    const phoneDigits = String(o.client_number || '').replace(/\D/g, '');
+    const needsCollect = (o.payment_status || '').toLowerCase().includes('on delivery');
+    const itemsSubtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.quantity) || 1), 0);
+    const cashToCollect = itemsSubtotal + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0); // same rule as the driver WhatsApp message (v13.51)
+    const sentAgo = o.wa_sent_at ? (() => { const m = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min ago'; })() : '';
+    const itemsQty = items.reduce((s, i) => s + (parseFloat(i.quantity) || 1), 0);
+
+    const row = (label, valueHtml, opts = {}) => valueHtml
+      ? `<div style="display:grid;grid-template-columns:88px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);align-items:start${opts.hl ? ';background:rgba(245,166,35,.07);margin:0 -16px;padding-left:16px;padding-right:16px' : ''}">
+           <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-top:2px">${label}</div>
+           <div style="font-size:13px;color:var(--text);line-height:1.45;word-break:break-word">${valueHtml}</div>
+         </div>`
+      : '';
+
+    const body =
+      row('Client', `<b>${e(o.client_name) || '—'}</b>`) +
+      row('Phone', phoneDigits
+        ? `<a href="tel:+${phoneDigits}" style="font-family:var(--mono);font-size:13px;color:var(--blue);text-decoration:none">${e(o.client_number)}</a>`
+        : '<span style="color:var(--muted)">—</span>') +
+      row('Seller', e(o.seller_name)) +
+      row('Address', address.length
+        ? address.map((p, i) => `<div style="${i === 0 ? 'font-weight:700' : ''}">${e(p)}</div>`).join('')
+        : '<span style="color:var(--muted)">— no address —</span>') +
+      row('Location', o.location_url
+        ? `<a href="${e(o.location_url)}" target="_blank" rel="noopener" style="color:var(--blue);font-family:var(--mono);font-size:12px;word-break:break-all">🗺 ${e(String(o.location_url).replace(/^https?:\/\//, '').slice(0, 60))}${String(o.location_url).length > 68 ? '…' : ''}</a>`
+        : '') +
+      row('Scheduled', e(fmtSched(o))) +
+      row('Driver', `<b>${e(o.driver) || '—'}</b>${sentAgo ? ` <span style="color:var(--muted);font-family:var(--mono);font-size:11px">· sent ${sentAgo}</span>` : ''}`) +
+      row('Items', items.length
+        ? `<div style="font-family:var(--mono);font-size:12px;line-height:1.5">${items.map(i => `<div>• ${e(i.product_name)} <span style="color:var(--muted)">×${e(i.quantity || 1)}</span></div>`).join('')}<div style="color:var(--muted);font-size:11px;margin-top:2px">${itemsQty} item${itemsQty !== 1 ? 's' : ''} · subtotal ${itemsSubtotal.toFixed(2)} AED</div></div>`
+        : '<span style="color:var(--muted)">— no items —</span>') +
+      row('Payment', `${e(o.payment_status) || '—'}`) +
+      (needsCollect
+        ? row('Cash', `<b style="font-family:var(--mono);font-size:15px;color:var(--accent)">💵 ${cashToCollect.toFixed(2)} AED</b> <span style="color:var(--muted);font-size:11px">to collect</span>`, { hl: true })
+        : row('Total', `<span style="font-family:var(--mono)">${(parseFloat(o.total) || cashToCollect).toFixed(2)} AED</span> <span style="color:var(--muted);font-size:11px">· nothing to collect</span>`)) +
+      row('Driver note', o.driver_note && String(o.driver_note).trim() ? `<div style="white-space:pre-wrap;color:var(--accent)">📝 ${e(String(o.driver_note).trim())}</div>` : '') +
+      row('Notes', o.notes && String(o.notes).trim() ? `<div style="white-space:pre-wrap">${e(String(o.notes).trim())}</div>` : '');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'confirm-delivered-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:440px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Mark as delivered</div>
+            <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green);margin-top:2px">✓ ${e(o.order_num)}</div>
+          </div>
+          <span id="confirm-delivered-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:4px 6px">✕</span>
+        </div>
+        <div style="padding:4px 16px 8px;overflow-y:auto;flex:1">${body}</div>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;background:var(--surface2);border-radius:0 0 12px 12px">
+          <button id="confirm-delivered-cancel" type="button" style="padding:8px 16px;font-family:var(--mono);font-size:12px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+          <button id="confirm-delivered-ok" type="button" style="padding:8px 18px;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--green);color:#000;border:none;border-radius:8px;cursor:pointer">✓ Confirm delivered</button>
+        </div>
+      </div>`;
+
+    let done = false;
+    const finish = val => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(val);
+    };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(false); } };
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', ev => { if (ev.target === overlay) finish(false); });
+    overlay.querySelector('#confirm-delivered-x').onclick = () => finish(false);
+    overlay.querySelector('#confirm-delivered-cancel').onclick = () => finish(false);
+    overlay.querySelector('#confirm-delivered-ok').onclick = () => finish(true);
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confirm-delivered-cancel').focus();
+  });
 }
 
 function pickFailReason(orderNum) {
@@ -8276,12 +8510,15 @@ function renderDispatchSent() {
   const countEl = document.getElementById('dcol-sent-count');
   if (!el) return;
   // Today's sent orders — wa_sent=true, has driver
-  const sent = orders.filter(o => o.delivery_status === 'En Route');
-  if (countEl) countEl.textContent = sent.length;
-  if (!sent.length) {
+  const allSent = orders.filter(o => o.delivery_status === 'En Route');
+  _dfRenderChips('sent', allSent);                          // v13.71
+  const sent = dispatchApplyFilter(allSent, 'sent');        // v13.71
+  if (countEl) countEl.textContent = _dfCountText(sent.length, allSent.length);
+  if (!allSent.length) {
     el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No dispatched orders yet</div>';
     return;
   }
+  if (!sent.length) { el.innerHTML = _dfEmptyHtml('sent'); return; }
   // Group by driver
   const byDriver = {};
   sent.forEach(o => {
@@ -8302,7 +8539,7 @@ function renderDispatchSent() {
             <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${sentAgo}</span>
           </div>
           <div style="font-size:11px;color:var(--text);margin-bottom:4px">${o.client_name||'—'}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">${[o.emirate, o.city, o.client_number].filter(Boolean).join(' · ')}</div>
           ${(o.driver || '') !== ARAMEX_DRIVER ? `<div style="display:flex;gap:4px;margin-bottom:4px">
             <button onclick="event.stopPropagation();dispatchMarkDelivered('${o.id}')" title="Driver delivered this order — close it" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);font-weight:700;background:rgba(74,222,128,.18);color:var(--green);border:1px solid rgba(74,222,128,.45);border-radius:5px;cursor:pointer">✓ Delivered</button>
             <button onclick="event.stopPropagation();dispatchMarkFailed('${o.id}')" title="Driver could not deliver — pick a reason, order returns to the queue" style="flex:1;padding:4px 6px;font-size:10px;font-family:var(--mono);background:rgba(255,80,80,.12);color:#ff6666;border:1px solid rgba(255,80,80,.3);border-radius:5px;cursor:pointer">↩ Failed</button>
