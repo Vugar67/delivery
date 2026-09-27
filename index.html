@@ -1601,7 +1601,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.71.6';
+const APP_VERSION = 'v13.71.7';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3524,7 +3524,7 @@ function renderCustomItemPickers() {
 // directory may be used elsewhere). Fixed order per business spec. The chosen
 // chip goes into the name UPPERCASE: "THYMOSIN ALPHA PEN 10mg/2ml". Click the
 // active chip again to unset.
-const CUSTOM_ITEM_TYPES = ['Pen', 'Vial', 'Spray', 'Serum', 'Derma Roller', 'Cartridge', 'Miscellaneous', 'Pack.Mat.', 'Empty Box', 'Empty Box / Kit', 'Empty Pen'];   // v13.73: Pack.Mat. = Packaging Materials · v13.70.4: Empty Box, Empty Box / Kit · v13.71.3: Empty Pen
+const CUSTOM_ITEM_TYPES = ['Pen', 'Vial', 'Spray', 'Serum', 'Derma Roller', 'Cartridge', 'Miscellaneous', 'Pack.Mat.', 'Premix', 'Empty Box', 'Empty Box / Kit', 'Empty Pen'];   // v13.73: Pack.Mat. = Packaging Materials · v13.70.4: Empty Box, Empty Box / Kit · v13.71.3: Empty Pen · v13.71.7: Premix
 let customItemType = '';
 function renderCustomTypeChips() {
   const el = document.getElementById('custom-item-types');
