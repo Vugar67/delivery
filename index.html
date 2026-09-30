@@ -1477,6 +1477,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
     <div class="form-grid">
       <div class="form-group form-full"><label>Product Name</label><input id="p-name" placeholder="e.g. Fresh Dates 1kg"></div>
+      <div class="form-group form-full"><label>Invoice Nickname</label><input id="p-invoice-nickname" placeholder="Printed on the invoice instead of the product name — leave empty to print the name" maxlength="120"></div>
       <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
       <div class="form-group"><label>Shelf Position <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">1–64</span></label><input id="p-shelf" type="number" min="1" max="64" placeholder="e.g. 12"></div>
       <div class="form-group"><label>Unit</label>
@@ -1601,7 +1602,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.71.7';
+const APP_VERSION = 'v13.72';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6067,6 +6068,7 @@ function renderProducts(){
         <div>
           <div class="product-name">${p.name}</div>
           <div class="product-cat">${p.category||'&mdash;'}${p.type?` · <span style="color:var(--accent);font-size:10px">${p.type}</span>`:''}</div>
+          <div style="font-family:var(--mono);font-size:10px;margin-top:2px;color:${p.invoice_nickname?'var(--accent)':'var(--muted)'}" title="Invoice Nickname">🧾 ${p.invoice_nickname?escAttr(p.invoice_nickname):'<i>no invoice nickname</i>'}</div>
         </div>
       </div>
       ${p.description?`<div class="product-desc">${p.description}</div>`:''}
@@ -6088,7 +6090,7 @@ function renderProducts(){
       const kind=p.type||'';
       return `<tr>
         <td style="color:var(--muted);font-family:var(--mono)">${i+1}</td>
-        <td style="font-weight:600">${p.name}</td>
+        <td style="font-weight:600">${p.name}<div style="font-family:var(--mono);font-size:10px;font-weight:400;color:${p.invoice_nickname?'var(--accent)':'var(--muted)'}" title="Invoice Nickname">🧾 ${p.invoice_nickname?escAttr(p.invoice_nickname):'<i>no nickname</i>'}</div></td>
         <td>${p.category||'&mdash;'}</td>
         <td><span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:${typeColor}22;color:${typeColor}">${type}</span></td>
         <td>${kind?`<span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(245,166,35,.15);color:var(--accent)">${kind}</span>`:'&mdash;'}</td>
@@ -6113,7 +6115,7 @@ function openNewProduct(){
   _productImageFile=null;
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
-  ['p-name','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
+  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
   _fillCategoryDatalist();
   document.getElementById('p-type').value='Regular';
   document.getElementById('p-price').value='';
@@ -6136,6 +6138,7 @@ function editProduct(id){
   document.getElementById('product-modal-title').textContent='Edit Product';
   document.getElementById('p-name').value=p.name;
   document.getElementById('p-category').value=p.category||'';
+  document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
   _fillCategoryDatalist();
   document.getElementById('p-price').value=p.price;
   document.getElementById('p-unit').value=p.unit;
@@ -6199,7 +6202,7 @@ async function saveProduct(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
-  const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true};
+  const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null};   // v13.72: invoice_nickname (migration add_invoice_nickname)
   if(_productCurrentImageUrl!==undefined) payload.image_url = _productCurrentImageUrl;
 
   let error, productId = editProductId;
@@ -6537,10 +6540,14 @@ function renderCustomProductsGrid() {
   if (!el) return;
   el.innerHTML = (customProducts || []).length
     ? customProducts.map(c => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-weight:600;font-size:13px">${c.name}</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.unit || ''}</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:600;font-size:13px">${escAttr(c.name)}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escAttr(c.unit || '')}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px" title="Invoice Nickname — replaces the name on the invoice (kind and dosage stay)">
+            <span style="font-size:12px">🧾</span>
+            <input value="${escAttr(c.invoice_nickname || '')}" placeholder="invoice nickname (empty = name)" maxlength="120" onchange="saveCustomProductNickname(${c.id}, this.value)" style="flex:1;min-width:0;background:var(--surface2);border:1px solid ${c.invoice_nickname?'var(--accent)':'var(--border)'};border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
+          </div>
         </div>
         <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
       </div>`).join('')
@@ -6552,13 +6559,27 @@ function openNewCustomProduct() {
   if (!name || !name.trim()) return;
   const unit = prompt('Unit (e.g. mg, ml, pcs):', 'mg');
   if (unit === null) return;
-  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs' }).then(async ({ error }) => {
+  const nick = prompt('Invoice Nickname (printed on the invoice instead of the name; leave empty = name):', '');   // v13.72
+  if (nick === null) return;
+  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs', invoice_nickname: (nick || '').trim() || null }).then(async ({ error }) => {
     if (error) { toast('Could not add — check the custom_products table exists', true); return; }
     await loadCustomProducts();
     renderCustomProductsGrid();
     renderCustomItemPickers();
     toast('Custom product added');
   });
+}
+
+// v13.72: inline save of a custom product's Invoice Nickname (Directories card)
+async function saveCustomProductNickname(id, value) {
+  const nick = String(value || '').trim() || null;
+  const { error } = await sb.from('custom_products').update({ invoice_nickname: nick }).eq('id', id);
+  if (error) { console.log('DB error:', error); toast('Could not save nickname — run the add_invoice_nickname migration?', true); return; }
+  const c = (customProducts || []).find(x => x.id === id);
+  if (c) c.invoice_nickname = nick;
+  logEvent('UPDATE', 'custom_product', id, { action: 'invoice_nickname_set', name: c ? c.name : '', invoice_nickname: nick });
+  renderCustomProductsGrid();
+  toast(nick ? '🧾 Nickname saved' : '🧾 Nickname cleared');
 }
 
 async function deleteCustomProduct(id) {
@@ -7137,6 +7158,27 @@ function getSellerInfo(seller) {
   };
 }
 
+// v13.72: the name printed on the invoice. Catalog product → its Invoice Nickname (if set) — it beats the
+// seller alias and the operator's line-name edit. Custom item → the Custom Products directory entry whose
+// name is the leading part of the composed line name ("THYMOSIN ALPHA PEN 10mg/2ml") gets its nickname
+// swapped in for that part only, so kind and dosage stay ("TA1 PEN 10mg/2ml"). No nickname → name as saved.
+function invoiceLineName(item) {
+  const saved = String(item.product_name || '');
+  if (item.product_id) {
+    const src = (window._allProducts && window._allProducts.length) ? window._allProducts : products;   // incl. inactive — old invoices
+    const p = (src || []).find(x => String(x.id) === String(item.product_id)) || products.find(x => String(x.id) === String(item.product_id));
+    const nick = p && p.invoice_nickname ? String(p.invoice_nickname).trim() : '';
+    return nick || saved;
+  }
+  let best = null;
+  (customProducts || []).forEach(c => {
+    const n = String(c.name || '').trim();
+    if (!n || !c.invoice_nickname) return;
+    if (saved === n || saved.startsWith(n + ' ')) { if (!best || n.length > best.name.length) best = { name: n, nick: String(c.invoice_nickname).trim() }; }
+  });
+  return best ? best.nick + saved.slice(best.name.length) : saved;
+}
+
 function renderInvoiceContent(order, items, seller, invNum) {
   const si = getSellerInfo(seller);
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
@@ -7210,7 +7252,7 @@ function renderInvoiceContent(order, items, seller, invNum) {
         <tbody>
           ${items.map(item => `<tr>
             <td></td>
-            <td>${item.product_name}</td>
+            <td>${escHtml(invoiceLineName(item))}</td>
             <td style="text-align:center">${item.quantity}</td>
             <td style="text-align:right">${parseFloat(item.price||0).toFixed(2)}</td>
             <td style="text-align:right">${(parseFloat(item.price||0)*parseFloat(item.quantity||1)).toFixed(2)}</td>
