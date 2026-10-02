@@ -198,6 +198,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .shop-qty-inp{font-family:var(--mono);font-size:12px;width:38px;text-align:center;background:var(--bg);border:1px solid var(--accent);border-radius:4px;color:var(--accent);outline:none;padding:1px 3px}
 .shop-cart-item-price{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:70px;text-align:right}
 .shop-cart-item-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;transition:.1s}
+.shop-no-nick{opacity:.45;position:relative}  /* v13.73: product without Invoice Nickname — cannot be added */
+.shop-no-nick .shop-add-btn{cursor:not-allowed;filter:grayscale(1)}
+.shop-no-nick-tag{position:absolute;top:6px;left:6px;z-index:2;font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(248,113,113,.18);color:var(--red);border:1px solid rgba(248,113,113,.4)}
 .shop-cart-split,.shop-cart-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 3px;line-height:1;transition:.1s}  /* v13.71.5 split · v13.71.6 edit */
 .shop-cart-split:hover,.shop-cart-edit:hover{color:var(--accent)}
 /* v13.71.6: inline line-name editor */
@@ -1402,6 +1405,8 @@ select option{background:#1a1d27;color:#f0f2ff}
               <input id="custom-item-total" readonly value="0.00" tabindex="-1" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);box-sizing:border-box">
             </div>
           </div>
+          <!-- v13.73: shown when "Other…" is picked for the NAME — free-typed names are blocked -->
+          <div id="custom-item-other-hint" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(248,113,113,.45);background:rgba(248,113,113,.10);color:var(--red);font-size:12px;line-height:1.45"></div>
           <div style="margin-top:8px">
             <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">KIND</div>
             <div id="custom-item-types" class="shop-cats"></div>
@@ -1477,7 +1482,7 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
     <div class="form-grid">
       <div class="form-group form-full"><label>Product Name</label><input id="p-name" placeholder="e.g. Fresh Dates 1kg"></div>
-      <div class="form-group form-full"><label>Invoice Nickname</label><input id="p-invoice-nickname" placeholder="Printed on the invoice instead of the product name — leave empty to print the name" maxlength="120"></div>
+      <div class="form-group form-full"><label>Invoice Nickname <span style="color:var(--red)">*</span></label><input id="p-invoice-nickname" placeholder="Required — printed on the invoice instead of the product name" maxlength="120"></div>
       <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
       <div class="form-group"><label>Shelf Position <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">1–64</span></label><input id="p-shelf" type="number" min="1" max="64" placeholder="e.g. 12"></div>
       <div class="form-group"><label>Unit</label>
@@ -1602,7 +1607,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.72';
+const APP_VERSION = 'v13.73';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3485,8 +3490,8 @@ function renderCustomItemPickers() {
     const cur = nameSel.value;
     nameSel.innerHTML = '<option value="">— Select product —</option>' +
       (customProducts || []).map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('') +
-      '<option value="__custom__">✏️ Other — type name…</option>';
-    if (cur && [...nameSel.options].some(o => o.value === cur)) nameSel.value = cur;
+      '<option value="__custom__">✏️ Other — not in the list?</option>';   // v13.73: free-typed names blocked
+    if (cur && cur !== '__custom__' && [...nameSel.options].some(o => o.value === cur)) nameSel.value = cur;
   }
   const doseSel = document.getElementById('custom-item-dosage-sel');
   if (doseSel) {
@@ -3558,15 +3563,44 @@ function backFromOther(selId, wrapId, inpId) {
 }
 
 // Product picked → pull its unit from the directory; "Other…" → free-text name.
+// v13.73: "Other…" for the NAME no longer opens free text — for everyone, admin included. Every
+// custom item name must come from Directories → Custom Products, where it has an Invoice Nickname.
+function _customOtherHint(show) {
+  const h = document.getElementById('custom-item-other-hint');
+  if (!h) return;
+  h.style.display = show ? '' : 'none';
+  if (show) h.innerHTML = currentRole === 'admin'
+    ? '🧾 <b>Free-typed names are not allowed.</b> Add this name in <b>Directories → Custom Products</b> with its Invoice Nickname, then pick it from the list.'
+    : '🧾 <b>This name is not in the Custom Products list.</b> Please ask the admin to add it (with an Invoice Nickname) — then pick it from the list.';
+}
 function onCustomNameSel() {
   const sel = document.getElementById('custom-item-name-sel');
   if (!sel) return;
-  const isCustom = sel.value === '__custom__';
-  _otherModeToggle('custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name', isCustom);
-  if (!isCustom) {
-    const match = (customProducts || []).find(c => c.name === sel.value);
-    if (match) setCustomUnit(match.unit || '');
+  if (sel.value === '__custom__') {
+    sel.value = '';                        // back to "— Select product —", no free-text input
+    _otherModeToggle('custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name', false);
+    const inp = document.getElementById('custom-item-name'); if (inp) inp.value = '';
+    _customOtherHint(true);
+    return;
   }
+  _customOtherHint(false);
+  _otherModeToggle('custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name', false);
+  const match = (customProducts || []).find(c => c.name === sel.value);
+  if (match) setCustomUnit(match.unit || '');
+}
+
+// v13.73: the Custom Products directory entry a composed line name belongs to — the LONGEST
+// directory name that equals the line name or is followed by a space (same rule as the invoice).
+// Only entries WITH an Invoice Nickname count. null = free text / unknown.
+function _customDirMatch(lineName) {
+  const saved = String(lineName || '').trim();
+  let best = null;
+  (customProducts || []).forEach(c => {
+    const n = String(c.name || '').trim();
+    if (!n || !(c.invoice_nickname && String(c.invoice_nickname).trim())) return;
+    if (saved === n || saved.startsWith(n + ' ')) { if (!best || n.length > String(best.name).trim().length) best = c; }
+  });
+  return best;
 }
 
 // Set the UNIT dropdown to a specific value (auto-fill from the product card);
@@ -3613,6 +3647,7 @@ function updateCustomItemTotal() {
 // initShop) and after adding an item — leftovers from a previous order must
 // never survive into a new one.
 function resetCustomItemForm() {
+  _customOtherHint(false);   // v13.73
   [['custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name'],
    ['custom-item-dosage-sel', 'custom-item-dosage-wrap', 'custom-item-dosage'],
    ['custom-item-dosage2-sel', 'custom-item-dosage2-wrap', 'custom-item-dosage2'],
@@ -3645,8 +3680,10 @@ function renderShopProducts() {
   
   grid.innerHTML = filtered.map(p => {
     const inCartQty = cart.filter(item => !item.is_custom && item.product && item.product.id === p.id).reduce((s, item) => s + (parseFloat(item.qty) || 0), 0); // v13.71.5: summed over split lines
-    return `<div class="shop-product-card">
+    const _noNick = !_hasInvoiceNick(p);   // v13.73
+    return `<div class="shop-product-card${_noNick ? ' shop-no-nick' : ''}"${_noNick ? ` title="${escAttr(_noNickMsg())}"` : ''}>
       ${inCartQty ? `<span class="shop-in-cart">×${inCartQty}</span>` : ''}
+      ${_noNick ? '<span class="shop-no-nick-tag">🧾 no invoice nickname</span>' : ''}
       ${p.image_url ? `<img class="shop-product-img" src="${p.image_url}" alt="${p.name}" onerror="this.style.display='none'">` : '<div class="shop-product-img-placeholder">&#128247;</div>'}
       <div class="shop-product-name">${p.name}</div>
 
@@ -3845,6 +3882,12 @@ function commitCartNameEdit(i, name, unit) {
   name = String(name || '').trim(); unit = String(unit || '').trim();
   if (!name) { toast('Line name cannot be empty', true); return; }
   if (item.is_custom) {
+    // v13.73: a custom line must keep starting with a Custom Products name that has an Invoice
+    // Nickname — otherwise the invoice would print whatever was typed here
+    if (!_customDirMatch(name)) {
+      toast('🧾 A custom line must keep starting with its name from the Custom Products list — you can change the kind/dosage part after it. ' + (currentRole === 'admin' ? 'New names: Directories → Custom Products.' : 'New names: ask the admin.'), true);
+      return;
+    }
     item.product_name = name; item.unit = unit || 'pcs';
   } else {
     // Same as the catalog/alias text → no override (keeps the line "clean")
@@ -3889,9 +3932,8 @@ function toggleCustomItem() {
 function addCustomItem() {
   // Name: from the directory dropdown, or free-typed via "Other…"
   const nameSel = document.getElementById('custom-item-name-sel');
-  const baseName = (nameSel && nameSel.value && nameSel.value !== '__custom__')
-    ? nameSel.value
-    : (document.getElementById('custom-item-name').value || '').trim();
+  // v13.73: directory names only — the free-text path is closed
+  const baseName = (nameSel && nameSel.value && nameSel.value !== '__custom__') ? nameSel.value : '';
   // Dosage: from the directory dropdown, or free-typed via "Other…"
   const doseSel = document.getElementById('custom-item-dosage-sel');
   const dosage = (doseSel && doseSel.value && doseSel.value !== '__custom__')
@@ -3912,7 +3954,13 @@ function addCustomItem() {
   const typePart = customItemType ? ' ' + customItemType.toUpperCase() : '';
   const dosePart = (dosage ? dosage + unit : '') + (dosage2 || '');
   const name = baseName + typePart + (dosePart ? ' ' + dosePart : '');
-  if (!baseName) { toast('Select or enter item name', true); return; }
+  if (!baseName) { toast('Select the item name from the list', true); return; }
+  {const _dir = (customProducts || []).find(c => c.name === baseName);   // v13.73: must exist AND have a nickname
+   if (!_dir || !(_dir.invoice_nickname && String(_dir.invoice_nickname).trim())) {
+     _customOtherHint(true);
+     toast('🧾 "' + baseName + '" has no Invoice Nickname — ' + (currentRole === 'admin' ? 'add it in Directories → Custom Products' : 'ask the admin'), true);
+     return;
+   }}
   if (!customItemType) { toast('Select product type (Pen, Vial…)', true); return; }
 
   // Add to cart as a custom item (no product_id)
@@ -4369,8 +4417,18 @@ async function warehouseAction(orderId, newStatus) {
   toast(msgs[newStatus] || 'Updated');
 }
 
+// v13.73: a product without an Invoice Nickname cannot go into an order — nothing un-nicknamed
+// reaches an invoice. Fixing it is the admin's job (product card → Invoice Nickname).
+function _hasInvoiceNick(p) { return !!(p && p.invoice_nickname && String(p.invoice_nickname).trim()); }
+function _noNickMsg() {
+  return currentRole === 'admin'
+    ? 'This product has no Invoice Nickname — add it in the product card (Products) first'
+    : 'This product has no Invoice Nickname — ask the admin to add it';
+}
+
 function addToCart(productId) {
   const p = products.find(x => x.id === productId); if (!p) return;
+  if (!_hasInvoiceNick(p)) { toast('🧾 ' + _noNickMsg(), true); return; }   // v13.73
   // v13.71.5: the same product may sit on several lines (Split) — "+" tops up the line at the
   // catalog price (customPrice unset); if every line has a custom price, the first one.
   const lines = cart.filter(item => !item.is_custom && item.product && item.product.id === productId);
@@ -6116,6 +6174,7 @@ function openNewProduct(){
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
   ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   _fillCategoryDatalist();
   document.getElementById('p-type').value='Regular';
   document.getElementById('p-price').value='';
@@ -6139,6 +6198,7 @@ function editProduct(id){
   document.getElementById('p-name').value=p.name;
   document.getElementById('p-category').value=p.category||'';
   document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
+  document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   _fillCategoryDatalist();
   document.getElementById('p-price').value=p.price;
   document.getElementById('p-unit').value=p.unit;
@@ -6198,6 +6258,13 @@ async function saveProduct(){
   if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const get=id=>document.getElementById(id).value.trim();
   const name=get('p-name');if(!name){toast('Product name required',true);return;}
+  // v13.73: Invoice Nickname is mandatory — nothing reaches an invoice without one
+  {const _nk=document.getElementById('p-invoice-nickname');
+   if(!_nk.value.trim()){
+     _nk.style.borderColor='var(--red)'; _nk.focus();
+     _nk.addEventListener('input',()=>{_nk.style.borderColor='';},{once:true});
+     toast('Invoice Nickname is required — it is what prints on the invoice',true); return;
+   }}
   const btn=document.getElementById('save-product-btn');
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   
@@ -6254,6 +6321,14 @@ function _nextExportSeq(){
 
 function _xlsxPhone(v){ return v ? String(v).trim().replace(/\s+/g,'') : ''; }
 // Excel formula-injection guard: prefix risky leading chars with apostrophe
+// v13.73: invoice number for the export — a real number when numeric (sorts/filters as a number
+// in Excel, no "number stored as text" flag), the raw text otherwise, '' when not issued.
+function _xlsxInvNum(v){
+  if (v === null || v === undefined || String(v).trim() === '') return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? n : String(v);
+}
+
 function _xlsxSafe(v){
   if (typeof v !== 'string') return v;
   return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
@@ -6281,7 +6356,7 @@ async function exportXLSX(){
   const XL = await _loadXLSX();
 
   // Build rows — one row per order item, order info repeated
-  const headers = ['Order #','Date','Time','Created By','Emirate','City','District','Villa','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Internal Note','Driver Note'];
+  const headers = ['Order #','Invoice #','Date','Time','Created By','Emirate','City','District','Villa','Client Name','Client #','Seller','Product','Qty','Unit','Unit Price','Total','Delivery Charge','Grand Total','Driver','Payment','Delivery','Confirmed','Internal Note','Driver Note'];
 
   const data = [headers];
   filtered.forEach(o => {
@@ -6293,7 +6368,7 @@ async function exportXLSX(){
     const deliveryDisplay = deliveryCharge === 0 ? 'Free' : deliveryCharge;
     const deliverySub = deliveryCharge === 0 ? 'Free' : '';
     const base = [
-      o.order_num, o.order_date, time, o.created_by||'',
+      o.order_num, _xlsxInvNum(o.invoice_number), o.order_date, time, o.created_by||'',   // v13.73: Invoice # (latest; re-issued numbers live in the invoices journal)
       o.emirate, o.city||'', o.apt||'', o.villa||'', o.client_name||'',
       _xlsxPhone(o.client_number), o.seller_name||'',
     ];
@@ -6318,10 +6393,10 @@ async function exportXLSX(){
 
   // Column widths
   ws['!cols'] = [
-    {wch:14},{wch:11},{wch:6},{wch:18},{wch:12},{wch:14},{wch:16},{wch:16},
+    {wch:14},{wch:12},{wch:11},{wch:6},{wch:18},{wch:12},{wch:14},{wch:16},{wch:16},   // v13.73: +Invoice #
     {wch:20},{wch:16},{wch:20},{wch:28},{wch:5},{wch:6},
     {wch:10},{wch:10},{wch:14},{wch:12},
-    {wch:14},{wch:12},{wch:16},{wch:10},{wch:28}
+    {wch:14},{wch:12},{wch:16},{wch:10},{wch:28},{wch:28}   // v13.73: Driver Note width was missing
   ];
 
   // Bold header row
@@ -6546,7 +6621,7 @@ function renderCustomProductsGrid() {
           <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escAttr(c.unit || '')}</div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:6px" title="Invoice Nickname — replaces the name on the invoice (kind and dosage stay)">
             <span style="font-size:12px">🧾</span>
-            <input value="${escAttr(c.invoice_nickname || '')}" placeholder="invoice nickname (empty = name)" maxlength="120" onchange="saveCustomProductNickname(${c.id}, this.value)" style="flex:1;min-width:0;background:var(--surface2);border:1px solid ${c.invoice_nickname?'var(--accent)':'var(--border)'};border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
+            <input value="${escAttr(c.invoice_nickname || '')}" placeholder="invoice nickname (required)" maxlength="120" onchange="saveCustomProductNickname(${c.id}, this.value)" style="flex:1;min-width:0;background:var(--surface2);border:1px solid ${c.invoice_nickname?'var(--accent)':'var(--border)'};border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
           </div>
         </div>
         <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
@@ -6559,9 +6634,12 @@ function openNewCustomProduct() {
   if (!name || !name.trim()) return;
   const unit = prompt('Unit (e.g. mg, ml, pcs):', 'mg');
   if (unit === null) return;
-  const nick = prompt('Invoice Nickname (printed on the invoice instead of the name; leave empty = name):', '');   // v13.72
+  // v13.73: Invoice Nickname is mandatory — enter only the base name; kind and dosage are added on the invoice
+  let nick = prompt('Invoice Nickname (REQUIRED) — printed on the invoice instead of "' + name.trim() + '".\nBase name only: kind (PEN, VIAL…) and dosage are added automatically.', '');
   if (nick === null) return;
-  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs', invoice_nickname: (nick || '').trim() || null }).then(async ({ error }) => {
+  nick = String(nick).trim();
+  if (!nick) { toast('Invoice Nickname is required — custom product not added', true); return; }
+  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs', invoice_nickname: nick }).then(async ({ error }) => {
     if (error) { toast('Could not add — check the custom_products table exists', true); return; }
     await loadCustomProducts();
     renderCustomProductsGrid();
@@ -6573,13 +6651,18 @@ function openNewCustomProduct() {
 // v13.72: inline save of a custom product's Invoice Nickname (Directories card)
 async function saveCustomProductNickname(id, value) {
   const nick = String(value || '').trim() || null;
+  if (!nick) {   // v13.73: mandatory — an emptied field is not saved, the previous nickname comes back
+    toast('Invoice Nickname is required — not cleared', true);
+    renderCustomProductsGrid();
+    return;
+  }
   const { error } = await sb.from('custom_products').update({ invoice_nickname: nick }).eq('id', id);
   if (error) { console.log('DB error:', error); toast('Could not save nickname — run the add_invoice_nickname migration?', true); return; }
   const c = (customProducts || []).find(x => x.id === id);
   if (c) c.invoice_nickname = nick;
   logEvent('UPDATE', 'custom_product', id, { action: 'invoice_nickname_set', name: c ? c.name : '', invoice_nickname: nick });
   renderCustomProductsGrid();
-  toast(nick ? '🧾 Nickname saved' : '🧾 Nickname cleared');
+  toast('🧾 Nickname saved');
 }
 
 async function deleteCustomProduct(id) {
