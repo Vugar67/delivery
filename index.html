@@ -1160,6 +1160,8 @@ select option{background:#1a1d27;color:#f0f2ff}
         <input type="checkbox" id="inv-vat-included" onchange="updateInvoiceTotal()" style="width:16px;height:16px;cursor:pointer">
         <span style="font-size:11px;color:#888">off = +5% on top · on = 5% shown from within</span>
       </div>
+      <!-- v13.73.1: where the BILL TO TRN came from — panel only, never printed -->
+      <div id="inv-trn-hint" style="display:none"></div>
     </div>
     <div id="invoice-content" style="padding:0"></div>
   </div>
@@ -1607,7 +1609,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.73';
+const APP_VERSION = 'v13.73.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7210,6 +7212,9 @@ async function generateInvoice(seller) {
     action: forceNew ? 'invoice_reissued' : 'invoice_issued',
     invoice_number: invNum,
     seller,
+    client_trn: (_invLastTrn && _invLastTrn.trn) || undefined,          // v13.73.1: what BILL TO printed
+    client_trn_by: (_invLastTrn && _invLastTrn.how) || undefined,       // 'name' | 'phone'
+    client_trn_reason: (_invLastTrn && _invLastTrn.reason !== 'ok') ? _invLastTrn.reason : undefined,
     prev_invoice_number: (forceNew && order.invoice_number) ? order.invoice_number : undefined
   });
   await loadOrders(); renderTable();
@@ -7262,6 +7267,73 @@ function invoiceLineName(item) {
   return best ? best.nick + saved.slice(best.name.length) : saved;
 }
 
+// v13.73.1: which Clients card supplies the BILL TO TRN.
+// NAME first — the order's client name is picked from the Clients card itself (read-only field), so it
+// is the entity; a phone belongs to whoever placed the order and can be shared by several clients.
+// PHONE is the fallback when no card carries that name. Only an UNAMBIGUOUS match prints: several cards
+// with different TRNs → nothing (a blank beats someone else's TRN on a tax invoice).
+// Returns { trn, how: 'name'|'phone'|null, reason: 'ok'|'no_trn'|'ambiguous'|'none', card, count }.
+function resolveClientTrn(order) {
+  const norm   = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const digits = s => String(s || '').replace(/\D/g, '');
+  const trnOf  = c => (c && c.trn) ? String(c.trn).trim() : '';
+  const judge = (cards, how) => {
+    const withTrn = cards.filter(c => trnOf(c));
+    if (!withTrn.length) return { trn: '', how, reason: 'no_trn', card: cards[0], count: cards.length };
+    const distinct = [...new Set(withTrn.map(trnOf))];
+    if (distinct.length > 1) return { trn: '', how, reason: 'ambiguous', card: null, count: cards.length };
+    return { trn: distinct[0], how, reason: 'ok', card: withTrn[0], count: cards.length };
+  };
+  const list = Array.isArray(clients) ? clients : [];
+  const n = norm(order && order.client_name);
+  if (n) {
+    const byName = list.filter(c => norm(c.name) === n);
+    if (byName.length) return judge(byName, 'name');   // a name match IS the client — no phone fallback past it
+  }
+  const d = digits(order && order.client_number);
+  if (d) {
+    const byPhone = list.filter(c => digits(c.phone) === d);
+    if (byPhone.length) return judge(byPhone, 'phone');
+  }
+  return { trn: '', how: null, reason: 'none', card: null, count: 0 };
+}
+
+let _invLastTrn = null;   // v13.73.1: resolution of the invoice on screen — goes into the issue log
+
+// v13.73.1: one line in the control panel (NOT printed) saying where the BILL TO TRN came from,
+// so a wrong/missing TRN is caught before the PDF leaves. Green = printed; grey = none, nothing to fix
+// on a retail invoice; amber = needs a look (ambiguous cards, or a PO order with no TRN).
+function _syncInvTrnHint(res, order) {
+  const el = document.getElementById('inv-trn-hint');
+  if (!el) return;
+  const e = v => escAttr(v == null ? '' : v);
+  const cardName = res.card ? e(res.card.name) : '';
+  const corporate = !!String((order && order.po_number) || '').replace(/\D/g, '');
+  let level = 'info', text = '';
+  if (res.reason === 'ok') {
+    level = 'ok';
+    text = `Client TRN <b>${e(res.trn)}</b> — Clients card “${cardName}”, matched by ${res.how}` +
+           (res.how === 'phone' ? ` <span style="opacity:.75">(no card with this name — matched the phone instead; check it is the right company)</span>` : '') +
+           (res.count > 1 ? ` <span style="opacity:.75">(${res.count} cards share this ${res.how}, same TRN)</span>` : '');
+  } else if (res.reason === 'ambiguous') {
+    level = 'warn';
+    text = `<b>Client TRN not printed</b> — ${res.count} Clients cards match by ${res.how} with <b>different</b> TRNs. Merge or fix the duplicates in Clients, then reopen the invoice.`;
+  } else if (res.reason === 'no_trn') {
+    level = corporate ? 'warn' : 'info';
+    text = `Client TRN not printed — Clients card “${cardName}” has no TRN` + (corporate ? ` <b>(this order has a PO number — add the TRN in Clients if this is a company)</b>` : '') + `.`;
+  } else {
+    level = corporate ? 'warn' : 'info';
+    text = `Client TRN not printed — no Clients card matches this name or phone` + (corporate ? ` <b>(PO order — create or fix the Clients card, then reopen the invoice)</b>` : '') + `.`;
+  }
+  const styles = {
+    ok:   'color:#1a7f37;background:#e6f4ea;border-color:#b7dfc3',
+    info: 'color:#555;background:#f1f1f1;border-color:#ddd',
+    warn: 'color:#7a5a00;background:#fff4d6;border-color:#f0d58c'
+  };
+  el.style.cssText = 'flex-basis:100%;font-size:12px;padding:6px 10px;border:1px solid;border-radius:6px;line-height:1.45;' + styles[level];
+  el.innerHTML = '🧾 ' + text;
+}
+
 function renderInvoiceContent(order, items, seller, invNum) {
   const si = getSellerInfo(seller);
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
@@ -7305,9 +7377,9 @@ function renderInvoiceContent(order, items, seller, invNum) {
               // v13.69: corporate billing block — client's own TRN (live from the
               // Clients card, matched by phone) + the PO number saved on the order.
               // Empty values print nothing: retail invoices are unchanged.
-              const _digits = s => String(s || '').replace(/\D/g, '');
-              const _cl = _digits(order.client_number) ? (clients || []).find(c => _digits(c.phone) && _digits(c.phone) === _digits(order.client_number)) : null;
-              const _trn = _cl && _cl.trn ? String(_cl.trn).trim() : '';
+              // v13.73.1: name first, phone fallback, unambiguous only — see resolveClientTrn()
+              _invLastTrn = resolveClientTrn(order);
+              const _trn = _invLastTrn.trn;
               const _po = String(order.po_number || '').replace(/\D/g, '');   // v13.70: digits stored, PO prefix added here
               return (_trn ? `<div style="margin-top:6px"><b>TRN:</b> ${escHtml(_trn)}</div>` : '') +
                      (_po ? `<div${_trn ? '' : ' style="margin-top:6px"'}><b>PO</b>${escHtml(_po)}</div>` : '');
@@ -7365,6 +7437,7 @@ function renderInvoiceContent(order, items, seller, invNum) {
         Responsibility: Customer must verify order upon receipt. We are not liable after delivery.
       </div>
     </div>`;
+  _syncInvTrnHint(_invLastTrn || resolveClientTrn(order), order);   // v13.73.1: panel hint, outside #invoice-printable
 }
 
 async function updateInvoiceTotal() {
