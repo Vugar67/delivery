@@ -401,6 +401,9 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lot-line em{font-style:normal;color:var(--yellow)}
 .prod-row td{border-top:1px solid var(--border)}   /* v13.76.1: HUB rows = product total + one row per lot */
 .lot-row td{background:rgba(255,255,255,.02)}
+.lot-row.editing td{background:rgba(245,166,35,.08)}   /* v13.77: lot being edited */
+.lot-row .lot-e{background:var(--surface2);border:1px solid var(--accent);border-radius:5px;padding:3px 6px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none}
+.lot-edit-btn{opacity:.55}.lot-row:hover .lot-edit-btn{opacity:1}
 .putaway{margin:0 0 10px;padding:0 12px 6px;border-bottom:1px solid var(--border)}   /* v13.76: lots waiting for a fridge */
 #wh-putaway .putaway{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px 12px 8px;margin-bottom:12px}
 .pa-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--border)}
@@ -1737,7 +1740,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.76.2';
+const APP_VERSION = 'v13.77';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6110,6 +6113,32 @@ function _putAwayHtml() {
     </div>`; }).join('')}</div>`;
 }
 function renderPutAway() { const el = document.getElementById('wh-putaway'); if (el) el.innerHTML = _putAwayHtml(); }
+// v13.77: admin edits a lot in place — fridge, made-on date, quantity (a qty change is journaled as an adjustment on that lot)
+let _lotEditId = null;
+function startLotEdit(lotId) { if (currentRole !== 'admin') return; _lotEditId = lotId; renderStorage(); setTimeout(() => document.getElementById('lot-e-qty-' + lotId)?.focus(), 50); }
+function cancelLotEdit() { _lotEditId = null; renderStorage(); }
+async function saveLotEdit(lotId) {
+  const l = stockLots.find(x => x.id === lotId); if (!l) { cancelLotEdit(); return; }
+  const place = document.getElementById('lot-e-place-' + lotId)?.value || null;
+  const madeOn = document.getElementById('lot-e-date-' + lotId)?.value || null;
+  const qty = parseFloat(document.getElementById('lot-e-qty-' + lotId)?.value);
+  if (isNaN(qty) || qty < 0) { toast('Qty must be 0 or more', true); return; }
+  if (madeOn && !/^\d{4}-\d{2}-\d{2}$/.test(madeOn)) { toast('Bad date', true); return; }
+  const oldQ = parseFloat(l.qty_left) || 0;
+  const changes = [];
+  if ((l.place || null) !== place) changes.push('fridge ' + (l.place || '—') + ' → ' + (place || '—'));
+  if ((l.made_on ? String(l.made_on).slice(0, 10) : null) !== madeOn) changes.push('made ' + (l.made_on ? _lotDate(l.made_on) : '—') + ' → ' + (madeOn ? _lotDate(madeOn) : '—'));
+  if (oldQ !== qty) changes.push('qty ' + oldQ + ' → ' + qty);
+  if (!changes.length) { cancelLotEdit(); return; }
+  const p = products.find(x => x.id === l.product_id) || (window._allProducts || []).find(x => x.id === l.product_id);
+  if (oldQ !== qty && !confirm((p?.name || 'Lot') + ': ' + changes.join(', ') + '.\nThe quantity change (' + (qty - oldQ > 0 ? '+' : '') + (qty - oldQ) + ') will be written to the stock journal as an adjustment. Continue?')) return;
+  const { error } = await sb.rpc('stock_lot_edit', { p_lot_id: lotId, p_place: place, p_made_on: madeOn, p_qty_left: qty, p_note: oldQ !== qty ? 'Storage: lot edited ' + oldQ + ' → ' + qty : null });
+  if (error) { toast('Lot: ' + (error.message || 'error'), true); return; }
+  logEvent('UPDATE', 'stock', String(l.product_id), { action: 'stock_lot_edit', product: p?.name, lot_id: lotId, changes });
+  toast('✓ ' + (p?.name || 'Lot') + ': ' + changes.join(', '));
+  _lotEditId = null;
+  await loadStorage(); renderStorage();
+}
 async function stockPlaceLot(lotId) {
   const l = stockLots.find(x => x.id === lotId); if (!l) return;
   const place = document.getElementById('lot-place-' + lotId)?.value || '';
@@ -6154,14 +6183,24 @@ function renderStorage() {
       </tr>`;
       // v13.76.1: HUB — a product header row (total) + one row per lot (fridge · made-on · qty)
       const lots = _lotsSorted(i.product_id, s.id);
-      const lotRows = lots.length ? lots.map(l => `<tr class="lot-row" data-lot="${l.id}">
+      const fridgeOpts = sel => `<option value="">— no fridge —</option>` + (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}" ${f.value === sel ? 'selected' : ''}>${escAttr(f.value)}</option>`).join('');
+      const today = toUAEDate(new Date().toISOString());
+      const lotRows = lots.length ? lots.map(l => _lotEditId === l.id ? `<tr class="lot-row editing" data-lot="${l.id}">
+        <td></td>
+        <td style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--muted);font-family:var(--mono)">✎ ${escAttr(_lotSourceText(l))}</td>
+        <td style="padding:3px 8px"><select id="lot-e-place-${l.id}" class="lot-e">${fridgeOpts(l.place)}</select></td>
+        <td style="padding:3px 8px"><input type="date" id="lot-e-date-${l.id}" class="lot-e" value="${l.made_on ? String(l.made_on).slice(0, 10) : ''}" max="${today}"></td>
+        <td style="padding:3px 8px;text-align:center"><input type="number" id="lot-e-qty-${l.id}" class="lot-e" min="0" step="1" value="${parseFloat(l.qty_left)}" style="width:64px;text-align:center" title="Changing the quantity writes an adjustment to the journal"></td>
+        <td style="padding:3px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'')}</td>
+        <td style="padding:3px 8px;white-space:nowrap"><button class="act-btn" style="padding:2px 7px;font-size:11px;color:var(--green)" onclick="saveLotEdit(${l.id})" title="Save">✓</button> <button class="act-btn" style="padding:2px 7px;font-size:11px" onclick="cancelLotEdit()" title="Cancel">✕</button></td>
+      </tr>` : `<tr class="lot-row" data-lot="${l.id}">
         <td></td>
         <td style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--muted);font-family:var(--mono)">↳ ${escAttr(_lotSourceText(l))}</td>
         <td style="padding:3px 8px;font-family:var(--mono);font-size:12px;font-weight:700;color:${l.place ? 'var(--text)' : 'var(--yellow)'}">${l.place ? escAttr(l.place) : 'no place'}</td>
         <td style="padding:3px 8px;font-family:var(--mono);font-size:11px;color:${l.made_on ? 'var(--text)' : 'var(--muted)'}">${l.made_on ? 'made ' + _lotDate(l.made_on) : 'no date'}</td>
         <td style="padding:3px 8px;text-align:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">${parseFloat(l.qty_left)}</td>
         <td style="padding:3px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'')}</td>
-        <td></td>
+        <td style="padding:3px 8px;white-space:nowrap">${currentRole === 'admin' ? `<button class="act-btn lot-edit-btn" style="padding:2px 7px;font-size:11px" onclick="startLotEdit(${l.id})" title="Edit this lot: fridge, made-on date, quantity (admin)">✎</button>` : ''}</td>
       </tr>`).join('') : (q !== 0 ? `<tr class="lot-row"><td></td><td colspan="5" style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--yellow);font-family:var(--mono)">↳ no lots — recount, or add with a date and fridge</td><td></td></tr>` : '');
       return `<tr class="prod-row"${rowTitle}>
         <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
