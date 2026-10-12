@@ -1737,7 +1737,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.76.1';
+const APP_VERSION = 'v13.76.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6082,7 +6082,7 @@ async function loadStockLots() {   // v13.76: open lots + batch numbers for the 
   const ids = [...new Set(stockLots.map(l => l.batch_id).filter(Boolean))].filter(id => !_lotBatchNo[id]);
   if (ids.length) { const { data: bs } = await sb.from('lab_batches').select('id,batch_no').in('id', ids); (bs || []).forEach(b => _lotBatchNo[b.id] = b.batch_no); }
 }
-function _lotDate(d) { return d ? _labDate(d) : 'no date'; }
+function _lotDate(d) { if (!d) return 'no date'; const p = String(d).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : String(d); }   // v13.76.2: dd.mm.yyyy
 function _lotsSorted(productId, storageId) {   // FIFO order — the order pack-out consumes: no date first, then by made-on date
   return stockLots.filter(l => l.product_id === productId && (storageId == null || l.storage_id === storageId) && parseFloat(l.qty_left) > 0)
     .sort((a, b) => String(a.made_on || '').localeCompare(String(b.made_on || '')) || String(a.created_at).localeCompare(String(b.created_at)) || (a.id - b.id));
@@ -6136,7 +6136,7 @@ function renderStorage() {
       const p = products.find(x => x.id === i.product_id) || (window._allProducts || []).find(x => x.id === i.product_id);
       const q = parseFloat(i.quantity) || 0, minS = parseFloat(p?.min_stock) || 0;
       const low = q < 0 ? 'neg' : (minS > 0 && q < minS ? 'low' : '');
-      const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : 'var(--text)');
+      const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : (ledger ? 'var(--accent)' : 'var(--text)'));   // v13.76.2: HUB total in accent, lots in white
       const flags = `${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}`;
       const qtyInput = `<input type="number" step="0.01" value="${i.quantity}"
             onchange="${ledger ? `storageCountQty(${i.id},this.value)` : `updateInventoryQty(${i.id},this.value)`}"
@@ -6157,9 +6157,9 @@ function renderStorage() {
       const lotRows = lots.length ? lots.map(l => `<tr class="lot-row" data-lot="${l.id}">
         <td></td>
         <td style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--muted);font-family:var(--mono)">↳ ${escAttr(_lotSourceText(l))}</td>
-        <td style="padding:3px 8px;font-family:var(--mono);font-size:12px;font-weight:700;${l.place ? '' : 'color:var(--yellow)'}">${l.place ? escAttr(l.place) : 'no place'}</td>
-        <td style="padding:3px 8px;font-family:var(--mono);font-size:11px;${l.made_on ? '' : 'color:var(--muted)'}">${l.made_on ? 'made ' + _lotDate(l.made_on) : 'no date'}</td>
-        <td style="padding:3px 8px;text-align:center;font-family:var(--mono);font-size:12px;font-weight:600">${parseFloat(l.qty_left)}</td>
+        <td style="padding:3px 8px;font-family:var(--mono);font-size:12px;font-weight:700;color:${l.place ? 'var(--text)' : 'var(--yellow)'}">${l.place ? escAttr(l.place) : 'no place'}</td>
+        <td style="padding:3px 8px;font-family:var(--mono);font-size:11px;color:${l.made_on ? 'var(--text)' : 'var(--muted)'}">${l.made_on ? 'made ' + _lotDate(l.made_on) : 'no date'}</td>
+        <td style="padding:3px 8px;text-align:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">${parseFloat(l.qty_left)}</td>
         <td style="padding:3px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'')}</td>
         <td></td>
       </tr>`).join('') : (q !== 0 ? `<tr class="lot-row"><td></td><td colspan="5" style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--yellow);font-family:var(--mono)">↳ no lots — recount, or add with a date and fridge</td><td></td></tr>` : '');
@@ -6167,7 +6167,7 @@ function renderStorage() {
         <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
         <td style="padding:7px 8px 3px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}<span style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:8px">${escAttr(p?.category||'')}${minS > 0 ? ' · min ' + minS : ''}</span></td>
         <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">${lots.length > 1 ? lots.length + ' lots' : ''}</td>
-        <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">total</td>
+        <td style="padding:7px 8px 3px;font-size:10px;color:var(--accent);font-family:var(--mono)">total</td>
         <td style="padding:5px 8px 3px;text-align:center">${qtyInput}</td>
         <td style="padding:7px 8px 3px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'—')}</td>
         <td style="padding:5px 8px 3px;white-space:nowrap">${actions}</td>
@@ -6372,7 +6372,7 @@ async function openStockMoves(productId) {
       <td style="padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${toUAEDateTime(r.created_at)}</td>
       <td style="padding:6px 8px;text-align:right;font-family:var(--mono);font-weight:700;color:${parseFloat(r.qty) < 0 ? 'var(--red)' : 'var(--green)'}">${parseFloat(r.qty) > 0 ? '+' : ''}${r.qty}</td>
       <td style="padding:6px 8px">${label[r.reason] || escAttr(r.reason)}</td>
-      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${r.batch_id ? 'batch ' + escAttr(batchNo[r.batch_id] || r.batch_id) : ''}${r.order_id ? escAttr(orderNum[r.order_id] || r.order_id) : ''}${r.lot_id ? `<span class="lot-tag" title="lot #${r.lot_id}">${lotOf[r.lot_id] ? (lotOf[r.lot_id].made_on ? 'lot ' + _labDate(lotOf[r.lot_id].made_on) : 'lot · no date') : 'lot'}</span>` : (parseFloat(r.qty) < 0 && r.reason === 'pack_out' ? '<span class="lot-tag warn" title="No lot had stock — balance went negative">no lot</span>' : '')}${r.note ? `<div style="color:var(--muted);font-family:var(--font);font-size:11px">${escAttr(r.note)}</div>` : ''}</td>
+      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${r.batch_id ? 'batch ' + escAttr(batchNo[r.batch_id] || r.batch_id) : ''}${r.order_id ? escAttr(orderNum[r.order_id] || r.order_id) : ''}${r.lot_id ? `<span class="lot-tag" title="lot #${r.lot_id}">${lotOf[r.lot_id] ? (lotOf[r.lot_id].made_on ? 'lot ' + _lotDate(lotOf[r.lot_id].made_on) : 'lot · no date') : 'lot'}</span>` : (parseFloat(r.qty) < 0 && r.reason === 'pack_out' ? '<span class="lot-tag warn" title="No lot had stock — balance went negative">no lot</span>' : '')}${r.note ? `<div style="color:var(--muted);font-family:var(--font);font-size:11px">${escAttr(r.note)}</div>` : ''}</td>
       <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${escAttr(r.created_by || '')}</td>
     </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--muted);font-size:12px">No movements yet</div>';
 }
@@ -6430,7 +6430,7 @@ async function receiveInventoryInline(storageId) {
   const { data, error } = await sb.rpc('stock_receive', { p_product_id: parseInt(product_id), p_qty: qty, p_made_on: madeOn, p_note: 'Storage: added manually', p_place: place });
   if (error) { toast('Stock: ' + (error.message || 'error'), true); return; }
   logEvent('UPDATE', 'stock', String(product_id), { action: 'stock_receive', product: p?.name, qty, made_on: madeOn, place, after: data });
-  toast('+' + qty + ' ' + (p?.name || '') + ' (made ' + _labDate(madeOn) + ') → ' + place + ' · HUB ' + data);
+  toast('+' + qty + ' ' + (p?.name || '') + ' (made ' + _lotDate(madeOn) + ') → ' + place + ' · HUB ' + data);
   const q = document.getElementById('inv-add-qty-' + storageId); if (q) q.value = '';
   await loadStorage(); renderStorage();
 }
