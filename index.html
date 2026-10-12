@@ -393,6 +393,26 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-name{font-weight:700;font-size:13px;flex:1 1 160px;min-width:0}
 .lab-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
 .lab-meta b{color:var(--text);font-weight:600}
+.lot-line{font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;margin-top:2px;white-space:normal}   /* v13.75: lots under a HUB product */
+.lot-line b{color:var(--text);font-weight:600}
+.lot-line i{font-style:normal;opacity:.5;white-space:pre}
+.lot-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;font-size:10px;border:1px solid var(--border);color:var(--muted)}
+.lot-tag.warn{color:var(--yellow);border-color:rgba(251,191,36,.5)}
+.lot-line em{font-style:normal;color:var(--yellow)}
+.putaway{margin:0 0 10px;padding:0 12px 6px;border-bottom:1px solid var(--border)}   /* v13.76: lots waiting for a fridge */
+#wh-putaway .putaway{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px 12px 8px;margin-bottom:12px}
+.pa-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--border)}
+.pa-row:first-of-type{border-top:none}
+.pa-main{flex:1 1 220px;min-width:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pa-main>b{font-size:13px}
+.pa-row select,.pa-row input{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none}
+.pa-row input{width:76px;text-align:center}
+.fifo-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px}
+.fifo-hint b{color:var(--accent)}
+.lab-with{margin:5px 0 2px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}   /* v13.74.3: the rest of the order, one product per line */
+.lab-with ul{list-style:none;margin:2px 0 0;padding:0 0 0 8px;border-left:2px solid var(--border)}
+.lab-with li{padding:1px 0;color:var(--text);font-size:11px;font-weight:600;line-height:1.35}
+.lab-with li span{color:var(--muted);font-weight:400;margin-left:6px}
 .lab-urg{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:10px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.4);font-weight:700}
 .lab-chip{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
 .lab-chip.ok{background:rgba(74,222,128,.14);color:var(--green);border-color:rgba(74,222,128,.4)}
@@ -789,6 +809,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button id="wh-search-clear" onclick="onWhSearch('');document.getElementById('wh-search').value=''" title="Clear"
           style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:8px 11px;color:var(--muted);font-size:13px">✕</button>
       </div>
+      <div id="wh-putaway"></div>   <!-- v13.76: lots waiting to be placed in a fridge -->
       <div id="warehouse-queue"></div>
     </div>
 
@@ -1714,7 +1735,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.74.2';
+const APP_VERSION = 'v13.76';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -1796,6 +1817,12 @@ class Query {
   }
   select(cols) { this._selectCols = cols && cols !== 'undefined' ? cols : null; return this; }
   eq(col, val) { if(col && val !== undefined) this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; }
+  gt(col, val)  { if(col && val !== undefined) this._filters.push(col + '=gt.'  + encodeURIComponent(val)); return this; }   // v13.75
+  gte(col, val) { if(col && val !== undefined) this._filters.push(col + '=gte.' + encodeURIComponent(val)); return this; }
+  lt(col, val)  { if(col && val !== undefined) this._filters.push(col + '=lt.'  + encodeURIComponent(val)); return this; }
+  lte(col, val) { if(col && val !== undefined) this._filters.push(col + '=lte.' + encodeURIComponent(val)); return this; }
+  neq(col, val) { if(col && val !== undefined) this._filters.push(col + '=neq.' + encodeURIComponent(val)); return this; }
+  is(col, val)  { if(col) this._filters.push(col + '=is.' + (val === null ? 'null' : String(val))); return this; }
   in(col, vals) { if(col && vals && vals.length) this._filters.push(col + '=in.(' + vals.join(',') + ')'); return this; }
   order(col, opts) { 
     if(col) { 
@@ -2094,7 +2121,7 @@ let currentRoleName=null;                     // v13.64: the assigned role name 
 let currentStaffRole=null;                    // v13.74: profiles.staff_role — lab workstation (mixer / packer / qa)
 let systemRoles=[];                           // v13.64: custom roles from system_roles table
 const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse','lab'];   // v13.74: lab (mixer / packer / qa by staff_role)
-let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[]};  // v13.71.4: productCategory = registry kept by the admin app
+let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[],fridges:[]};  // v13.71.4: productCategory = registry kept by the admin app · v13.76: fridges = places inside HUB
 let products=[], orderItems={};
 let clients=[], editClientId=null;
 let editId=null, editProductId=null;
@@ -2314,9 +2341,11 @@ async function initApp(){
 
   if(isWarehouse){
     nav.innerHTML=`<button class="tab-btn active" onclick="showView('warehouse')">📦 Warehouse</button>`;
-    await Promise.all([loadOrders(),loadProducts()]);
+    await Promise.all([loadOrders(),loadProducts(),loadRefs(),loadStockLots()]);   // v13.76: fridges + lots for put-away / FIFO hints
     showView('warehouse');
     renderWarehouseQueue();
+    renderPutAway();
+    setInterval(() => { if (!document.hidden && currentRole === 'warehouse') loadStockLots().then(renderPutAway); }, 30000);   // QA hands lots over while the warehouse works
     subscribeRealtime();
     return;
   }
@@ -2361,7 +2390,7 @@ async function initApp(){
 async function loadRefs(){
   const{data}=await sb.from('refs').select('*').order('sort_order',{ascending:true}).order('value',{ascending:true});
   if(!data)return;
-  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[]};  // v13.71.4: productCategory = registry kept by the admin app
+  refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[],fridges:[]};  // v13.71.4: productCategory = registry kept by the admin app · v13.76: fridges
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
@@ -4437,6 +4466,7 @@ async function openWarehouseOrder(orderId) {
       <td style="padding:12px 8px;font-size:13px;color:var(--text);font-weight:500">
         ${item.product_name}
         ${barcode ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">▪ ${barcode}</div>` : ''}
+        ${item.product_id && prod && !prod.made_to_order ? _fifoHint(item.product_id, item.quantity || 1) : ''}
       </td>
       <td style="padding:12px 8px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">${item.quantity || 1}</td>
     </tr>`;
@@ -4492,7 +4522,7 @@ async function whComplete() {
   try {
     const { data: _n, error: _se } = await sb.rpc('stock_pack_out', { p_order_id: orderId });
     if (_se) { console.log('stock_pack_out error:', _se); toast('⚠️ Packed, but stock was NOT deducted: ' + (_se.message || '') + ' — tell the admin', true); }
-    else logEvent('UPDATE', 'order', orderId, { order_num: o?.order_num, action: 'stock_pack_out', lines: _n });
+    else { logEvent('UPDATE', 'order', orderId, { order_num: o?.order_num, action: 'stock_pack_out', lines: _n }); loadStockLots().then(renderPutAway).catch(() => {}); }   // v13.76: lots changed
   } catch (e) { console.log('stock_pack_out failed:', e); }
   window._whOrderId = null;
   closeModal('wh-modal');
@@ -5710,8 +5740,11 @@ function _labItemChip(b, suffix) {     // chip for a per-order batch: kind + ord
   const c = _labItemOf(b);
   return ` <span class="lab-chip custom">${_labItemKind(b)}${c ? ' · ' + escAttr(c.order_num) : ''}${suffix || ''}</span>`;
 }
-function _labItemContext(c) {          // "with V-RETA 30mg × 2" — the rest of the order this line belongs to
-  return c && c.with_items ? `<span>with <b>${escAttr(c.with_items)}</b></span>` : '';
+function _labItemContext(c) {          // v13.74.3: the rest of the order this line belongs to — one product per line
+  if (!c || !c.with_items) return '';
+  const parts = [...String(c.with_items).matchAll(/(.+?) × ([\d.]+)(?:, |$)/g)].map(m => ({ name: m[1], qty: m[2] }));
+  const lis = parts.length ? parts.map(x => `<li>${escAttr(x.name)} <span>× ${escAttr(x.qty)}</span></li>`).join('') : `<li>${escAttr(c.with_items)}</li>`;
+  return `<div class="lab-with">with<ul>${lis}</ul></div>`;
 }
 function _labUrgChip(prio, dateStr) {
   if (prio === 1) return `<span class="lab-urg">URGENT</span>`;
@@ -5844,7 +5877,8 @@ function renderLabMixer() {
         <div class="lab-name">${escAttr(c.custom_name)} ${_labUrgChip(c.priority)} <span class="lab-chip custom">${_labItemKind(c)} · ${escAttr(c.order_num)}</span></div>
         ${!b ? `<div class="lab-need">${left}</div><button class="lab-btn primary" onclick="labOpen(null, ${c.order_item_id}, false)">Open batch</button>` : ''}
       </div>
-      <div class="lab-meta">${_labItemContext(c)}${c.sched_date ? `<span>delivery <b>${_labDate(c.sched_date)}</b></span>` : ''}${done > 0 ? `<span>accepted <b>${done}</b> of ${num(c.quantity)} — remake <b>${left}</b></span>` : ''}<span>made to order — not stocked</span></div>
+      ${_labItemContext(c)}
+      <div class="lab-meta">${c.sched_date ? `<span>delivery <b>${_labDate(c.sched_date)}</b></span>` : ''}${done > 0 ? `<span>accepted <b>${done}</b> of ${num(c.quantity)} — remake <b>${left}</b></span>` : ''}<span>made to order — not stocked</span></div>
       ${b ? _labTallyHtml(b) : ''}
     </div>`;
   };
@@ -5940,7 +5974,8 @@ function renderLabPacker() {
         <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b)}</div>
         <div class="lab-need">${b.qty_mixed}<small>made</small></div>
       </div>
-      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}${_labItemContext(_labItemOf(b))}</div>
+      ${_labItemContext(_labItemOf(b))}
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}</div>
       <div class="lab-form">
         <label>Packed</label><input type="number" id="lab-pack-qty-${b.id}" min="1" max="${b.qty_mixed}" value="${b.qty_mixed}">
         <button class="lab-btn primary" onclick="labPackDone(${b.id})">Packed → QA</button>
@@ -5972,7 +6007,8 @@ function renderLabQA() {
         <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b, ' — not stocked')}</div>
         <div class="lab-need">${b.qty_packed}<small>packed</small></div>
       </div>
-      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span><span>packed ${_labWhen(b.packed_at)}</span>${b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}${_labItemContext(_labItemOf(b))}</div>
+      ${_labItemContext(_labItemOf(b))}
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span><span>packed ${_labWhen(b.packed_at)}</span>${b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}</div>
       <div class="lab-form">
         <label>OK</label><input type="number" id="lab-qa-ok-${b.id}" min="0" max="${b.qty_packed}" value="${b.qty_packed}" oninput="labQaSync(${b.id}, 'ok')">
         <label>Rejected</label><input type="number" id="lab-qa-rej-${b.id}" min="0" max="${b.qty_packed}" value="0" oninput="labQaSync(${b.id}, 'rej')">
@@ -6028,12 +6064,68 @@ function renderLabHistory() {
 
 let storageLocations = [];
 let storageInventory = [];
+let stockLots = [];            // v13.75: open lots (qty_left > 0) — product + made-on date + what is left; FIFO at pack-out
 
 async function loadStorage() {
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
   const { data: inv } = await sb.from('storage_inventory').select('*');
   storageInventory = inv || [];
+  await loadStockLots();
+}
+let _lotBatchNo = {};
+async function loadStockLots() {   // v13.76: open lots + batch numbers for the lab ones
+  const { data: lots } = await sb.from('stock_lots').select('*').gt('qty_left', 0).order('made_on', { ascending: true });
+  stockLots = lots || [];
+  const ids = [...new Set(stockLots.map(l => l.batch_id).filter(Boolean))].filter(id => !_lotBatchNo[id]);
+  if (ids.length) { const { data: bs } = await sb.from('lab_batches').select('id,batch_no').in('id', ids); (bs || []).forEach(b => _lotBatchNo[b.id] = b.batch_no); }
+}
+function _lotDate(d) { return d ? _labDate(d) : 'no date'; }
+function _lotsSorted(productId, storageId) {   // FIFO order — the order pack-out consumes: no date first, then by made-on date
+  return stockLots.filter(l => l.product_id === productId && (storageId == null || l.storage_id === storageId) && parseFloat(l.qty_left) > 0)
+    .sort((a, b) => String(a.made_on || '').localeCompare(String(b.made_on || '')) || String(a.created_at).localeCompare(String(b.created_at)) || (a.id - b.id));
+}
+function _lotsHtml(storageId, productId, total) {   // "REF_2 · made 01.10 — 5 · no place · no date — 2"
+  const lots = _lotsSorted(productId, storageId);
+  if (!lots.length) return total > 0 ? '<div class="lot-line" title="Stock without lots — count it again or receive with a date">no lots</div>' : '';
+  return `<div class="lot-line">${lots.map(l => `<span title="${escAttr(l.source === 'lab' ? 'made in the lab' + (l.batch_id && _lotBatchNo[l.batch_id] ? ' — batch ' + _lotBatchNo[l.batch_id] : '') : l.source === 'manual' ? 'received manually' : l.source)}">${l.place ? '<b>' + escAttr(l.place) + '</b>' : '<em>no place</em>'} · ${l.made_on ? 'made <b>' + _lotDate(l.made_on) + '</b>' : 'no date'} — ${parseFloat(l.qty_left)}</span>`).join('<i> · </i>')}</div>`;
+}
+function _lotSourceText(l) { return l.source === 'lab' ? ('lab batch ' + (_lotBatchNo[l.batch_id] || '')) : l.source === 'manual' ? 'received manually' : l.source === 'legacy' ? 'opening balance' : l.source; }
+// v13.76: FIFO hint for the warehouse — which fridge(s) the next pack-out of this product will take from
+function _fifoHint(productId, qty) {
+  const lots = _lotsSorted(productId, null); if (!lots.length) return '';
+  let left = parseFloat(qty) || 1; const parts = [];
+  for (const l of lots) { if (left <= 0) break; const take = Math.min(left, parseFloat(l.qty_left)); parts.push(`<b>${l.place ? escAttr(l.place) : 'no place'}</b> ${take}${l.made_on ? ' <span style="opacity:.7">made ' + _lotDate(l.made_on) + '</span>' : ''}`); left -= take; }
+  return `<div class="fifo-hint">take from ${parts.join(' → ')}${left > 0 ? ` <span style="color:var(--yellow)">· short ${left}</span>` : ''}</div>`;
+}
+// v13.76: put-away — lots that are in HUB but not yet in a fridge (QA hands over, the warehouse places them)
+function _putAwayHtml() {
+  const rows = stockLots.filter(l => !l.place && parseFloat(l.qty_left) > 0).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  if (!rows.length) return '';
+  const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
+  return `<div class="putaway"><div class="lab-sec">Put away — not in a fridge yet <span class="lab-cnt">${rows.length}</span></div>
+    ${rows.map(l => { const p = products.find(x => x.id === l.product_id) || (window._allProducts || []).find(x => x.id === l.product_id); const q = parseFloat(l.qty_left); return `<div class="pa-row" data-lot="${l.id}">
+      <div class="pa-main"><b>${p ? escAttr(p.name) : '#' + l.product_id}</b><span class="lab-need" style="font-size:18px">${q}<small>${escAttr(p?.unit || '')}</small></span>
+        <div class="lab-meta"><span>${l.made_on ? 'made <b>' + _lotDate(l.made_on) + '</b>' : 'no date'}</span><span>${escAttr(_lotSourceText(l))}</span></div></div>
+      <select id="lot-place-${l.id}"><option value="">— fridge —</option>${fr}</select>
+      <input type="number" id="lot-qty-${l.id}" value="${q}" min="1" max="${q}" step="1" title="How many go to this fridge (the rest stays here to be placed elsewhere)">
+      <button class="lab-btn primary" onclick="stockPlaceLot(${l.id})">Placed</button>
+    </div>`; }).join('')}</div>`;
+}
+function renderPutAway() { const el = document.getElementById('wh-putaway'); if (el) el.innerHTML = _putAwayHtml(); }
+async function stockPlaceLot(lotId) {
+  const l = stockLots.find(x => x.id === lotId); if (!l) return;
+  const place = document.getElementById('lot-place-' + lotId)?.value || '';
+  const qty = parseFloat(document.getElementById('lot-qty-' + lotId)?.value);
+  if (!place) { toast('Pick the fridge', true); return; }
+  if (isNaN(qty) || qty <= 0 || qty > parseFloat(l.qty_left)) { toast('Qty must be 1..' + parseFloat(l.qty_left), true); return; }
+  const { error } = await sb.rpc('stock_place_lot', { p_lot_id: lotId, p_place: place, p_qty: qty });
+  if (error) { toast('Put away: ' + (error.message || 'error'), true); return; }
+  const p = products.find(x => x.id === l.product_id) || (window._allProducts || []).find(x => x.id === l.product_id);
+  logEvent('UPDATE', 'stock', String(l.product_id), { action: 'stock_put_away', product: p?.name, lot_id: lotId, place, qty, made_on: l.made_on });
+  toast('✓ ' + qty + ' × ' + (p?.name || '') + ' → ' + place);
+  if (currentRole === 'warehouse') { await loadStockLots(); renderPutAway(); }
+  else { await loadStorage(); renderStorage(); }
 }
 
 function renderStorage() {
@@ -6050,7 +6142,7 @@ function renderStorage() {
       const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : 'var(--text)');
       return `<tr${low ? ` title="${low === 'neg' ? 'NEGATIVE — packed more than was counted in. Receive or recount.' : 'Below minimum stock (' + minS + ')'}"` : ''}>
         <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}${ledger ? _lotsHtml(s.id, i.product_id, q) : ''}</td>
         <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${escAttr(p?.category||'—')}${minS > 0 ? `<div style="font-size:9px;font-family:var(--mono)">min ${minS}</div>` : ''}</td>
         <td style="padding:6px 8px;text-align:center">
           <input type="number" step="0.01" value="${i.quantity}"
@@ -6075,6 +6167,7 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
+      ${ledger ? _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
@@ -6092,8 +6185,14 @@ function renderStorage() {
         </select>
         <input id="inv-add-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Qty"
           style="width:70px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;text-align:center">
-        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')">${ledger ? 'Count' : 'Add'}</button>
-        ${ledger ? '<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">counted qty → journal</span>' : ''}
+        ${ledger ? `<input id="inv-add-date-${s.id}" type="date" value="${toUAEDate(new Date().toISOString())}" max="${toUAEDate(new Date().toISOString())}" title="Made on — the lot's production date"
+          style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono)">
+        <select id="inv-add-place-${s.id}" title="Fridge the lot goes into" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 6px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono)">
+          <option value="">— fridge —</option>${(refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="receiveInventoryInline('${s.id}')" title="Add this quantity to stock as a lot with the date and fridge (reason: receive)">+ Add</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')" title="${ledger ? 'Set the counted total — the difference goes to the journal (reason: count)' : ''}">${ledger ? 'Count' : 'Add'}</button>
+        ${ledger ? '<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">+ Add = lot with date + fridge · Count = total</span>' : ''}
       </div>
     </div>`;
   };
@@ -6235,6 +6334,7 @@ async function openStockMoves(productId) {
   const batchIds = [...new Set(rows.map(r => r.batch_id).filter(Boolean))];
   let batchNo = {};
   if (batchIds.length) { const { data: bs } = await sb.from('lab_batches').select('id,batch_no').in('id', batchIds); (bs || []).forEach(b => batchNo[b.id] = b.batch_no); }
+  const lotOf = {}; { const { data: ls } = await sb.from('stock_lots').select('id,made_on,source').eq('product_id', productId); (ls || []).forEach(l => lotOf[l.id] = l); }   // v13.75
   const orderNum = {}; rows.forEach(r => { if (r.order_id) { const o = orders.find(x => x.id === r.order_id); if (o) orderNum[r.order_id] = o.order_num; } });
   const label = { lab_qa_in: 'QA accepted', pack_out: 'Packed (order)', adjust: 'Adjustment', receive: 'Received', return: 'Returned', count: 'Count' };
   body.innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -6243,7 +6343,7 @@ async function openStockMoves(productId) {
       <td style="padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${toUAEDateTime(r.created_at)}</td>
       <td style="padding:6px 8px;text-align:right;font-family:var(--mono);font-weight:700;color:${parseFloat(r.qty) < 0 ? 'var(--red)' : 'var(--green)'}">${parseFloat(r.qty) > 0 ? '+' : ''}${r.qty}</td>
       <td style="padding:6px 8px">${label[r.reason] || escAttr(r.reason)}</td>
-      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${r.batch_id ? 'batch ' + escAttr(batchNo[r.batch_id] || r.batch_id) : ''}${r.order_id ? escAttr(orderNum[r.order_id] || r.order_id) : ''}${r.note ? `<div style="color:var(--muted);font-family:var(--font);font-size:11px">${escAttr(r.note)}</div>` : ''}</td>
+      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${r.batch_id ? 'batch ' + escAttr(batchNo[r.batch_id] || r.batch_id) : ''}${r.order_id ? escAttr(orderNum[r.order_id] || r.order_id) : ''}${r.lot_id ? `<span class="lot-tag" title="lot #${r.lot_id}">${lotOf[r.lot_id] ? (lotOf[r.lot_id].made_on ? 'lot ' + _labDate(lotOf[r.lot_id].made_on) : 'lot · no date') : 'lot'}</span>` : (parseFloat(r.qty) < 0 && r.reason === 'pack_out' ? '<span class="lot-tag warn" title="No lot had stock — balance went negative">no lot</span>' : '')}${r.note ? `<div style="color:var(--muted);font-family:var(--font);font-size:11px">${escAttr(r.note)}</div>` : ''}</td>
       <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${escAttr(r.created_by || '')}</td>
     </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--muted);font-size:12px">No movements yet</div>';
 }
@@ -6284,6 +6384,26 @@ async function deleteInventoryItem(invId, storageId) {
   await loadStorage();
   renderStorage();
   toast('Item removed');
+}
+
+// v13.75: "+ Add" — a lot with its made-on date; the same product can be added as many times as there are dates
+async function receiveInventoryInline(storageId) {
+  const sid = parseInt(storageId);
+  const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
+  const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
+  const madeOn = document.getElementById('inv-add-date-' + storageId)?.value || '';
+  const place = document.getElementById('inv-add-place-' + storageId)?.value || '';
+  if (!product_id || isNaN(qty) || qty <= 0) { toast('Select product and enter a positive quantity', true); return; }
+  const p = products.find(x => String(x.id) === String(product_id));
+  if (p && p.made_to_order) { toast((p.name || 'This product') + ' is made per order — it is never stocked', true); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(madeOn)) { toast('Pick the made-on date', true); return; }
+  if (!place) { toast('Pick the fridge', true); return; }   // v13.76
+  const { data, error } = await sb.rpc('stock_receive', { p_product_id: parseInt(product_id), p_qty: qty, p_made_on: madeOn, p_note: 'Storage: added manually', p_place: place });
+  if (error) { toast('Stock: ' + (error.message || 'error'), true); return; }
+  logEvent('UPDATE', 'stock', String(product_id), { action: 'stock_receive', product: p?.name, qty, made_on: madeOn, place, after: data });
+  toast('+' + qty + ' ' + (p?.name || '') + ' (made ' + _labDate(madeOn) + ') → ' + place + ' · HUB ' + data);
+  const q = document.getElementById('inv-add-qty-' + storageId); if (q) q.value = '';
+  await loadStorage(); renderStorage();
 }
 
 async function addInventoryInline(storageId) {
@@ -7400,6 +7520,7 @@ function renderDirectory(){
     {key:'paymentStatus',label:'Payment Status'},
     {key:'deliveryStatus',label:'Delivery Status'},
     {key:'staffRoles',label:'Staff Roles'},
+    {key:'fridges',label:'Fridges'},
     {key:'clientCategory',label:'Client Categories'},
     {key:'productType',label:'Product Type'}
   ];
