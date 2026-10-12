@@ -399,6 +399,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lot-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;font-size:10px;border:1px solid var(--border);color:var(--muted)}
 .lot-tag.warn{color:var(--yellow);border-color:rgba(251,191,36,.5)}
 .lot-line em{font-style:normal;color:var(--yellow)}
+.prod-row td{border-top:1px solid var(--border)}   /* v13.76.1: HUB rows = product total + one row per lot */
+.lot-row td{background:rgba(255,255,255,.02)}
 .putaway{margin:0 0 10px;padding:0 12px 6px;border-bottom:1px solid var(--border)}   /* v13.76: lots waiting for a fridge */
 #wh-putaway .putaway{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px 12px 8px;margin-bottom:12px}
 .pa-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--border)}
@@ -1735,7 +1737,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.76';
+const APP_VERSION = 'v13.76.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6085,11 +6087,6 @@ function _lotsSorted(productId, storageId) {   // FIFO order — the order pack-
   return stockLots.filter(l => l.product_id === productId && (storageId == null || l.storage_id === storageId) && parseFloat(l.qty_left) > 0)
     .sort((a, b) => String(a.made_on || '').localeCompare(String(b.made_on || '')) || String(a.created_at).localeCompare(String(b.created_at)) || (a.id - b.id));
 }
-function _lotsHtml(storageId, productId, total) {   // "REF_2 · made 01.10 — 5 · no place · no date — 2"
-  const lots = _lotsSorted(productId, storageId);
-  if (!lots.length) return total > 0 ? '<div class="lot-line" title="Stock without lots — count it again or receive with a date">no lots</div>' : '';
-  return `<div class="lot-line">${lots.map(l => `<span title="${escAttr(l.source === 'lab' ? 'made in the lab' + (l.batch_id && _lotBatchNo[l.batch_id] ? ' — batch ' + _lotBatchNo[l.batch_id] : '') : l.source === 'manual' ? 'received manually' : l.source)}">${l.place ? '<b>' + escAttr(l.place) + '</b>' : '<em>no place</em>'} · ${l.made_on ? 'made <b>' + _lotDate(l.made_on) + '</b>' : 'no date'} — ${parseFloat(l.qty_left)}</span>`).join('<i> · </i>')}</div>`;
-}
 function _lotSourceText(l) { return l.source === 'lab' ? ('lab batch ' + (_lotBatchNo[l.batch_id] || '')) : l.source === 'manual' ? 'received manually' : l.source === 'legacy' ? 'opening balance' : l.source; }
 // v13.76: FIFO hint for the warehouse — which fridge(s) the next pack-out of this product will take from
 function _fifoHint(productId, qty) {
@@ -6140,19 +6137,41 @@ function renderStorage() {
       const q = parseFloat(i.quantity) || 0, minS = parseFloat(p?.min_stock) || 0;
       const low = q < 0 ? 'neg' : (minS > 0 && q < minS ? 'low' : '');
       const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : 'var(--text)');
-      return `<tr${low ? ` title="${low === 'neg' ? 'NEGATIVE — packed more than was counted in. Receive or recount.' : 'Below minimum stock (' + minS + ')'}"` : ''}>
-        <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}${ledger ? _lotsHtml(s.id, i.product_id, q) : ''}</td>
-        <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${escAttr(p?.category||'—')}${minS > 0 ? `<div style="font-size:9px;font-family:var(--mono)">min ${minS}</div>` : ''}</td>
-        <td style="padding:6px 8px;text-align:center">
-          <input type="number" step="0.01" value="${i.quantity}"
+      const flags = `${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}`;
+      const qtyInput = `<input type="number" step="0.01" value="${i.quantity}"
             onchange="${ledger ? `storageCountQty(${i.id},this.value)` : `updateInventoryQty(${i.id},this.value)`}"
-            title="${ledger ? 'Type the counted quantity — the difference is written to the stock journal (reason: count)' : ''}"
-            style="width:65px;background:var(--surface2);border:1px solid ${low ? qColor : 'var(--border)'};border-radius:5px;padding:3px 6px;color:${qColor};font-family:var(--mono);font-size:12px;font-weight:${low ? 700 : 400};outline:none;text-align:center">
-        </td>
+            title="${ledger ? 'Total on hand. Type the counted total — the difference is written to the stock journal (reason: count)' : ''}"
+            style="width:65px;background:var(--surface2);border:1px solid ${low ? qColor : 'var(--border)'};border-radius:5px;padding:3px 6px;color:${qColor};font-family:var(--mono);font-size:12px;font-weight:${low ? 700 : 400};outline:none;text-align:center">`;
+      const actions = `${ledger ? `<button class="act-btn" style="padding:2px 6px;font-size:11px" title="Stock journal for this product" onclick="openStockMoves(${i.product_id})">⌛</button> ` : ''}<button class="act-btn del" style="padding:2px 6px;font-size:11px" onclick="deleteInventoryItem(${i.id},'${s.id}')">✕</button>`;
+      const rowTitle = low ? ` title="${low === 'neg' ? 'NEGATIVE — packed more than was counted in. Receive or recount.' : 'Below minimum stock (' + minS + ')'}"` : '';
+      if (!ledger) return `<tr${rowTitle}>
+        <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${escAttr(p?.category||'—')}${minS > 0 ? `<div style="font-size:9px;font-family:var(--mono)">min ${minS}</div>` : ''}</td>
+        <td style="padding:6px 8px;text-align:center">${qtyInput}</td>
         <td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'—')}</td>
-        <td style="padding:6px 8px;white-space:nowrap">${ledger ? `<button class="act-btn" style="padding:2px 6px;font-size:11px" title="Stock journal for this product" onclick="openStockMoves(${i.product_id})">⌛</button> ` : ''}<button class="act-btn del" style="padding:2px 6px;font-size:11px" onclick="deleteInventoryItem(${i.id},'${s.id}')">✕</button></td>
+        <td style="padding:6px 8px;white-space:nowrap">${actions}</td>
       </tr>`;
+      // v13.76.1: HUB — a product header row (total) + one row per lot (fridge · made-on · qty)
+      const lots = _lotsSorted(i.product_id, s.id);
+      const lotRows = lots.length ? lots.map(l => `<tr class="lot-row" data-lot="${l.id}">
+        <td></td>
+        <td style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--muted);font-family:var(--mono)">↳ ${escAttr(_lotSourceText(l))}</td>
+        <td style="padding:3px 8px;font-family:var(--mono);font-size:12px;font-weight:700;${l.place ? '' : 'color:var(--yellow)'}">${l.place ? escAttr(l.place) : 'no place'}</td>
+        <td style="padding:3px 8px;font-family:var(--mono);font-size:11px;${l.made_on ? '' : 'color:var(--muted)'}">${l.made_on ? 'made ' + _lotDate(l.made_on) : 'no date'}</td>
+        <td style="padding:3px 8px;text-align:center;font-family:var(--mono);font-size:12px;font-weight:600">${parseFloat(l.qty_left)}</td>
+        <td style="padding:3px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'')}</td>
+        <td></td>
+      </tr>`).join('') : (q !== 0 ? `<tr class="lot-row"><td></td><td colspan="5" style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--yellow);font-family:var(--mono)">↳ no lots — recount, or add with a date and fridge</td><td></td></tr>` : '');
+      return `<tr class="prod-row"${rowTitle}>
+        <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
+        <td style="padding:7px 8px 3px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}<span style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:8px">${escAttr(p?.category||'')}${minS > 0 ? ' · min ' + minS : ''}</span></td>
+        <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">${lots.length > 1 ? lots.length + ' lots' : ''}</td>
+        <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">total</td>
+        <td style="padding:5px 8px 3px;text-align:center">${qtyInput}</td>
+        <td style="padding:7px 8px 3px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'—')}</td>
+        <td style="padding:5px 8px 3px;white-space:nowrap">${actions}</td>
+      </tr>${lotRows}`;
     }).join('');
     const prodOpts = products.filter(p=>p.active!==false).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
@@ -6172,12 +6191,13 @@ function renderStorage() {
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">PRODUCT</th>
-          <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">CATEGORY</th>
+          ${ledger ? `<th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">FRIDGE</th>
+          <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">MADE</th>` : `<th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">CATEGORY</th>`}
           <th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">QTY</th>
           <th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">UNIT</th>
           <th style="width:32px"></th>
         </tr></thead>
-        <tbody>${invRows || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">No items — add below</td></tr>'}</tbody>
+        <tbody>${invRows || `<tr><td colspan="${ledger ? 7 : 6}" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">No items — add below</td></tr>`}</tbody>
       </table>
       <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;background:var(--surface2)">
         <select id="inv-add-prod-${s.id}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
@@ -6190,10 +6210,19 @@ function renderStorage() {
         <select id="inv-add-place-${s.id}" title="Fridge the lot goes into" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 6px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono)">
           <option value="">— fridge —</option>${(refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('')}
         </select>
-        <button class="btn btn-primary btn-sm" onclick="receiveInventoryInline('${s.id}')" title="Add this quantity to stock as a lot with the date and fridge (reason: receive)">+ Add</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')" title="${ledger ? 'Set the counted total — the difference goes to the journal (reason: count)' : ''}">${ledger ? 'Count' : 'Add'}</button>
-        ${ledger ? '<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">+ Add = lot with date + fridge · Count = total</span>' : ''}
+        <button class="btn btn-primary btn-sm" onclick="receiveInventoryInline('${s.id}')" title="Add this quantity to stock as a lot with the date and fridge (reason: receive)">+ Add</button>
+        <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">lot with date + fridge</span>` :
+        `<button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')">Add</button>`}
       </div>
+      ${ledger ? `<div style="padding:6px 12px 8px;border-top:1px dashed var(--border);display:flex;gap:6px;align-items:center;justify-content:flex-end;background:var(--surface);opacity:.8">
+        <span style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-right:auto">RECOUNT — sets the product's total; the difference goes to the journal</span>
+        <select id="inv-cnt-prod-${s.id}" style="width:260px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none">
+          <option value="">product…</option>${prodOpts}
+        </select>
+        <input id="inv-cnt-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Total"
+          style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none;text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="countInventoryInline('${s.id}')" title="Set the counted total — the difference goes to the journal (reason: count)">Count</button>
+      </div>` : ''}
     </div>`;
   };
   const depotsEl = document.getElementById('storage-depots');
@@ -6406,30 +6435,39 @@ async function receiveInventoryInline(storageId) {
   await loadStorage(); renderStorage();
 }
 
+// v13.76.1: HUB recount lives in its own row (inv-cnt-*), away from "+ Add"
+async function countInventoryInline(storageId) {
+  const sid = parseInt(storageId);
+  const product_id = document.getElementById('inv-cnt-prod-' + storageId)?.value;
+  const qty = parseFloat(document.getElementById('inv-cnt-qty-' + storageId)?.value);
+  if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter the counted total', true); return; }
+  if (await _countInventory(sid, product_id, qty)) { const q = document.getElementById('inv-cnt-qty-' + storageId); if (q) q.value = ''; }
+}
+// v13.74: HUB — the entered number is the COUNTED total; the difference goes to the journal (reason: count)
+async function _countInventory(sid, product_id, qty) {
+  const mto = products.find(x => String(x.id) === String(product_id));
+  if (mto && mto.made_to_order) { toast((mto.name || 'This product') + ' is made per order — it is never stocked', true); return false; }   // v13.74.1
+  const cur = storageInventory.find(i => i.storage_id === sid && String(i.product_id) === String(product_id));
+  const before = cur ? (parseFloat(cur.quantity) || 0) : 0;
+  const delta = parseFloat((qty - before).toFixed(2));
+  const p = products.find(x => String(x.id) === String(product_id));
+  if (delta === 0 && cur) { toast('Already ' + qty); return false; }
+  if (delta === 0 && !cur) {   // a zero row — just creates the line without a movement
+    await sb.from('storage_inventory').upsert({ storage_id: sid, product_id: parseInt(product_id), quantity: 0, updated_at: new Date().toISOString() }, { onConflict: 'storage_id,product_id' });
+  } else if (await _stockAdjust(product_id, delta, 'count', 'Storage count: ' + before + ' → ' + qty)) {
+    logEvent('UPDATE', 'stock', String(product_id), { action: 'stock_count', product: p?.name, before, after: qty, delta });
+  } else return false;
+  await loadStorage(); renderStorage();
+  toast('Counted: ' + (p?.name || '') + ' = ' + qty);
+  return true;
+}
 async function addInventoryInline(storageId) {
   const sid = parseInt(storageId);
+  const sLoc = storageLocations.find(x => x.id === sid);
+  if (_storageIsLedger(sLoc)) { await countInventoryInline(storageId); return; }   // HUB: the ledger path is the recount row
   const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
   const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
   if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter quantity', true); return; }
-  const sLoc = storageLocations.find(x => x.id === sid);
-  if (_storageIsLedger(sLoc)) {
-    // v13.74: HUB — the entered number is the COUNTED quantity; the difference goes to the journal
-    const mto = products.find(x => String(x.id) === String(product_id));
-    if (mto && mto.made_to_order) { toast((mto.name || 'This product') + ' is made per order — it is never stocked', true); return; }   // v13.74.1
-    const cur = storageInventory.find(i => i.storage_id === sid && String(i.product_id) === String(product_id));
-    const before = cur ? (parseFloat(cur.quantity) || 0) : 0;
-    const delta = parseFloat((qty - before).toFixed(2));
-    const p = products.find(x => String(x.id) === String(product_id));
-    if (delta === 0 && cur) { toast('Already ' + qty); return; }
-    if (delta === 0 && !cur) {   // a zero row — just creates the line without a movement
-      await sb.from('storage_inventory').upsert({ storage_id: sid, product_id: parseInt(product_id), quantity: 0, updated_at: new Date().toISOString() }, { onConflict: 'storage_id,product_id' });
-    } else if (await _stockAdjust(product_id, delta, 'count', 'Storage count: ' + before + ' → ' + qty)) {
-      logEvent('UPDATE', 'stock', String(product_id), { action: 'stock_count', product: p?.name, before, after: qty, delta });
-    }
-    await loadStorage(); renderStorage();
-    toast('Counted: ' + (p?.name || '') + ' = ' + qty);
-    return;
-  }
   await sb.from('storage_inventory').upsert(
     { storage_id: sid, product_id: parseInt(product_id), quantity: qty, updated_at: new Date().toISOString() },
     { onConflict: 'storage_id,product_id' }
