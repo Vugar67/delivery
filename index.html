@@ -1714,7 +1714,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.74.1';
+const APP_VERSION = 'v13.74.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -1896,7 +1896,7 @@ const sb = {
         body: JSON.stringify({ email, password, data: options?.data || {} })
       });
       const data = await res.json();
-      if (!res.ok) return { data: null, error: { message: data.error_description || data.msg || 'Signup failed' } };
+      if (!res.ok) return { data: null, error: { message: data.msg || data.error_description || data.message || data.error || ('Signup failed (HTTP ' + res.status + (data.error_code ? ', ' + data.error_code : '') + ')') } };   // v13.74.2: show the real reason
       return { data: { user: data.user || data }, error: null };
     },
 
@@ -5816,7 +5816,10 @@ function renderLabMixer() {
   const sortDemand = (a, b) => ((a.top_priority ?? 9) - (b.top_priority ?? 9)) || String(a.nearest_date || '9999').localeCompare(String(b.nearest_date || '9999')) || (num(b.need) - num(a.need));
   const needRows  = labDemand.filter(d => num(d.need) > 0 || (openBy[String(d.product_id)] && !openBy[String(d.product_id)].for_stock)).sort(sortDemand);
   const topupRows = labDemand.filter(d => !needRows.includes(d) && (num(d.topup) > 0 || (openBy[String(d.product_id)] && openBy[String(d.product_id)].for_stock))).sort((a, b) => num(b.topup) - num(a.topup));
-  const customRows = labCustom.slice().sort((a, b) => ((a.priority ?? 9) - (b.priority ?? 9)) || String(a.sched_date || '9999').localeCompare(String(b.sched_date || '9999')));
+  // v13.74.2: per-order lines whose batch is already at Packer / QA leave the mixer's list (a short "handed over" footer keeps them visible)
+  const liveOf = c => labBatches.find(x => x.order_item_id === c.order_item_id);
+  const customRows = labCustom.filter(c => { const b = liveOf(c); return !b || b.stage === 'mixing'; });
+  const handedRows = labCustom.filter(c => { const b = liveOf(c); return b && b.stage !== 'mixing'; });
   const demandCard = (d, forStock) => {
     const b = openBy[String(d.product_id)];
     const amount = forStock ? num(d.topup) : num(d.need);
@@ -5834,32 +5837,37 @@ function renderLabMixer() {
     </div>`;
   };
   const customCard = c => {     // custom line or made-to-order catalog product (v13.74.1) — one card per order line
-    const b = labBatches.find(x => x.order_item_id === c.order_item_id);
-    const where = b && b.stage !== 'mixing' ? (b.stage === 'packing' ? 'at Packer' : 'at QA') : null;
+    const b = liveOf(c);
     const left = _labItemLeft(c), done = parseFloat(c.qty_done) || 0;
-    return `<div class="lab-card custom${c.priority === 1 ? ' urgent' : ''}${b && b.stage === 'mixing' ? ' open' : ''}" data-item="${c.order_item_id}">
+    return `<div class="lab-card custom${c.priority === 1 ? ' urgent' : ''}${b ? ' open' : ''}" data-item="${c.order_item_id}">
       <div class="lab-row">
         <div class="lab-name">${escAttr(c.custom_name)} ${_labUrgChip(c.priority)} <span class="lab-chip custom">${_labItemKind(c)} · ${escAttr(c.order_num)}</span></div>
         ${!b ? `<div class="lab-need">${left}</div><button class="lab-btn primary" onclick="labOpen(null, ${c.order_item_id}, false)">Open batch</button>` : ''}
-        ${where ? `<span class="lab-chip ok">${where} · ${escAttr(b.batch_no)}</span>` : ''}
       </div>
       <div class="lab-meta">${_labItemContext(c)}${c.sched_date ? `<span>delivery <b>${_labDate(c.sched_date)}</b></span>` : ''}${done > 0 ? `<span>accepted <b>${done}</b> of ${num(c.quantity)} — remake <b>${left}</b></span>` : ''}<span>made to order — not stocked</span></div>
-      ${b && b.stage === 'mixing' ? _labTallyHtml(b) : ''}
+      ${b ? _labTallyHtml(b) : ''}
     </div>`;
   };
+  // v13.74.2: ONE list — stock rows and per-order lines together, most urgent first (priority → nearest date → amount)
+  const needList = [
+    ...needRows.map(d => ({ prio: d.top_priority ?? 9, date: String(d.nearest_date || '9999'), amt: num(d.need), html: demandCard(d, false) })),
+    ...customRows.map(c => ({ prio: c.priority ?? 9, date: String(c.sched_date || '9999'), amt: _labItemLeft(c), html: customCard(c) })),
+  ].sort((a, b) => (a.prio - b.prio) || a.date.localeCompare(b.date) || (b.amt - a.amt));
+  const handedLine = c => { const b = liveOf(c); return `<div class="lab-meta" style="padding:4px 2px;opacity:.75"><span><b>${escAttr(c.custom_name)}</b></span><span class="lab-chip custom">${_labItemKind(c)} · ${escAttr(c.order_num)}</span><span class="lab-chip ok">${b.stage === 'packing' ? 'at Packer' : 'at QA'} · ${escAttr(b.batch_no)}</span><span>${b.qty_mixed} made</span></div>`; };
   const openIds = new Set(Object.keys(openBy));
   const pickerOpts = labDemand.filter(d => !d.no_stock_ahead && !openIds.has(String(d.product_id))).sort((a, b) => a.name.localeCompare(b.name));
   let html = '';
-  html += `<div class="lab-sec">Orders need <span class="lab-cnt">${needRows.length + customRows.length}</span></div>`;
-  html += (needRows.length || customRows.length) ? needRows.map(d => demandCard(d, false)).join('') + customRows.map(customCard).join('') : '<div class="lab-empty">Nothing waiting — all confirmed orders are covered</div>';
+  html += `<div class="lab-sec">Orders need <span class="lab-cnt">${needList.length}</span></div>`;
+  html += needList.length ? needList.map(x => x.html).join('') : '<div class="lab-empty">Nothing waiting — all confirmed orders are covered</div>';
   if (topupRows.length) html += `<div class="lab-sec">Top up to minimum <span class="lab-cnt">${topupRows.length}</span></div>` + topupRows.map(d => demandCard(d, true)).join('');
   html += `<div class="lab-sec">Start a batch for stock</div>
     <div class="lab-pick">
       <select id="lab-pick-product"><option value="">— product —</option>${pickerOpts.map(d => `<option value="${d.product_id}">${escAttr(d.name)} (free ${num(d.free)})</option>`).join('')}</select>
       <button class="lab-btn" onclick="labOpenPicked()">Open batch</button>
     </div>`;
+  if (handedRows.length) html += `<div class="lab-sec" id="lab-handed">Handed over — at Packer / QA <span class="lab-cnt">${handedRows.length}</span></div>` + handedRows.map(handedLine).join('');
   el.innerHTML = html;
-  const cnt = document.getElementById('lab-cnt-mixer'); if (cnt) cnt.textContent = needRows.length + customRows.length;
+  const cnt = document.getElementById('lab-cnt-mixer'); if (cnt) cnt.textContent = needList.length;
 }
 function _labRenderCount(batchId) {
   const b = labBatches.find(x => x.id === batchId); const el = document.getElementById('lab-count-' + batchId);
