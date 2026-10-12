@@ -366,6 +366,65 @@ select option{background:#1a1d27;color:#f0f2ff}
 .dchip b{font-weight:400;opacity:.75;margin-left:3px}
 .dfilter-empty{padding:24px 12px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;line-height:1.6}
 .dfilter-empty a{color:var(--accent);cursor:pointer;text-decoration:underline}
+/* v13.74: Lab screens */
+.role-lab{background:rgba(129,140,248,.2);color:#a5b4fc}
+.lab-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+.lab-top-left{display:flex;align-items:baseline;gap:10px}
+.lab-title{font-size:16px;font-weight:700}
+.lab-sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.lab-top-right{display:flex;align-items:center;gap:10px}
+.lab-sync{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.lab-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.lab-cols.single{grid-template-columns:minmax(0,1fr)}
+.lab-cols.single .lab-col{display:none}
+.lab-cols.single .lab-col.on{display:flex}
+.lab-col{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:200px}
+.lab-col-head{padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:8px}
+.lab-cnt{color:var(--accent);font-weight:700}
+.lab-col-body{padding:8px}
+.lab-sec{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;padding:8px 6px 4px;display:flex;align-items:center;gap:8px}
+.lab-sec:not(:first-child){margin-top:6px;border-top:1px dashed var(--border);padding-top:10px}
+.lab-empty{padding:22px 10px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+.lab-card{border:1px solid var(--border);background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:6px}
+.lab-card.urgent{border-color:rgba(248,113,113,.55);box-shadow:inset 3px 0 0 var(--red)}
+.lab-card.open{border-color:rgba(245,166,35,.6);background:rgba(245,166,35,.06)}
+.lab-card.custom{border-style:dashed}
+.lab-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lab-name{font-weight:700;font-size:13px;flex:1 1 160px;min-width:0}
+.lab-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.lab-meta b{color:var(--text);font-weight:600}
+.lab-urg{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:10px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.4);font-weight:700}
+.lab-chip{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+.lab-chip.ok{background:rgba(74,222,128,.14);color:var(--green);border-color:rgba(74,222,128,.4)}
+.lab-chip.custom{background:rgba(129,140,248,.14);color:#a5b4fc;border-color:rgba(129,140,248,.4)}
+.lab-need{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent);line-height:1;white-space:nowrap}
+.lab-need small{font-size:10px;color:var(--muted);font-weight:400;margin-left:4px}
+.lab-btn{border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;white-space:nowrap;transition:.12s}
+.lab-btn:hover{filter:brightness(1.15)}
+.lab-btn:disabled{opacity:.45;cursor:not-allowed}
+.lab-btn.primary{background:var(--accent);color:#000;border-color:var(--accent)}
+.lab-btn.ok{background:rgba(74,222,128,.18);color:var(--green);border-color:rgba(74,222,128,.5)}
+.lab-btn.danger{background:rgba(248,113,113,.12);color:var(--red);border-color:rgba(248,113,113,.4)}
+.lab-tally{display:flex;align-items:center;gap:10px;margin-top:10px}
+.lab-tap{width:92px;height:92px;border-radius:16px;border:2px solid var(--accent);background:rgba(245,166,35,.18);color:var(--accent);font-size:48px;font-weight:700;cursor:pointer;line-height:1;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:transform .05s}
+.lab-tap:active{transform:scale(.94)}
+.lab-tap:disabled{opacity:.35;cursor:not-allowed}
+.lab-tap.minus{width:56px;height:56px;font-size:28px;border-color:var(--border);background:var(--surface2);color:var(--muted);border-radius:12px}
+.lab-count{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--text);min-width:110px;text-align:center;line-height:1}
+.lab-count small{display:block;font-size:10px;color:var(--muted);font-weight:400;margin-top:4px;letter-spacing:.06em}
+.lab-count.capped{color:var(--green)}
+.lab-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.lab-form input,.lab-form select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none}
+.lab-form input[type=number]{width:84px;text-align:center}
+.lab-form label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.lab-pick{display:flex;gap:8px;align-items:center;padding:8px 6px}
+.lab-pick select{flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px}
+.lab-history{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.lab-history table{width:100%;border-collapse:collapse;font-size:12px}
+.lab-history th{text-align:left;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--border)}
+.lab-history td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.lab-pending{opacity:.6}
+@media (max-width:900px){.lab-cols{grid-template-columns:minmax(0,1fr)}}
 /* v13.71: Dispatched card — one-row header, one row of tall buttons */
 .dsent-card{border-radius:8px;padding:8px 10px;margin-bottom:6px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.05)}
 .dsent-head{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:7px}
@@ -733,6 +792,35 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div id="warehouse-queue"></div>
     </div>
 
+    <!-- v13.74: LAB — mixer / packer / QA. One column for a lab user (by staff_role), all three for admin -->
+    <div id="view-lab" style="display:none">
+      <div class="lab-top">
+        <div class="lab-top-left">
+          <span id="lab-title" class="lab-title">🧪 Lab</span>
+          <span id="lab-sub" class="lab-sub"></span>
+        </div>
+        <div class="lab-top-right">
+          <span id="lab-sync" class="lab-sync" title="Last refresh"></span>
+          <button class="btn btn-ghost" onclick="loadLab(true)" style="padding:6px 12px;font-size:12px">⟳ Refresh</button>
+        </div>
+      </div>
+      <div id="lab-cols" class="lab-cols">
+        <div class="lab-col" id="lab-col-mixer">
+          <div class="lab-col-head">🧪 MIXER <span id="lab-cnt-mixer" class="lab-cnt"></span></div>
+          <div class="lab-col-body" id="lab-body-mixer"></div>
+        </div>
+        <div class="lab-col" id="lab-col-packer">
+          <div class="lab-col-head">📦 PACKER <span id="lab-cnt-packer" class="lab-cnt"></span></div>
+          <div class="lab-col-body" id="lab-body-packer"></div>
+        </div>
+        <div class="lab-col" id="lab-col-qa">
+          <div class="lab-col-head">✅ QA <span id="lab-cnt-qa" class="lab-cnt"></span></div>
+          <div class="lab-col-body" id="lab-body-qa"></div>
+        </div>
+      </div>
+      <div id="lab-history" class="lab-history" style="display:none"></div>
+    </div>
+
     <div id="view-logs" style="display:none">
       <div class="section-head">
         <div class="section-title">📋 Activity Logs</div>
@@ -914,6 +1002,16 @@ select option{background:#1a1d27;color:#f0f2ff}
 </div>
 
 <!-- STOCK DEDUCTION MODAL -->
+<!-- v13.74: stock journal for one product (HUB) -->
+<div class="overlay" id="stock-moves-modal" style="z-index:1200">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-head">
+      <div><div class="modal-title">⌛ Stock journal</div><div id="stock-moves-sub" style="font-size:12px;color:var(--muted);margin-top:2px"></div></div>
+      <button class="close-btn" onclick="closeModal('stock-moves-modal')">&#10005;</button>
+    </div>
+    <div id="stock-moves-body" style="max-height:60vh;overflow:auto"></div>
+  </div>
+</div>
 <div class="overlay" id="stock-deduct-modal" style="z-index:1200">
   <div class="modal" style="max-width:500px">
     <div class="modal-head">
@@ -1506,6 +1604,13 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="Custom">Custom</option>
         </select>
       </div>
+      <!-- v13.74: lab line / stock -->
+      <div class="form-group form-full" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px dashed var(--border);border-radius:8px">
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="p-lab-made" onchange="syncProductLabFields()" style="width:15px;height:15px"> 🧪 Made in the lab</label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="p-made-to-order" onchange="syncProductLabFields()" style="width:15px;height:15px"> Always made to order <span style="font-size:10px;color:var(--muted)">(never stocked — e.g. PREMIX)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="p-no-stock-ahead" onchange="syncProductLabFields()" style="width:15px;height:15px"> No stock ahead <span style="font-size:10px;color:var(--muted)">(only against orders)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;letter-spacing:0">Min stock <input type="number" id="p-min-stock" min="0" step="1" value="0" style="width:70px;padding:4px 8px"> <span id="p-min-stock-hint" style="font-size:10px;color:var(--muted)">0 = off</span></label>
+      </div>
       <div class="form-group"><label>Kind <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(Vial, Injection Pen...)</span></label>
         <select id="p-product-type">
           <option value="">— Not specified —</option>
@@ -1609,7 +1714,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.73.1';
+const APP_VERSION = 'v13.74.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -1986,8 +2091,9 @@ setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60
 
 let currentUser=null, currentRole=null;      // currentRole = BEHAVIOR base (admin/operator/dispatcher/warehouse)
 let currentRoleName=null;                     // v13.64: the assigned role name as stored on the profile (may be custom)
+let currentStaffRole=null;                    // v13.74: profiles.staff_role — lab workstation (mixer / packer / qa)
 let systemRoles=[];                           // v13.64: custom roles from system_roles table
-const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse'];
+const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse','lab'];   // v13.74: lab (mixer / packer / qa by staff_role)
 let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[]};  // v13.71.4: productCategory = registry kept by the admin app
 let products=[], orderItems={};
 let clients=[], editClientId=null;
@@ -2143,6 +2249,7 @@ async function loadProfile(){
     return false;
   }
   currentRoleName=data?.role||'operator';
+  currentStaffRole=(data?.staff_role||'').trim().toLowerCase()||null;   // v13.74: lab workstation
   // v13.64: custom system role → resolve its behavior base (empty role = operator by default)
   if(BUILTIN_ROLES.includes(currentRoleName)){
     currentRole=currentRoleName;
@@ -2196,6 +2303,14 @@ async function initApp(){
   const isOperator   = currentRole === 'operator';
   const isDispatcher = currentRole === 'dispatcher';
   const isWarehouse  = currentRole === 'warehouse';
+  const isLab        = currentRole === 'lab';          // v13.74
+
+  if(isLab){
+    nav.innerHTML=`<button class="tab-btn active" onclick="showView('lab')">🧪 Lab</button>`;
+    await loadProducts();                               // names / units / lab flags for the pickers
+    showView('lab');
+    return;                                             // no orders, no realtime — the lab polls its own views
+  }
 
   if(isWarehouse){
     nav.innerHTML=`<button class="tab-btn active" onclick="showView('warehouse')">📦 Warehouse</button>`;
@@ -2218,6 +2333,7 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#brands" onclick="showView('brands');return false;">Brand Profiles</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#storage" onclick="showView('storage');return false;">Storage</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#users" onclick="showView('users');return false;">Users</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#lab" onclick="showView('lab');return false;">🧪 Lab</a>`;   // v13.74
     nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
@@ -2225,7 +2341,7 @@ async function initApp(){
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
-  const validViews = isAdmin ? ['orders','products','clients','directory','brands','storage','users','logs'] : (isOperator ? ['orders','products','clients'] : ['orders']);   // v13.63
+  const validViews = isAdmin ? ['orders','products','clients','directory','brands','storage','users','lab','logs'] : (isOperator ? ['orders','products','clients'] : ['orders']);   // v13.63
   const initView = validViews.includes(hash) ? hash : 'orders';
   if(!isDispatcher) renderTable();
   showView(initView);subscribeRealtime();
@@ -2300,8 +2416,11 @@ async function loadProducts(){
 
 function showView(v){
   const adminOnlyViews=['products','clients','directory','brands','storage','users','logs'];
-  if(adminOnlyViews.includes(v) && currentRole!=='admin') v=(currentRole==='warehouse')?'warehouse':'orders';
-  ['orders','products','directory','users','clients','warehouse','brands','storage','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  if(adminOnlyViews.includes(v) && currentRole!=='admin') v=(currentRole==='warehouse')?'warehouse':(currentRole==='lab'?'lab':'orders');
+  if(currentRole==='lab') v='lab';                                                          // v13.74: the lab sees only its own screen
+  if(v==='lab' && !(currentRole==='admin'||currentRole==='lab')) v='orders';
+  ['orders','products','directory','users','clients','warehouse','brands','storage','lab','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
+  if(v==='lab') initLabView(); else stopLabPolling();                                       // v13.74
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
   if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
@@ -4146,6 +4265,7 @@ function whCloseModal() {
 
 // ─── WAREHOUSE ───────────────────────────────────────────────────
 let _whSearch = '';
+const LAB_TRANSITION = true;   // v13.74: warehouse board also shows 'Processing in Lab' until the lab line is trusted
 function onWhSearch(v) {
   _whSearch = (v || '').trim();
   const clr = document.getElementById('wh-search-clear');
@@ -4171,10 +4291,12 @@ function renderWarehouseQueue() {
   const onum = o => parseInt(String(o.order_num||'').replace(/\D/g,'')) || 0;
   const emKey = o => (o.emirate && o.emirate.trim()) ? o.emirate.trim() : '—';
 
-  // Active board = confirmed orders awaiting warehouse work. Lab/warehouse
-  // intermediate statuses are frozen, so the only inbound status is
-  // "Processing in Lab" (set when the operator confirms the order).
-  const active = orders.filter(o => (o.delivery_status || '') === 'Processing in Lab').filter(_whMatch);
+  // Active board = orders the lab has finished: "Ready in Lab" (set automatically by lab_recompute
+  // once every line is covered by HUB stock / a QA-accepted custom batch — v13.74).
+  // LAB_TRANSITION: during the roll-out the board still shows "Processing in Lab" too (pre-v13.74
+  // behaviour: the warehouse decided what was ready by looking at the shelf). Flip to false once the
+  // inventory count is done and the lab has run for a week.
+  const active = orders.filter(o => (o.delivery_status || '') === 'Ready in Lab' || (LAB_TRANSITION && (o.delivery_status || '') === 'Processing in Lab')).filter(_whMatch);
   // Parked = Ready for Pick-up. Stays until En Route.
   const parked = orders.filter(o => o.delivery_status === 'Ready for Pick-up').filter(_whMatch);
 
@@ -4209,7 +4331,7 @@ function renderWarehouseQueue() {
       <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${pc(o.priority||3)};box-shadow:0 0 6px ${pc(o.priority||3)}"></span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.order_num||'—'}</span>
-        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">🕐 ${toUAEDateTime(o.created_at).slice(5)}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">🕐 ${toUAEDateTime(o.created_at).slice(5)}${!dimmed && LAB_TRANSITION ? (o.delivery_status === 'Ready in Lab' ? ' <span style="color:var(--green)" title="Lab: all items covered by stock">· lab ✓</span>' : ' <span style="color:var(--yellow)" title="Lab: not all items covered yet">· lab …</span>') : ''}</span>
       </span>
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0" title="items in order">📦 ${qty}</span>
       <button onclick="event.stopPropagation();whCopyBlock('${o.id}',this)" title="Copy order info" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">⧉</button>
@@ -4364,6 +4486,14 @@ async function whComplete() {
   if (o) { o.delivery_status = 'Ready for Pick-up'; o.warehouse_status = 'packed'; o.current_picker_id = null; }
   whBeep(880, 500);
   logEvent('UPDATE', 'order', orderId, { order_num: o?.order_num, action: 'warehouse_packed', delivery_status: 'Ready for Pick-up' });
+  // v13.74: the packed items leave HUB stock — one transaction in the DB, once per order (idempotent:
+  // a Failed/Unassign that brings the order back to Ready for Pick-up does not deduct again), soft
+  // (shortage goes negative and shows red in Storage). A failure here never un-packs the order.
+  try {
+    const { data: _n, error: _se } = await sb.rpc('stock_pack_out', { p_order_id: orderId });
+    if (_se) { console.log('stock_pack_out error:', _se); toast('⚠️ Packed, but stock was NOT deducted: ' + (_se.message || '') + ' — tell the admin', true); }
+    else logEvent('UPDATE', 'order', orderId, { order_num: o?.order_num, action: 'stock_pack_out', lines: _n });
+  } catch (e) { console.log('stock_pack_out failed:', e); }
   window._whOrderId = null;
   closeModal('wh-modal');
   await loadOrders();
@@ -5279,12 +5409,20 @@ async function saveOrder(){
       await loadOrders();
       renderTable();
       toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
+      await _labRecomputeQuiet();   // v13.74
       await openStockDeduction(orderId);
       return;
     }
   }
   toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
+  await _labRecomputeQuiet();   // v13.74: confirmed/items changed → lab statuses + reservations
   closeModal('order-modal');await loadOrders();renderTable();
+}
+
+// v13.74: ask the DB to redistribute HUB stock over confirmed orders (Processing in Lab ↔ Ready in Lab).
+// Fire-and-forget semantics: a failure only logs — the next QA / pack-out / save recomputes anyway.
+async function _labRecomputeQuiet() {
+  try { const { error } = await sb.rpc('lab_recompute', {}); if (error) console.log('lab_recompute:', error); } catch (e) { console.log('lab_recompute failed:', e); }
 }
 
 async function deleteOrder(id){
@@ -5296,6 +5434,7 @@ async function deleteOrder(id){
   }).eq('id',id);
   if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));return;}
   logEvent('DELETE', 'order', id, {order_num: o?.order_num, deleted_by: currentUser.email, reason: 'Deleted from order list'});
+  await _labRecomputeQuiet();   // v13.74: its reservation is released
   toast('Order deleted');await loadOrders();renderTable();
 }
 
@@ -5534,6 +5673,349 @@ async function loadProductComponents() {
   productComponents = data || [];
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// v13.74: LAB — production line. Data comes from the DB views (lab_demand_v, lab_custom_v)
+// and lab_batches; every change goes through an RPC (lab_open_batch / lab_tap / lab_close_batch /
+// lab_pack_done / lab_qa_accept / lab_cancel_batch). The lab never writes orders — statuses are
+// recomputed server-side (lab_recompute) inside QA / pack-out. Screens poll every 10 s.
+// ═══════════════════════════════════════════════════════════════════════
+const LAB_POLL_MS = 10000;
+const LAB_REJECT_REASONS = ['Leak', 'Underfill', 'Label', 'Contamination', 'Other'];
+let labDemand = [], labCustom = [], labBatches = [], labHistory = [], labLoadedAt = null;
+let _labTimer = null, _labBusy = false, _labInflight = 0;
+const _labTapSeq = {};   // batch_id → sequence of the latest tap request (older replies are ignored)
+
+function labStage() {
+  if (currentRole === 'admin') return 'all';
+  return ['mixer', 'packer', 'qa'].includes(currentStaffRole || '') ? currentStaffRole : 'all';
+}
+function _labErr(e) { return (e && (e.message || e.hint)) || 'Something went wrong'; }
+function _labWhen(iso) { if (!iso) return ''; const t = toUAEDateTime(iso); return t.slice(8, 10) + '.' + t.slice(5, 7) + ' ' + t.slice(11, 16); }
+function _labDate(d) { if (!d) return ''; const p = String(d).split('-'); return p.length === 3 ? p[2] + '.' + p[1] : String(d); }
+function _labProductName(pid) {
+  const d = labDemand.find(x => String(x.product_id) === String(pid)); if (d) return d.name;
+  const p = (window._allProducts || products || []).find(x => String(x.id) === String(pid)); return p ? p.name : ('#' + pid);
+}
+function _labBatchName(b) { return b.order_item_id ? (b.custom_name || 'custom item') : _labProductName(b.product_id); }
+function _labBatchUrgency(b) {   // priority of the most urgent waiting order behind this batch
+  if (b.order_item_id) { const c = labCustom.find(x => x.order_item_id === b.order_item_id); return c ? c.priority : null; }
+  const d = labDemand.find(x => String(x.product_id) === String(b.product_id)); return d ? d.top_priority : null;
+}
+// v13.74.1: per-order lines (custom AND made-to-order catalog products such as PREMIX) come from lab_custom_v
+function _labItemLeft(c) { return Math.max(0, Math.ceil(parseFloat(c.quantity) || 1) - (parseFloat(c.qty_done) || 0)); }
+function _labItemOf(b) { return b.order_item_id ? labCustom.find(x => x.order_item_id === b.order_item_id) : null; }
+function _labItemKind(x) { return (x.made_to_order || (x.order_item_id && x.product_id)) ? 'to order' : 'custom'; }   // x = view row or batch
+function _labItemChip(b, suffix) {     // chip for a per-order batch: kind + order number
+  if (!b.order_item_id) return '';
+  const c = _labItemOf(b);
+  return ` <span class="lab-chip custom">${_labItemKind(b)}${c ? ' · ' + escAttr(c.order_num) : ''}${suffix || ''}</span>`;
+}
+function _labItemContext(c) {          // "with V-RETA 30mg × 2" — the rest of the order this line belongs to
+  return c && c.with_items ? `<span>with <b>${escAttr(c.with_items)}</b></span>` : '';
+}
+function _labUrgChip(prio, dateStr) {
+  if (prio === 1) return `<span class="lab-urg">URGENT</span>`;
+  if (prio === 2) return `<span class="lab-chip" style="color:var(--yellow);border-color:rgba(251,191,36,.5)">P2</span>`;
+  return '';
+}
+// Tally ceiling and target are SNAPSHOTS taken when the data was loaded (see _labSnapshot): the view's
+// `need` already subtracts this batch's qty_mixed (it is part of in_pipeline), so need + qty_mixed at
+// load time is the amount this batch should reach — and it must not drift while the user taps between
+// polls. Cap mirrors lab_batch_cap() in the DB: custom → item qty; no_stock_ahead → remaining demand.
+function _labSnapshot() {
+  labBatches.forEach(b => {
+    if (b.stage !== 'mixing') return;
+    if (b.order_item_id) {
+      const c = labCustom.find(x => x.order_item_id === b.order_item_id);
+      b._cap = c ? _labItemLeft(c) : null; b._target = b._cap; return;      // v13.74.1: qty still to make (line qty − QA-accepted)
+    }
+    const d = labDemand.find(x => String(x.product_id) === String(b.product_id));
+    const need = d ? (parseFloat(d.need) || 0) : 0, topup = d ? (parseFloat(d.topup) || 0) : 0;
+    b._cap = (d && d.no_stock_ahead) ? Math.max(0, Math.ceil(need + b.qty_mixed)) : null;
+    if (!d) b._target = null;
+    else if (!b.for_stock) b._target = (need > 0 || b.qty_mixed > 0) ? Math.ceil(need + b.qty_mixed) : null;
+    else b._target = (topup > 0 || b.qty_mixed > 0) ? Math.ceil(topup + b.qty_mixed) : null;
+  });
+}
+function _labCap(b) { return b._cap === undefined ? null : b._cap; }
+function _labTarget(b) { return b._target === undefined ? null : b._target; }
+
+function initLabView() {
+  const stage = labStage();
+  const cols = document.getElementById('lab-cols');
+  cols.classList.toggle('single', stage !== 'all');
+  ['mixer', 'packer', 'qa'].forEach(k => document.getElementById('lab-col-' + k).classList.toggle('on', stage === k));
+  const titles = { mixer: '🧪 Mixer', packer: '📦 Packer', qa: '✅ QA', all: '🧪 Lab — all stations' };
+  document.getElementById('lab-title').textContent = titles[stage];
+  document.getElementById('lab-sub').textContent = stage === 'all'
+    ? (currentRole === 'lab' ? 'staff role not set on your profile — ask the admin (showing all stations)' : 'mixer → packer → QA → stock (HUB)')
+    : (currentUser && currentUser.email ? currentUser.email : '');
+  document.getElementById('lab-history').style.display = stage === 'all' ? '' : 'none';
+  loadLab(true);
+  stopLabPolling();
+  _labTimer = setInterval(() => { if (!document.hidden) loadLab(false); }, LAB_POLL_MS);
+}
+function stopLabPolling() { if (_labTimer) { clearInterval(_labTimer); _labTimer = null; } }
+
+async function loadLab(manual) {
+  if (_labBusy) return;
+  _labBusy = true;
+  try {
+    const stage = labStage();
+    const reqs = [
+      sb.from('lab_demand_v').select('*'),
+      sb.from('lab_custom_v').select('*'),
+      sb.from('lab_batches').select('*').in('stage', ['mixing', 'packing', 'qa']).order('created_at', { ascending: true }),
+    ];
+    if (stage === 'all') reqs.push(sb.from('lab_batches').select('*').in('stage', ['done', 'cancelled']).order('updated_at', { ascending: false }).limit(40));
+    const res = await Promise.all(reqs);
+    const bad = res.find(r => r.error);
+    if (bad) { if (manual) toast('Lab: ' + _labErr(bad.error), true); return; }
+    labDemand  = res[0].data || [];
+    labCustom  = res[1].data || [];
+    labBatches = res[2].data || [];
+    if (res[3]) labHistory = res[3].data || [];
+    _labSnapshot();
+    labLoadedAt = new Date();
+  } finally { _labBusy = false; }
+  if (_labInflight > 0) return;       // someone is tapping — don't yank the screen from under their finger
+  renderLab();
+}
+
+function renderLab() {
+  const sync = document.getElementById('lab-sync');
+  if (sync) sync.textContent = labLoadedAt ? ('updated ' + toUAE(labLoadedAt.toISOString())) : '';
+  const stage = labStage();
+  if (stage === 'all' || stage === 'mixer')  renderLabMixer();
+  if (stage === 'all' || stage === 'packer') renderLabPacker();
+  if (stage === 'all' || stage === 'qa')     renderLabQA();
+  if (stage === 'all') renderLabHistory();
+}
+
+// ── MIXER ──────────────────────────────────────────────────────────────
+function _labTallyHtml(b) {
+  const cap = _labCap(b), target = _labTarget(b);
+  const capped = cap != null && b.qty_mixed >= cap;
+  const canCancel = b.qty_mixed === 0 || currentRole === 'admin';
+  return `
+    <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>opened ${_labWhen(b.mixed_started_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}</div>
+    <div class="lab-tally">
+      <button class="lab-tap minus" onclick="labTap(${b.id}, -1)" ${b.qty_mixed <= 0 ? 'disabled' : ''} title="Undo one">−</button>
+      <div class="lab-count${capped ? ' capped' : ''}" id="lab-count-${b.id}">${b.qty_mixed}${target != null ? ` <span style="font-size:18px;color:var(--muted)">/ ${target}</span>` : ''}<small>${capped ? 'TARGET REACHED' : 'MADE'}</small></div>
+      <button class="lab-tap" onclick="labTap(${b.id}, 1)" ${capped ? 'disabled' : ''} title="One more made">+</button>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-left:auto">
+        <button class="lab-btn primary" onclick="labClose(${b.id})" ${b.qty_mixed <= 0 ? 'disabled' : ''}>Close batch → Packer</button>
+        ${canCancel ? `<button class="lab-btn danger" onclick="labCancel(${b.id})">✕ Cancel</button>` : ''}
+      </div>
+    </div>`;
+}
+function renderLabMixer() {
+  const el = document.getElementById('lab-body-mixer'); if (!el) return;
+  const num = v => parseFloat(v) || 0;
+  const openBy = {}; labBatches.filter(b => b.stage === 'mixing' && b.product_id).forEach(b => { openBy[String(b.product_id)] = b; });
+  const sortDemand = (a, b) => ((a.top_priority ?? 9) - (b.top_priority ?? 9)) || String(a.nearest_date || '9999').localeCompare(String(b.nearest_date || '9999')) || (num(b.need) - num(a.need));
+  const needRows  = labDemand.filter(d => num(d.need) > 0 || (openBy[String(d.product_id)] && !openBy[String(d.product_id)].for_stock)).sort(sortDemand);
+  const topupRows = labDemand.filter(d => !needRows.includes(d) && (num(d.topup) > 0 || (openBy[String(d.product_id)] && openBy[String(d.product_id)].for_stock))).sort((a, b) => num(b.topup) - num(a.topup));
+  const customRows = labCustom.slice().sort((a, b) => ((a.priority ?? 9) - (b.priority ?? 9)) || String(a.sched_date || '9999').localeCompare(String(b.sched_date || '9999')));
+  const demandCard = (d, forStock) => {
+    const b = openBy[String(d.product_id)];
+    const amount = forStock ? num(d.topup) : num(d.need);
+    return `<div class="lab-card${d.top_priority === 1 && !forStock ? ' urgent' : ''}${b ? ' open' : ''}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(d.name)}${!forStock ? ' ' + _labUrgChip(d.top_priority) : ''}${d.no_stock_ahead ? ' <span class="lab-chip" title="Not prepared for stock — counter stops at the orders’ need">no stock ahead</span>' : ''}</div>
+        ${!b ? `<div class="lab-need">${amount}<small>${escAttr(d.unit || '')}</small></div>
+                <button class="lab-btn primary" onclick="labOpen(${d.product_id}, null, ${forStock ? 'true' : 'false'})">Open batch</button>` : ''}
+      </div>
+      <div class="lab-meta">
+        ${!forStock ? `<span>for <b>${d.orders_waiting}</b> order${d.orders_waiting == 1 ? '' : 's'}</span>${d.nearest_date ? `<span>nearest <b>${_labDate(d.nearest_date)}</b></span>` : ''}` : `<span>min stock <b>${num(d.min_stock)}</b></span>`}
+        <span>free in HUB <b>${num(d.free)}</b></span>${num(d.in_pipeline) > 0 ? `<span>in progress <b>${num(d.in_pipeline)}</b></span>` : ''}
+      </div>
+      ${b ? _labTallyHtml(b) : ''}
+    </div>`;
+  };
+  const customCard = c => {     // custom line or made-to-order catalog product (v13.74.1) — one card per order line
+    const b = labBatches.find(x => x.order_item_id === c.order_item_id);
+    const where = b && b.stage !== 'mixing' ? (b.stage === 'packing' ? 'at Packer' : 'at QA') : null;
+    const left = _labItemLeft(c), done = parseFloat(c.qty_done) || 0;
+    return `<div class="lab-card custom${c.priority === 1 ? ' urgent' : ''}${b && b.stage === 'mixing' ? ' open' : ''}" data-item="${c.order_item_id}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(c.custom_name)} ${_labUrgChip(c.priority)} <span class="lab-chip custom">${_labItemKind(c)} · ${escAttr(c.order_num)}</span></div>
+        ${!b ? `<div class="lab-need">${left}</div><button class="lab-btn primary" onclick="labOpen(null, ${c.order_item_id}, false)">Open batch</button>` : ''}
+        ${where ? `<span class="lab-chip ok">${where} · ${escAttr(b.batch_no)}</span>` : ''}
+      </div>
+      <div class="lab-meta">${_labItemContext(c)}${c.sched_date ? `<span>delivery <b>${_labDate(c.sched_date)}</b></span>` : ''}${done > 0 ? `<span>accepted <b>${done}</b> of ${num(c.quantity)} — remake <b>${left}</b></span>` : ''}<span>made to order — not stocked</span></div>
+      ${b && b.stage === 'mixing' ? _labTallyHtml(b) : ''}
+    </div>`;
+  };
+  const openIds = new Set(Object.keys(openBy));
+  const pickerOpts = labDemand.filter(d => !d.no_stock_ahead && !openIds.has(String(d.product_id))).sort((a, b) => a.name.localeCompare(b.name));
+  let html = '';
+  html += `<div class="lab-sec">Orders need <span class="lab-cnt">${needRows.length + customRows.length}</span></div>`;
+  html += (needRows.length || customRows.length) ? needRows.map(d => demandCard(d, false)).join('') + customRows.map(customCard).join('') : '<div class="lab-empty">Nothing waiting — all confirmed orders are covered</div>';
+  if (topupRows.length) html += `<div class="lab-sec">Top up to minimum <span class="lab-cnt">${topupRows.length}</span></div>` + topupRows.map(d => demandCard(d, true)).join('');
+  html += `<div class="lab-sec">Start a batch for stock</div>
+    <div class="lab-pick">
+      <select id="lab-pick-product"><option value="">— product —</option>${pickerOpts.map(d => `<option value="${d.product_id}">${escAttr(d.name)} (free ${num(d.free)})</option>`).join('')}</select>
+      <button class="lab-btn" onclick="labOpenPicked()">Open batch</button>
+    </div>`;
+  el.innerHTML = html;
+  const cnt = document.getElementById('lab-cnt-mixer'); if (cnt) cnt.textContent = needRows.length + customRows.length;
+}
+function _labRenderCount(batchId) {
+  const b = labBatches.find(x => x.id === batchId); const el = document.getElementById('lab-count-' + batchId);
+  if (!b || !el) return;
+  const cap = _labCap(b), target = _labTarget(b), capped = cap != null && b.qty_mixed >= cap;
+  el.className = 'lab-count' + (capped ? ' capped' : '');
+  el.innerHTML = `${b.qty_mixed}${target != null ? ` <span style="font-size:18px;color:var(--muted)">/ ${target}</span>` : ''}<small>${capped ? 'TARGET REACHED' : 'MADE'}</small>`;
+  const card = el.closest('.lab-card');
+  if (card) {
+    const plus = card.querySelector('.lab-tap:not(.minus)'), minus = card.querySelector('.lab-tap.minus'), close = card.querySelector('.lab-btn.primary');
+    if (plus) plus.disabled = capped; if (minus) minus.disabled = b.qty_mixed <= 0; if (close) close.disabled = b.qty_mixed <= 0;
+  }
+}
+async function labOpen(productId, orderItemId, forStock) {
+  const { error } = await sb.rpc('lab_open_batch', { p_product_id: productId || null, p_order_item_id: orderItemId || null, p_for_stock: !!forStock });
+  if (error) { toast('🧪 ' + _labErr(error), true); return; }
+  await loadLab(true);
+}
+function labOpenPicked() {
+  const v = document.getElementById('lab-pick-product')?.value;
+  if (!v) { toast('Pick a product first', true); return; }
+  labOpen(parseInt(v), null, true);
+}
+async function labTap(batchId, delta) {
+  const b = labBatches.find(x => x.id === batchId); if (!b || b.stage !== 'mixing') return;
+  const cap = _labCap(b);
+  let nq = Math.max(0, b.qty_mixed + delta); if (cap != null) nq = Math.min(nq, cap);
+  if (nq === b.qty_mixed) return;
+  const prev = b.qty_mixed; b.qty_mixed = nq; _labRenderCount(batchId);          // optimistic
+  const seq = (_labTapSeq[batchId] = (_labTapSeq[batchId] || 0) + 1);
+  _labInflight++;
+  try {
+    const { data, error } = await sb.rpc('lab_tap', { p_batch_id: batchId, p_delta: delta });
+    if (seq !== _labTapSeq[batchId]) return;                                   // a newer tap is in flight — its reply wins
+    if (error) { b.qty_mixed = prev; _labRenderCount(batchId); toast('🧪 ' + _labErr(error), true); loadLab(false); return; }
+    const srv = parseInt(data);
+    if (!isNaN(srv) && srv !== b.qty_mixed) { b.qty_mixed = srv; _labRenderCount(batchId); }   // server is the truth (cap, other device)
+  } finally { _labInflight = Math.max(0, _labInflight - 1); }
+}
+async function labClose(batchId) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  if (!confirm('Close batch ' + b.batch_no + ' with ' + b.qty_mixed + ' made and send it to the Packer?')) return;
+  const { error } = await sb.rpc('lab_close_batch', { p_batch_id: batchId });
+  if (error) { toast('🧪 ' + _labErr(error), true); return; }
+  toast('📦 Batch ' + b.batch_no + ' → Packer');
+  await loadLab(true);
+}
+async function labCancel(batchId) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  let reason = null;
+  if (b.qty_mixed > 0) {
+    if (currentRole !== 'admin') { toast('Only an admin can cancel a non-empty batch', true); return; }
+    reason = prompt('Cancel batch ' + b.batch_no + ' (' + b.qty_mixed + ' made). Reason:');
+    if (reason === null) return;
+    if (!reason.trim()) { toast('Reason required', true); return; }
+  } else if (!confirm('Cancel empty batch ' + b.batch_no + '?')) return;
+  const { error } = await sb.rpc('lab_cancel_batch', { p_batch_id: batchId, p_reason: reason });
+  if (error) { toast('🧪 ' + _labErr(error), true); return; }
+  await loadLab(true);
+}
+
+// ── PACKER ─────────────────────────────────────────────────────────────
+function renderLabPacker() {
+  const el = document.getElementById('lab-body-packer'); if (!el) return;
+  const rows = labBatches.filter(b => b.stage === 'packing').sort((a, b) => ((_labBatchUrgency(a) ?? 9) - (_labBatchUrgency(b) ?? 9)) || String(a.mixed_closed_at).localeCompare(String(b.mixed_closed_at)));
+  el.innerHTML = rows.length ? rows.map(b => {
+    const prio = _labBatchUrgency(b);
+    return `<div class="lab-card${prio === 1 ? ' urgent' : ''}${b.order_item_id ? ' custom' : ''}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b)}</div>
+        <div class="lab-need">${b.qty_mixed}<small>made</small></div>
+      </div>
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}${_labItemContext(_labItemOf(b))}</div>
+      <div class="lab-form">
+        <label>Packed</label><input type="number" id="lab-pack-qty-${b.id}" min="1" max="${b.qty_mixed}" value="${b.qty_mixed}">
+        <button class="lab-btn primary" onclick="labPackDone(${b.id})">Packed → QA</button>
+        <button class="lab-btn" disabled title="Sticker printing — coming with the label spec">🖨 Stickers</button>
+      </div>
+    </div>`;
+  }).join('') : '<div class="lab-empty">Nothing to pack</div>';
+  const cnt = document.getElementById('lab-cnt-packer'); if (cnt) cnt.textContent = rows.length;
+}
+async function labPackDone(batchId) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  const qty = parseInt(document.getElementById('lab-pack-qty-' + batchId)?.value);
+  if (!qty || qty < 1 || qty > b.qty_mixed) { toast('Packed qty must be 1..' + b.qty_mixed, true); return; }
+  if (qty < b.qty_mixed && !confirm('Packed ' + qty + ' of ' + b.qty_mixed + ' — the missing ' + (b.qty_mixed - qty) + ' will NOT go to QA or stock. Continue?')) return;
+  const { error } = await sb.rpc('lab_pack_done', { p_batch_id: batchId, p_qty: qty });
+  if (error) { toast('📦 ' + _labErr(error), true); return; }
+  toast('✅ Batch ' + b.batch_no + ' → QA');
+  await loadLab(true);
+}
+
+// ── QA ─────────────────────────────────────────────────────────────────
+function renderLabQA() {
+  const el = document.getElementById('lab-body-qa'); if (!el) return;
+  const rows = labBatches.filter(b => b.stage === 'qa').sort((a, b) => ((_labBatchUrgency(a) ?? 9) - (_labBatchUrgency(b) ?? 9)) || String(a.packed_at).localeCompare(String(b.packed_at)));
+  el.innerHTML = rows.length ? rows.map(b => {
+    const prio = _labBatchUrgency(b);
+    return `<div class="lab-card${prio === 1 ? ' urgent' : ''}${b.order_item_id ? ' custom' : ''}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b, ' — not stocked')}</div>
+        <div class="lab-need">${b.qty_packed}<small>packed</small></div>
+      </div>
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span><span>packed ${_labWhen(b.packed_at)}</span>${b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}${_labItemContext(_labItemOf(b))}</div>
+      <div class="lab-form">
+        <label>OK</label><input type="number" id="lab-qa-ok-${b.id}" min="0" max="${b.qty_packed}" value="${b.qty_packed}" oninput="labQaSync(${b.id}, 'ok')">
+        <label>Rejected</label><input type="number" id="lab-qa-rej-${b.id}" min="0" max="${b.qty_packed}" value="0" oninput="labQaSync(${b.id}, 'rej')">
+        <select id="lab-qa-reason-${b.id}" disabled><option value="">— reason —</option>${LAB_REJECT_REASONS.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+        <button class="lab-btn ok" onclick="labQaAccept(${b.id})">✓ Accept → ${b.order_item_id ? 'order' : 'stock'}</button>
+      </div>
+    </div>`;
+  }).join('') : '<div class="lab-empty">Nothing at QA</div>';
+  const cnt = document.getElementById('lab-cnt-qa'); if (cnt) cnt.textContent = rows.length;
+}
+function labQaSync(batchId, src) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  const ok = document.getElementById('lab-qa-ok-' + batchId), rej = document.getElementById('lab-qa-rej-' + batchId), rs = document.getElementById('lab-qa-reason-' + batchId);
+  const total = b.qty_packed;
+  if (src === 'rej') { const r = Math.min(total, Math.max(0, parseInt(rej.value) || 0)); rej.value = r; ok.value = total - r; }
+  else { const o = Math.min(total, Math.max(0, parseInt(ok.value) || 0)); ok.value = o; rej.value = total - o; }
+  if (rs) rs.disabled = (parseInt(rej.value) || 0) === 0;
+}
+async function labQaAccept(batchId) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  const ok = parseInt(document.getElementById('lab-qa-ok-' + batchId)?.value) || 0;
+  const rej = parseInt(document.getElementById('lab-qa-rej-' + batchId)?.value) || 0;
+  const reason = document.getElementById('lab-qa-reason-' + batchId)?.value || '';
+  if (ok + rej !== b.qty_packed) { toast('OK + rejected must equal ' + b.qty_packed, true); return; }
+  if (rej > 0 && !reason) { toast('Pick a reject reason', true); return; }
+  const what = b.order_item_id ? 'the order (' + escAttr(_labBatchName(b)) + ')' : 'HUB stock';
+  const back = (rej && b.order_item_id) ? ' The rejected ' + rej + ' will go back to the Mixer for a remake.' : '';
+  if (!confirm('Batch ' + b.batch_no + ': accept ' + ok + ' OK' + (rej ? ', reject ' + rej + ' (' + reason + ')' : '') + ' → ' + what + '?' + back)) return;
+  const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: batchId, p_qty_ok: ok, p_qty_rejected: rej, p_reason: reason || null });
+  if (error) { toast('✅ ' + _labErr(error), true); return; }
+  toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : 'stock'));
+  await loadLab(true);
+}
+
+// ── ADMIN: history of closed batches ───────────────────────────────────
+function renderLabHistory() {
+  const el = document.getElementById('lab-history'); if (!el) return;
+  el.innerHTML = `<div class="lab-sec" style="padding-top:0">Recent batches <span class="lab-cnt">${labHistory.length}</span></div>` +
+    (labHistory.length ? `<table><thead><tr><th>Batch</th><th>Product</th><th>Mixed</th><th>Packed</th><th>QA ok</th><th>Rej.</th><th>Stage</th><th>Who</th><th>When</th></tr></thead><tbody>` +
+      labHistory.map(b => `<tr>
+        <td style="font-family:var(--mono)">${escAttr(b.batch_no)}</td>
+        <td>${escAttr(_labBatchName(b))}${b.order_item_id ? ` <span class="lab-chip custom">${_labItemKind(b)}</span>` : ''}${b.for_stock ? ' <span class="lab-chip">stock</span>' : ''}</td>
+        <td style="font-family:var(--mono)">${b.qty_mixed}</td><td style="font-family:var(--mono)">${b.qty_packed ?? '—'}</td>
+        <td style="font-family:var(--mono);color:var(--green)">${b.qty_qa_ok ?? '—'}</td>
+        <td style="font-family:var(--mono);color:${b.qty_qa_rejected ? 'var(--red)' : 'var(--muted)'}">${b.qty_qa_rejected ?? '—'}${b.reject_reason ? ' · ' + escAttr(b.reject_reason) : ''}</td>
+        <td><span class="lab-chip${b.stage === 'done' ? ' ok' : ''}">${b.stage}${b.cancel_reason ? ' · ' + escAttr(b.cancel_reason) : ''}</span></td>
+        <td style="font-size:11px;color:var(--muted)">${[b.mixer_email, b.packer_email, b.qa_email].filter(Boolean).map(escAttr).join(' → ')}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${_labWhen(b.qa_at || b.updated_at)}</td>
+      </tr>`).join('') + '</tbody></table>' : '<div class="lab-empty">No closed batches yet</div>');
+}
+
 // ─── STORAGE ─────────────────────────────────────────────────────
 
 let storageLocations = [];
@@ -5552,19 +6034,24 @@ function renderStorage() {
   const renderCard = (s) => {
     const inv = storageInventory.filter(i => i.storage_id === s.id);
     const driver = s.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
-    const invRows = inv.map((i, idx) => {
-      const p = products.find(x => x.id === i.product_id);
-      return `<tr>
+    const ledger = _storageIsLedger(s);   // v13.74: the HUB is edited through stock_adjust → journal; rovers stay legacy
+    const invRows = inv.slice().sort((x, y) => (products.find(p => p.id === x.product_id)?.name || '').localeCompare(products.find(p => p.id === y.product_id)?.name || '')).map((i, idx) => {
+      const p = products.find(x => x.id === i.product_id) || (window._allProducts || []).find(x => x.id === i.product_id);
+      const q = parseFloat(i.quantity) || 0, minS = parseFloat(p?.min_stock) || 0;
+      const low = q < 0 ? 'neg' : (minS > 0 && q < minS ? 'low' : '');
+      const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : 'var(--text)');
+      return `<tr${low ? ` title="${low === 'neg' ? 'NEGATIVE — packed more than was counted in. Receive or recount.' : 'Below minimum stock (' + minS + ')'}"` : ''}>
         <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? p.name : '—'}</td>
-        <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${p?.category||'—'}</td>
+        <td style="padding:6px 8px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${escAttr(p?.category||'—')}${minS > 0 ? `<div style="font-size:9px;font-family:var(--mono)">min ${minS}</div>` : ''}</td>
         <td style="padding:6px 8px;text-align:center">
-          <input type="number" min="0" step="0.01" value="${i.quantity}"
-            onchange="updateInventoryQty(${i.id},this.value)"
-            style="width:65px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;text-align:center">
+          <input type="number" step="0.01" value="${i.quantity}"
+            onchange="${ledger ? `storageCountQty(${i.id},this.value)` : `updateInventoryQty(${i.id},this.value)`}"
+            title="${ledger ? 'Type the counted quantity — the difference is written to the stock journal (reason: count)' : ''}"
+            style="width:65px;background:var(--surface2);border:1px solid ${low ? qColor : 'var(--border)'};border-radius:5px;padding:3px 6px;color:${qColor};font-family:var(--mono);font-size:12px;font-weight:${low ? 700 : 400};outline:none;text-align:center">
         </td>
-        <td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${p?.unit||'—'}</td>
-        <td style="padding:6px 8px"><button class="act-btn del" style="padding:2px 6px;font-size:11px" onclick="deleteInventoryItem(${i.id},'${s.id}')">✕</button></td>
+        <td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'—')}</td>
+        <td style="padding:6px 8px;white-space:nowrap">${ledger ? `<button class="act-btn" style="padding:2px 6px;font-size:11px" title="Stock journal for this product" onclick="openStockMoves(${i.product_id})">⌛</button> ` : ''}<button class="act-btn del" style="padding:2px 6px;font-size:11px" onclick="deleteInventoryItem(${i.id},'${s.id}')">✕</button></td>
       </tr>`;
     }).join('');
     const prodOpts = products.filter(p=>p.active!==false).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
@@ -5597,7 +6084,8 @@ function renderStorage() {
         </select>
         <input id="inv-add-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Qty"
           style="width:70px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;text-align:center">
-        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')">Add</button>
+        <button class="btn btn-ghost btn-sm" onclick="addInventoryInline('${s.id}')">${ledger ? 'Count' : 'Add'}</button>
+        ${ledger ? '<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">counted qty → journal</span>' : ''}
       </div>
     </div>`;
   };
@@ -5722,12 +6210,68 @@ async function saveInventoryItem() {
   toast('Inventory updated');
 }
 
+// v13.74: the lab line's stock lives in the HUB depot and is moved ONLY through the journal
+// (stock_adjust → stock_movements + storage_inventory in one transaction). Direct edits here would
+// silently desync the journal from the on-hand figure. Rovers (inactive) keep the legacy direct path.
+function _storageIsLedger(s) { return !!s && s.type === 'Depot'; }
+async function openStockMoves(productId) {
+  const p = products.find(x => x.id === productId) || (window._allProducts || []).find(x => x.id === productId);
+  const inv = storageInventory.find(i => i.storage_id === 1 && i.product_id === productId);
+  document.getElementById('stock-moves-sub').textContent = (p ? p.name : '#' + productId) + ' — HUB, on hand ' + (inv ? inv.quantity : 0) + ' ' + (p?.unit || '');
+  const body = document.getElementById('stock-moves-body');
+  body.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px">Loading…</div>';
+  document.getElementById('stock-moves-modal').classList.add('open');
+  const { data, error } = await sb.from('stock_movements').select('*').eq('product_id', productId).order('created_at', { ascending: false }).limit(60);
+  if (error) { body.innerHTML = '<div style="padding:16px;color:var(--red);font-size:12px">' + escAttr(error.message || 'error') + '</div>'; return; }
+  const rows = data || [];
+  const batchIds = [...new Set(rows.map(r => r.batch_id).filter(Boolean))];
+  let batchNo = {};
+  if (batchIds.length) { const { data: bs } = await sb.from('lab_batches').select('id,batch_no').in('id', batchIds); (bs || []).forEach(b => batchNo[b.id] = b.batch_no); }
+  const orderNum = {}; rows.forEach(r => { if (r.order_id) { const o = orders.find(x => x.id === r.order_id); if (o) orderNum[r.order_id] = o.order_num; } });
+  const label = { lab_qa_in: 'QA accepted', pack_out: 'Packed (order)', adjust: 'Adjustment', receive: 'Received', return: 'Returned', count: 'Count' };
+  body.innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">WHEN</th><th style="text-align:right;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">QTY</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">REASON</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">REF</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">BY</th></tr></thead>
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">${toUAEDateTime(r.created_at)}</td>
+      <td style="padding:6px 8px;text-align:right;font-family:var(--mono);font-weight:700;color:${parseFloat(r.qty) < 0 ? 'var(--red)' : 'var(--green)'}">${parseFloat(r.qty) > 0 ? '+' : ''}${r.qty}</td>
+      <td style="padding:6px 8px">${label[r.reason] || escAttr(r.reason)}</td>
+      <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${r.batch_id ? 'batch ' + escAttr(batchNo[r.batch_id] || r.batch_id) : ''}${r.order_id ? escAttr(orderNum[r.order_id] || r.order_id) : ''}${r.note ? `<div style="color:var(--muted);font-family:var(--font);font-size:11px">${escAttr(r.note)}</div>` : ''}</td>
+      <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${escAttr(r.created_by || '')}</td>
+    </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--muted);font-size:12px">No movements yet</div>';
+}
+async function _stockAdjust(productId, delta, reason, note) {
+  const { data, error } = await sb.rpc('stock_adjust', { p_product_id: parseInt(productId), p_qty: delta, p_reason: reason, p_note: note || null });
+  if (error) { toast('Stock: ' + (error.message || 'error'), true); return false; }
+  return true;
+}
+async function storageCountQty(invId, val) {
+  const inv = storageInventory.find(i => i.id === invId); if (!inv) return;
+  const counted = parseFloat(val);
+  if (isNaN(counted)) { toast('Enter a number', true); await loadStorage(); renderStorage(); return; }
+  const delta = parseFloat((counted - (parseFloat(inv.quantity) || 0)).toFixed(2));
+  if (delta === 0) return;
+  const p = products.find(x => x.id === inv.product_id);
+  if (await _stockAdjust(inv.product_id, delta, 'count', 'Storage count: ' + (parseFloat(inv.quantity) || 0) + ' → ' + counted)) {
+    logEvent('UPDATE', 'stock', String(inv.product_id), { action: 'stock_count', product: p?.name, before: parseFloat(inv.quantity) || 0, after: counted, delta });
+    toast((delta > 0 ? '+' : '') + delta + ' ' + (p?.name || '') + ' → journal (count)');
+  }
+  await loadStorage(); renderStorage();
+}
+
 async function updateInventoryQty(invId, val) {
   await sb.from('storage_inventory').update({ quantity: parseFloat(val), updated_at: new Date().toISOString() }).eq('id', invId);
   await loadStorage();
 }
 
 async function deleteInventoryItem(invId, storageId) {
+  const inv = storageInventory.find(i => i.id === invId);
+  const s = storageLocations.find(x => String(x.id) === String(storageId));
+  if (inv && _storageIsLedger(s) && (parseFloat(inv.quantity) || 0) !== 0) {
+    // v13.74: removing a HUB row with a balance = writing it off through the journal first
+    const p = products.find(x => x.id === inv.product_id);
+    if (!confirm('Write off ' + inv.quantity + ' × ' + (p?.name || 'product') + ' from HUB (journal reason: adjust) and remove the row?')) return;
+    if (!await _stockAdjust(inv.product_id, -(parseFloat(inv.quantity) || 0), 'adjust', 'Storage: row removed')) return;
+  }
   await sb.from('storage_inventory').delete().eq('id', invId);
   await loadStorage();
   renderStorage();
@@ -5739,6 +6283,25 @@ async function addInventoryInline(storageId) {
   const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
   const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
   if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter quantity', true); return; }
+  const sLoc = storageLocations.find(x => x.id === sid);
+  if (_storageIsLedger(sLoc)) {
+    // v13.74: HUB — the entered number is the COUNTED quantity; the difference goes to the journal
+    const mto = products.find(x => String(x.id) === String(product_id));
+    if (mto && mto.made_to_order) { toast((mto.name || 'This product') + ' is made per order — it is never stocked', true); return; }   // v13.74.1
+    const cur = storageInventory.find(i => i.storage_id === sid && String(i.product_id) === String(product_id));
+    const before = cur ? (parseFloat(cur.quantity) || 0) : 0;
+    const delta = parseFloat((qty - before).toFixed(2));
+    const p = products.find(x => String(x.id) === String(product_id));
+    if (delta === 0 && cur) { toast('Already ' + qty); return; }
+    if (delta === 0 && !cur) {   // a zero row — just creates the line without a movement
+      await sb.from('storage_inventory').upsert({ storage_id: sid, product_id: parseInt(product_id), quantity: 0, updated_at: new Date().toISOString() }, { onConflict: 'storage_id,product_id' });
+    } else if (await _stockAdjust(product_id, delta, 'count', 'Storage count: ' + before + ' → ' + qty)) {
+      logEvent('UPDATE', 'stock', String(product_id), { action: 'stock_count', product: p?.name, before, after: qty, delta });
+    }
+    await loadStorage(); renderStorage();
+    toast('Counted: ' + (p?.name || '') + ' = ' + qty);
+    return;
+  }
   await sb.from('storage_inventory').upsert(
     { storage_id: sid, product_id: parseInt(product_id), quantity: qty, updated_at: new Date().toISOString() },
     { onConflict: 'storage_id,product_id' }
@@ -6177,6 +6740,7 @@ function openNewProduct(){
   document.getElementById('product-modal-title').textContent='New Product';
   ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
+  document.getElementById('p-lab-made').checked=true;document.getElementById('p-made-to-order').checked=false;document.getElementById('p-no-stock-ahead').checked=false;document.getElementById('p-min-stock').value='0';syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
   document.getElementById('p-type').value='Regular';
   document.getElementById('p-price').value='';
@@ -6201,6 +6765,7 @@ function editProduct(id){
   document.getElementById('p-category').value=p.category||'';
   document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
+  document.getElementById('p-lab-made').checked=p.lab_made!==false;document.getElementById('p-made-to-order').checked=!!p.made_to_order;document.getElementById('p-no-stock-ahead').checked=!!p.no_stock_ahead;document.getElementById('p-min-stock').value=String(parseFloat(p.min_stock)||0);syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
   document.getElementById('p-price').value=p.price;
   document.getElementById('p-unit').value=p.unit;
@@ -6256,6 +6821,14 @@ async function uploadProductImage(file, productId) {
   return `${SUPABASE_URL}/storage/v1/object/public/product-images/${path}`;
 }
 
+// v13.74: no_stock_ahead and min_stock only make sense for lab products; min stock is pointless when stock-ahead is forbidden
+// v13.74.1: made_to_order (PREMIX) — per-order lines only, never in stock or demand; stock-ahead / min stock do not apply
+function syncProductLabFields(){
+  const lab=document.getElementById('p-lab-made').checked, mto=document.getElementById('p-made-to-order').checked, noAhead=document.getElementById('p-no-stock-ahead').checked;
+  const mt=document.getElementById('p-made-to-order'), na=document.getElementById('p-no-stock-ahead'), ms=document.getElementById('p-min-stock'), hint=document.getElementById('p-min-stock-hint');
+  mt.disabled=!lab; na.disabled=!lab||mto; ms.disabled=!lab||mto||noAhead;
+  hint.textContent=!lab?'purchased — not made here':(mto?'made per order — no stock':(noAhead?'ignored (no stock ahead)':'0 = off'));
+}
 async function saveProduct(){
   if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const get=id=>document.getElementById(id).value.trim();
@@ -6271,7 +6844,11 @@ async function saveProduct(){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
   
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
-  const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null};   // v13.72: invoice_nickname (migration add_invoice_nickname)
+  const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null,
+    lab_made:document.getElementById('p-lab-made').checked,
+    made_to_order:document.getElementById('p-lab-made').checked&&document.getElementById('p-made-to-order').checked,
+    no_stock_ahead:document.getElementById('p-lab-made').checked&&!document.getElementById('p-made-to-order').checked&&document.getElementById('p-no-stock-ahead').checked,
+    min_stock:(document.getElementById('p-lab-made').checked&&!document.getElementById('p-made-to-order').checked&&!document.getElementById('p-no-stock-ahead').checked)?Math.max(0,parseFloat(get('p-min-stock'))||0):0};   // v13.72 nickname · v13.74 lab fields (migration add_lab) · v13.74.1 made_to_order (add_lab_2)
   if(_productCurrentImageUrl!==undefined) payload.image_url = _productCurrentImageUrl;
 
   let error, productId = editProductId;
