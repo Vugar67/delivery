@@ -1,5 +1,5 @@
 /* ============================================================================
-   MyCRM — stickers.js · label engine + template editor (v13.80)
+   MyCRM — stickers.js · label engine + template editor (v13.80.1)
    Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; later: packer / warehouse printing).
    Uses the page's globals: sb (PostgREST client), toast, escAttr, currentUser, clients.
    Template = data (public.label_templates): one per seller + 'default'. Label 53 × 50 mm, positions in mm.
@@ -7,7 +7,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.0';
+const STICKERS_VERSION = '1.1';
 // ── qrcode-generator 1.4.4 (MIT) ───────────────────────────────────────────
 //---------------------------------------------------------------------
 //
@@ -2320,6 +2320,7 @@ const FIELD_DEFS = [
   { key: 'made',    label: 'Made (date · time)',   kind: 'text', prefix: 'Made ' },
   { key: 'packed',  label: 'Packed (date · time)', kind: 'text', prefix: 'Packed ' },
   { key: 'qr',      label: 'QR code',            kind: 'qr' },
+  { key: 'note2',   label: 'Static text',        kind: 'text', text: 'Sterile Solution for\nSubcutaneous Injection\nRESEARCH PURPOSE ONLY' },
   { key: 'note',    label: 'Free text',          kind: 'text', text: 'Keep refrigerated 2–8 °C' },
 ];
 function defaultLayout() {
@@ -2333,8 +2334,10 @@ function defaultLayout() {
       made:    { on: true,  x: 2,  y: 29, w: 31, size: 7, bold: false, align: 'left', prefix: 'Made ' },
       packed:  { on: true,  x: 2,  y: 33, w: 31, size: 7, bold: false, align: 'left', prefix: 'Packed ' },
       qr:      { on: true,  x: 35, y: 24, size: 16 },
-      note:    { on: true,  x: 2,  y: 42, w: 49, size: 6, bold: false, align: 'left', text: 'Keep refrigerated 2–8 °C' },
+      note2:   { on: true,  x: 2,  y: 37, w: 31, size: 6, bold: false, align: 'left', text: 'Sterile Solution for\nSubcutaneous Injection\nRESEARCH PURPOSE ONLY' },
+      note:    { on: true,  x: 2,  y: 45.5, w: 49, size: 6, bold: false, align: 'left', text: 'Keep refrigerated 2–8 °C' },
     },
+    bgOn: true,
   };
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2358,11 +2361,11 @@ function qrSvg(text, mm) {
 function labelHtml(layout, data, opts) {
   const L = layout || defaultLayout(); const f = L.fields || {}; const o = opts || {};
   const valueOf = (key, cfg) => {
-    if (key === 'note') return cfg.text || '';
+    if (key === 'note' || key === 'note2') return cfg.text || '';
     const raw = key === 'made' || key === 'packed' ? fmtDT(data[key]) : (data[key] ?? '');
     return (cfg.prefix || '') + raw;
   };
-  let inner = '';
+  let inner = data.bg && L.bgOn !== false ? `<img class="stk-bg" src="${data.bg}" alt="">` : '';
   FIELD_DEFS.forEach(def => {
     const cfg = f[def.key]; if (!cfg || !cfg.on) return;
     const pos = `left:${num(cfg.x, 0)}mm;top:${num(cfg.y, 0)}mm;`;
@@ -2378,6 +2381,7 @@ function labelHtml(layout, data, opts) {
   return `<div class="stk" style="width:${L.w || 53}mm;height:${L.h || 50}mm">${inner}</div>`;
 }
 const LABEL_CSS = `.stk{position:relative;overflow:hidden;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
+.stk-bg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;display:block}
 .stk-f{position:absolute;box-sizing:border-box;line-height:1.15;word-wrap:break-word}
 .stk-t{white-space:pre-wrap}`;
 
@@ -2408,13 +2412,13 @@ async function loadTemplate(sellerId) {
   if (error) throw new Error(error.message || 'label_templates');
   const row = (data || [])[0];
   if (!row && key !== 'default') { const d = await loadTemplate(null); return { ...d, seller_key: key, inherited: true }; }
-  const tpl = row ? { seller_key: key, seller_name: row.seller_name, layout: row.layout || defaultLayout(), logo: row.logo_data || null, updated_at: row.updated_at, updated_by: row.updated_by }
-                  : { seller_key: key, layout: defaultLayout(), logo: null, missing: true };
+  const tpl = row ? { seller_key: key, seller_name: row.seller_name, layout: row.layout || defaultLayout(), logo: row.logo_data || null, bg: row.bg_data || null, updated_at: row.updated_at, updated_by: row.updated_by }
+                  : { seller_key: key, layout: defaultLayout(), logo: null, bg: null, missing: true };
   _cache[key] = tpl; return tpl;
 }
-async function saveTemplate(sellerId, sellerName, layout, logo) {
+async function saveTemplate(sellerId, sellerName, layout, logo, bg) {
   const key = sellerId ? String(sellerId) : 'default';
-  const row = { seller_key: key, seller_id: sellerId ? String(sellerId) : null, seller_name: sellerName || (sellerId ? null : 'Default'), layout, logo_data: logo || null,
+  const row = { seller_key: key, seller_id: sellerId ? String(sellerId) : null, seller_name: sellerName || (sellerId ? null : 'Default'), layout, logo_data: logo || null, bg_data: bg || null,
                 updated_by: (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || null, updated_at: new Date().toISOString() };
   const { error } = await sb.from('label_templates').upsert(row, { onConflict: 'seller_key' });
   if (error) throw new Error(error.message || 'save failed');
@@ -2431,9 +2435,9 @@ async function deleteTemplate(sellerId) {
 // ───────────────────────────────────────────────────────────────────────────
 // Editor
 // ───────────────────────────────────────────────────────────────────────────
-const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, selected: null, dirty: false, inherited: false };
+const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false };
 const SAMPLE = () => ({ seller: ED.sellerName || 'Seller name', product: 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', batch: '261013-38',
-  made: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo });
+  made: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg });
 
 const EDITOR_CSS = `
 #stk-editor .stk-wrap{display:grid;grid-template-columns:300px 1fr 230px;gap:16px;align-items:start}
@@ -2481,6 +2485,7 @@ function ensureEditorDom() {
         </div>
         <div class="stk-actions">
           <div class="stk-logo" id="stk-logo-box"></div>
+          <div class="stk-logo" id="stk-bg-box"></div>
           <button class="btn btn-primary" id="stk-save">💾 Save template</button>
           <button class="btn btn-ghost" id="stk-print">🖨 Print test</button>
           <button class="btn btn-ghost" id="stk-copy-default" title="Replace this seller's layout with the Default one">Copy from Default</button>
@@ -2517,9 +2522,10 @@ async function openEditor(sellerId, sellerName) {
   document.getElementById('stk-sub').textContent = 'Loading…';
   try {
     const t = await loadTemplate(ED.sellerId);
-    ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.inherited = !!t.inherited; ED.meta = t;
+    ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.bg = t.bg || null; ED.inherited = !!t.inherited; ED.meta = t;
+    if (!ED.layout.fields.note2) ED.layout.fields.note2 = JSON.parse(JSON.stringify(defaultLayout().fields.note2));   // templates saved before the static text existed
     if (!ED.sellerName && t.seller_name) ED.sellerName = t.seller_name;
-  } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; }
+  } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; ED.bg = null; }
   renderEditor();
 }
 function closeEditor() { if (ED.dirty && !confirm('Discard unsaved changes?')) return; document.getElementById('stk-editor').classList.remove('open'); ED.open = false; }
@@ -2532,7 +2538,7 @@ function renderEditor() {
     row.onclick = e => { if (e.target.tagName === 'INPUT') return; ED.selected = row.dataset.key; renderEditor(); };
     row.querySelector('input').onchange = e => { f[row.dataset.key].on = e.target.checked; ED.dirty = true; renderEditor(); };
   });
-  renderProps(); renderBoard(); renderLogoBox();
+  renderProps(); renderBoard(); renderLogoBox(); renderBgBox();
 }
 function renderProps() {
   const el = document.getElementById('stk-props'); const k = ED.selected; const f = ED.layout.fields;
@@ -2547,7 +2553,7 @@ function renderProps() {
     <label>bold</label><input type="checkbox" ${c.bold ? 'checked' : ''} data-prop="bold" style="width:15px;height:15px;justify-self:start">
     <label>align</label><select data-prop="align"><option value="left" ${c.align === 'left' ? 'selected' : ''}>left</option><option value="center" ${c.align === 'center' ? 'selected' : ''}>center</option><option value="right" ${c.align === 'right' ? 'selected' : ''}>right</option></select>
     ${def.prefix !== undefined ? `<label>prefix</label><input type="text" value="${esc(c.prefix ?? def.prefix)}" data-prop="prefix">` : ''}
-    ${k === 'note' ? `<label>text</label><input type="text" value="${esc(c.text ?? '')}" data-prop="text">` : ''}`;
+    ${k === 'note' || k === 'note2' ? `<label style="align-self:start">text</label><textarea data-prop="text" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;resize:vertical">${esc(c.text ?? '')}</textarea>` : ''}`;
   el.innerHTML = h;
   el.querySelectorAll('[data-prop]').forEach(inp => {
     inp.oninput = () => { const p = inp.dataset.prop; c[p] = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? num(inp.value, c[p]) : inp.value); ED.dirty = true; renderBoard(); };
@@ -2590,18 +2596,35 @@ function renderLogoBox() {
   document.getElementById('stk-logo-file').onchange = e => { const file = e.target.files[0]; if (file) loadLogoFile(file); };
   const rm = document.getElementById('stk-logo-remove'); if (rm) rm.onclick = () => { ED.logo = null; ED.dirty = true; renderEditor(); };
 }
-function loadLogoFile(file) {
-  if (file.size > 2 * 1024 * 1024) { toast('Logo file is too big (max 2 MB)', true); return; }
+function renderBgBox() {
+  const box = document.getElementById('stk-bg-box'); if (!box) return;
+  const on = ED.layout.bgOn !== false;
+  box.innerHTML = `<div class="stk-hint" style="color:var(--text);font-weight:700">Background</div>
+    ${ED.bg ? `<img src="${ED.bg}" alt="background" style="max-height:60px">` : '<div class="stk-hint">no background — white label</div>'}
+    <label class="btn btn-ghost btn-sm" style="cursor:pointer">📁 ${ED.bg ? 'Replace background' : 'Upload background'}<input type="file" accept="image/png,image/jpeg" id="stk-bg-file" style="display:none"></label>
+    ${ED.bg ? `<label class="stk-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="stk-bg-on" ${on ? 'checked' : ''} style="width:14px;height:14px"> show on the label</label><button class="btn btn-ghost btn-sm" id="stk-bg-remove">Remove background</button>` : ''}
+    <div class="stk-hint">PNG / JPG, stretched to 53 × 50 mm (make it 626 × 591 px or the same ratio)</div>`;
+  document.getElementById('stk-bg-file').onchange = e => { const file = e.target.files[0]; if (file) loadImageFile(file, 'bg'); };
+  const rm = document.getElementById('stk-bg-remove'); if (rm) rm.onclick = () => { ED.bg = null; ED.dirty = true; renderEditor(); };
+  const cb = document.getElementById('stk-bg-on'); if (cb) cb.onchange = () => { ED.layout.bgOn = cb.checked; ED.dirty = true; renderBoard(); };
+}
+function loadLogoFile(file) { loadImageFile(file, 'logo'); }
+function loadImageFile(file, kind) {   // kind: 'logo' (≤ 600 px, keeps the logo field's aspect) | 'bg' (≤ 1200 px, full label)
+  const limit = kind === 'bg' ? 4 : 2;
+  if (file.size > limit * 1024 * 1024) { toast((kind === 'bg' ? 'Background' : 'Logo') + ' file is too big (max ' + limit + ' MB)', true); return; }
   const rd = new FileReader();
   rd.onload = () => {
     const img = new Image();
     img.onload = () => {
-      const max = 600; let w = img.width, h = img.height;                      // downscale: labels are 53 mm wide, 600 px is plenty
+      const max = kind === 'bg' ? 1200 : 600; let w = img.width, h = img.height;
       if (w > max || h > max) { const k = Math.min(max / w, max / h); w = Math.round(w * k); h = Math.round(h * k); }
       const cv = document.createElement('canvas'); cv.width = w; cv.height = h; cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      ED.logo = cv.toDataURL('image/png'); ED.dirty = true;
-      const lg = ED.layout.fields.logo; if (lg && !lg._ratioSet) { lg.h = Math.round(Math.min(12, lg.w * h / w) * 2) / 2; lg._ratioSet = true; }   // keep the aspect on first upload
-      renderEditor();
+      if (kind === 'bg') { ED.bg = /jpe?g$/i.test(file.type) ? cv.toDataURL('image/jpeg', 0.92) : cv.toDataURL('image/png'); ED.layout.bgOn = true; }
+      else {
+        ED.logo = cv.toDataURL('image/png');
+        const lg = ED.layout.fields.logo; if (lg && !lg._ratioSet) { lg.h = Math.round(Math.min(12, lg.w * h / w) * 2) / 2; lg._ratioSet = true; }   // keep the aspect on first upload
+      }
+      ED.dirty = true; renderEditor();
     };
     img.onerror = () => toast('Cannot read this image', true);
     img.src = rd.result;
@@ -2613,7 +2636,7 @@ async function saveFromEditor() {
   try {
     const layout = JSON.parse(JSON.stringify(ED.layout));
     Object.values(layout.fields).forEach(c => { delete c._ratioSet; });
-    await saveTemplate(ED.sellerId, ED.sellerName, layout, ED.logo);
+    await saveTemplate(ED.sellerId, ED.sellerName, layout, ED.logo, ED.bg);
     ED.dirty = false; ED.inherited = false;
     toast('🏷 Label template saved' + (ED.sellerId ? ' for ' + ED.sellerName : ' (Default)'));
     ED.meta = await loadTemplate(ED.sellerId); renderEditor();
