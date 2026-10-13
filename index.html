@@ -463,6 +463,17 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-cols.single .lab-btn{font-size:14px;padding:12px 18px}
 .lab-cols.single .lab-card{padding:14px 16px}
 .lab-cols.single .lab-form input,.lab-cols.single .lab-form select{font-size:16px}
+/* v13.79.1: packer / QA tally — like the mixer, a bit smaller */
+.lab-tally.sm{gap:8px;flex-wrap:wrap}
+.lab-tally.sm .lab-tap{width:72px;height:72px;font-size:36px;border-radius:14px}
+.lab-tally.sm .lab-tap.minus{width:46px;height:46px;font-size:22px}
+.lab-tally.sm .lab-count{font-size:28px;min-width:96px}
+.lab-tally.sm .lab-count span{font-size:15px;color:var(--muted)}
+.lab-cols.single .lab-tally.sm .lab-tap{width:80px;height:80px;font-size:40px}
+.lab-cols.single .lab-tally.sm .lab-tap.minus{width:52px;height:52px;font-size:24px}
+.lab-cols.single .lab-tally.sm .lab-count{font-size:32px;min-width:104px}
+.lab-qa-rej{display:inline-flex;align-items:center;gap:6px}
+.lab-qa-rej select{background:var(--surface2);border:1px solid rgba(248,113,113,.5);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none}
 .lab-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .lab-form input,.lab-form select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none}
 .lab-form input[type=number]{width:84px;text-align:center}
@@ -1765,7 +1776,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.79';
+const APP_VERSION = 'v13.79.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6129,7 +6140,7 @@ function _labStationStockCard(b, stage, ctrl) {
         <div class="lab-need">${stage === 'packing' ? b.qty_mixed : b.qty_packed}<small>${stage === 'packing' ? 'made' : 'packed'}</small></div>
       </div>
       <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${stage === 'qa' ? `<span>packed ${_labWhen(b.packed_at)}</span>` : ''}${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}${stage === 'qa' && b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}</div>
-      <div class="lab-form">${ctrl(b)}</div>
+      <div style="margin-top:10px">${ctrl(b)}</div>
     </div>`;
 }
 function _labStationRender(stage, bodyId, cntId, lineCtrl, cardAction, emptyText) {
@@ -6142,86 +6153,127 @@ function _labStationRender(stage, bodyId, cntId, lineCtrl, cardAction, emptyText
   const cnt = document.getElementById(cntId); if (cnt) cnt.textContent = labBatches.filter(b => b.stage === stage).length;
 }
 
-// Packer: a row = a batch; "Packed" qty (default = made) → QA. Order card with several lines gets "All packed → QA".
+// Packer — v13.79.1: the same tally as the Mixer (a bit smaller): "+" per packed vial, then "→ QA".
+// The count lives in the browser until "→ QA" is pressed (lab_pack_done sends the total once).
+const _labPackTally = {};
 function _labPackCtrl(b) {
-  return `<label>Packed</label><input type="number" id="lab-pack-qty-${b.id}" min="1" max="${b.qty_mixed}" value="${b.qty_mixed}">
-      <span class="lab-meta" style="margin:0">of ${b.qty_mixed}</span>
-      <button class="lab-btn primary" onclick="labPackDone(${b.id})">Packed → QA</button>
-      <button class="lab-btn" disabled title="Sticker printing — coming with the label spec">🖨 Stickers</button>`;
+  const n = Math.min(_labPackTally[b.id] || 0, b.qty_mixed);
+  return `<div class="lab-tally sm" style="margin:0">
+      <button class="lab-tap minus" onclick="labPackTap(${b.id}, -1)" ${n <= 0 ? 'disabled' : ''} title="Undo one">−</button>
+      <div class="lab-count${n >= b.qty_mixed ? ' capped' : ''}" id="lab-pack-count-${b.id}">${n} <span>/ ${b.qty_mixed}</span><small>PACKED</small></div>
+      <button class="lab-tap" onclick="labPackTap(${b.id}, 1)" ${n >= b.qty_mixed ? 'disabled' : ''} title="One more packed">+</button>
+      <button class="lab-btn primary" id="lab-pack-go-${b.id}" onclick="labPackDone(${b.id})" ${n <= 0 ? 'disabled' : ''}>→ QA</button>
+    </div>`;
+}
+function labPackTap(batchId, delta) {
+  const b = labBatches.find(x => x.id === batchId); if (!b || b.stage !== 'packing') return;
+  const n = Math.max(0, Math.min(b.qty_mixed, (_labPackTally[batchId] || 0) + delta));
+  _labPackTally[batchId] = n;
+  const el = document.getElementById('lab-pack-count-' + batchId); if (!el) return;
+  el.className = 'lab-count' + (n >= b.qty_mixed ? ' capped' : '');
+  el.innerHTML = `${n} <span>/ ${b.qty_mixed}</span><small>PACKED</small>`;
+  const t = el.closest('.lab-tally');
+  const plus = t.querySelector('.lab-tap:not(.minus)'), minus = t.querySelector('.lab-tap.minus'), go = document.getElementById('lab-pack-go-' + batchId);
+  if (plus) plus.disabled = n >= b.qty_mixed; if (minus) minus.disabled = n <= 0; if (go) go.disabled = n <= 0;
+  const card = el.closest('.lab-card'); const all = card && card.querySelector('.lab-actions .lab-btn');
+  if (all) all.disabled = !_labPackLinesReady(card.dataset.order).length;
+}
+function _labPackLinesReady(orderId) {
+  return labBatches.filter(b => b.stage === 'packing' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId && (_labPackTally[b.id] || 0) > 0);
 }
 function renderLabPacker() {
-  _labStationRender('packing', 'lab-body-packer', 'lab-cnt-packer', b => `<div class="lab-form" style="margin:0">${_labPackCtrl(b)}</div>`,
-    (oid, bs) => `<button class="lab-btn primary" onclick="labPackOrder('${escAttr(oid)}')">All packed → QA (${bs.length} lines)</button>`, 'Nothing to pack');
+  _labStationRender('packing', 'lab-body-packer', 'lab-cnt-packer', _labPackCtrl,
+    (oid, bs) => `<button class="lab-btn primary" onclick="labPackOrder('${escAttr(oid)}')" ${_labPackLinesReady(oid).length ? '' : 'disabled'}>All counted → QA</button>`, 'Nothing to pack');
 }
 async function labPackDone(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
-  const qty = parseInt(document.getElementById('lab-pack-qty-' + batchId)?.value);
-  if (!qty || qty < 1 || qty > b.qty_mixed) { toast('Packed qty must be 1..' + b.qty_mixed, true); return; }
+  const qty = Math.min(_labPackTally[batchId] || 0, b.qty_mixed);
+  if (qty < 1) { toast('Tap + for every packed vial first', true); return; }
   if (qty < b.qty_mixed && !confirm('Packed ' + qty + ' of ' + b.qty_mixed + ' — the missing ' + (b.qty_mixed - qty) + ' will NOT go to QA or stock. Continue?')) return;
   const { error } = await sb.rpc('lab_pack_done', { p_batch_id: batchId, p_qty: qty });
   if (error) { toast('📦 ' + _labErr(error), true); return; }
+  delete _labPackTally[batchId];
   toast('✅ Batch ' + b.batch_no + ' → QA');
   await loadLab(true);
 }
-async function labPackOrder(orderId) {   // v13.79: every line of the order at packing, with the qty typed in its row
-  const bs = labBatches.filter(b => b.stage === 'packing' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId);
-  if (!bs.length) return;
-  const plan = bs.map(b => ({ b, qty: parseInt(document.getElementById('lab-pack-qty-' + b.id)?.value) }));
-  const bad = plan.find(x => !x.qty || x.qty < 1 || x.qty > x.b.qty_mixed);
-  if (bad) { toast('Check the packed qty of ' + _labBatchName(bad.b) + ' (1..' + bad.b.qty_mixed + ')', true); return; }
+async function labPackOrder(orderId) {   // every line of the order with a count > 0; lines at 0 stay
+  const bs = _labPackLinesReady(orderId);
+  if (!bs.length) { toast('Tap + for the packed vials first', true); return; }
+  const plan = bs.map(b => ({ b, qty: Math.min(_labPackTally[b.id] || 0, b.qty_mixed) }));
   const short = plan.filter(x => x.qty < x.b.qty_mixed);
   const c0 = _labItemOf(bs[0]);
-  if (!confirm('Send ' + bs.length + ' lines of ' + (c0 ? c0.order_num : 'this order') + ' to QA' + (short.length ? ' — ' + short.length + ' line' + (short.length === 1 ? '' : 's') + ' packed short, the missing pieces will NOT go to QA' : '') + '?')) return;
+  const total = labBatches.filter(b => b.stage === 'packing' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId).length;
+  if (!confirm('Send ' + bs.length + ' of ' + total + ' lines of ' + (c0 ? c0.order_num : 'this order') + ' to QA' + (short.length ? ' — ' + short.length + ' line' + (short.length === 1 ? '' : 's') + ' packed short, the missing pieces will NOT go to QA' : '') + '?')) return;
   let failed = 0;
-  for (const x of plan) { const { error } = await sb.rpc('lab_pack_done', { p_batch_id: x.b.id, p_qty: x.qty }); if (error) { failed++; toast('📦 ' + _labErr(error), true); } }
-  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + bs.length + ' lines → QA');
+  for (const x of plan) { const { error } = await sb.rpc('lab_pack_done', { p_batch_id: x.b.id, p_qty: x.qty }); if (error) { failed++; toast('📦 ' + _labErr(error), true); } else delete _labPackTally[x.b.id]; }
+  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + bs.length + ' line' + (bs.length === 1 ? '' : 's') + ' → QA');
   await loadLab(true);
 }
 
-// QA: a row = a batch; OK + Rejected (= packed), reason when rejecting, Accept. Order card gets "Accept all" (only rows without rejects).
+// QA — v13.79.1: "+" per GOOD vial; whatever is left of the packed qty counts as rejected (reason required), then "✓ Accept".
+const _labQaTally = {}, _labQaRejAll = {};
+// the reject box (count + reason) appears once counting started and something is left over — or after "✕ reject all"
+function _labQaShowRej(b, ok) { return b.qty_packed - ok > 0 && (ok > 0 || _labQaRejAll[b.id]); }
+function labQaRejectAll(batchId) { _labQaRejAll[batchId] = true; renderLabQA(); }
 function _labQaCtrl(b) {
-  return `<label>OK</label><input type="number" id="lab-qa-ok-${b.id}" min="0" max="${b.qty_packed}" value="${b.qty_packed}" oninput="labQaSync(${b.id}, 'ok')">
-      <label>Rejected</label><input type="number" id="lab-qa-rej-${b.id}" min="0" max="${b.qty_packed}" value="0" oninput="labQaSync(${b.id}, 'rej')">
-      <select id="lab-qa-reason-${b.id}" disabled><option value="">— reason —</option>${LAB_REJECT_REASONS.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
-      <button class="lab-btn ok" onclick="labQaAccept(${b.id})">✓ Accept → ${b.order_item_id ? 'order' : 'stock'}</button>`;
+  const ok = Math.min(_labQaTally[b.id] || 0, b.qty_packed), rej = b.qty_packed - ok, showRej = _labQaShowRej(b, ok);
+  return `<div class="lab-tally sm" style="margin:0">
+      <button class="lab-tap minus" onclick="labQaTap(${b.id}, -1)" ${ok <= 0 ? 'disabled' : ''} title="Undo one">−</button>
+      <div class="lab-count${ok >= b.qty_packed ? ' capped' : ''}" id="lab-qa-count-${b.id}">${ok} <span>/ ${b.qty_packed}</span><small>OK</small></div>
+      <button class="lab-tap" onclick="labQaTap(${b.id}, 1)" ${ok >= b.qty_packed ? 'disabled' : ''} title="One more good vial">+</button>
+      ${ok === 0 && !_labQaRejAll[b.id] ? `<button class="lab-btn danger" id="lab-qa-rejall-${b.id}" onclick="labQaRejectAll(${b.id})" title="Nothing is good — reject the whole batch with a reason">✕ reject all</button>` : ''}
+      <span class="lab-qa-rej" id="lab-qa-rejbox-${b.id}" style="${showRej ? '' : 'display:none'}"><span class="lab-chip" style="color:var(--red);border-color:rgba(248,113,113,.5)">rejected <b id="lab-qa-rej-${b.id}">${rej}</b></span>
+        <select id="lab-qa-reason-${b.id}"><option value="">— reason —</option>${LAB_REJECT_REASONS.map(r => `<option value="${r}">${r}</option>`).join('')}</select></span>
+      <button class="lab-btn ok" id="lab-qa-go-${b.id}" onclick="labQaAccept(${b.id})">✓ Accept → ${b.order_item_id ? 'order' : 'stock'}</button>
+    </div>`;
+}
+function labQaTap(batchId, delta) {
+  const b = labBatches.find(x => x.id === batchId); if (!b || b.stage !== 'qa') return;
+  const ok = Math.max(0, Math.min(b.qty_packed, (_labQaTally[batchId] || 0) + delta)), rej = b.qty_packed - ok;
+  _labQaTally[batchId] = ok;
+  const el = document.getElementById('lab-qa-count-' + batchId); if (!el) return;
+  el.className = 'lab-count' + (ok >= b.qty_packed ? ' capped' : '');
+  el.innerHTML = `${ok} <span>/ ${b.qty_packed}</span><small>OK</small>`;
+  const t = el.closest('.lab-tally');
+  const plus = t.querySelector('.lab-tap:not(.minus)'), minus = t.querySelector('.lab-tap.minus');
+  if (plus) plus.disabled = ok >= b.qty_packed; if (minus) minus.disabled = ok <= 0;
+  const box = document.getElementById('lab-qa-rejbox-' + batchId), rejEl = document.getElementById('lab-qa-rej-' + batchId), rejAll = document.getElementById('lab-qa-rejall-' + batchId);
+  if (box) box.style.display = _labQaShowRej(b, ok) ? '' : 'none'; if (rejEl) rejEl.textContent = rej; if (rejAll) rejAll.style.display = ok === 0 ? '' : 'none';
+  const card = el.closest('.lab-card'); const all = card && card.querySelector('.lab-actions .lab-btn');
+  if (all) all.disabled = !_labQaLinesClean(card.dataset.order).length;
+}
+function _labQaLinesClean(orderId) {   // lines where every packed vial was tapped OK
+  return labBatches.filter(b => b.stage === 'qa' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId && (_labQaTally[b.id] || 0) >= b.qty_packed);
 }
 function renderLabQA() {
-  _labStationRender('qa', 'lab-body-qa', 'lab-cnt-qa', b => `<div class="lab-form" style="margin:0">${_labQaCtrl(b)}</div>`,
-    (oid, bs) => `<button class="lab-btn ok" onclick="labQaAcceptOrder('${escAttr(oid)}')">✓ Accept all → order (${bs.length} lines)</button>`, 'Nothing at QA');
-}
-function labQaSync(batchId, src) {
-  const b = labBatches.find(x => x.id === batchId); if (!b) return;
-  const ok = document.getElementById('lab-qa-ok-' + batchId), rej = document.getElementById('lab-qa-rej-' + batchId), rs = document.getElementById('lab-qa-reason-' + batchId);
-  const total = b.qty_packed;
-  if (src === 'rej') { const r = Math.min(total, Math.max(0, parseInt(rej.value) || 0)); rej.value = r; ok.value = total - r; }
-  else { const o = Math.min(total, Math.max(0, parseInt(ok.value) || 0)); ok.value = o; rej.value = total - o; }
-  if (rs) rs.disabled = (parseInt(rej.value) || 0) === 0;
+  _labStationRender('qa', 'lab-body-qa', 'lab-cnt-qa', _labQaCtrl,
+    (oid, bs) => `<button class="lab-btn ok" onclick="labQaAcceptOrder('${escAttr(oid)}')" ${_labQaLinesClean(oid).length ? '' : 'disabled'}>✓ Accept all OK → order</button>`, 'Nothing at QA');
 }
 async function labQaAccept(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
-  const ok = parseInt(document.getElementById('lab-qa-ok-' + batchId)?.value) || 0;
-  const rej = parseInt(document.getElementById('lab-qa-rej-' + batchId)?.value) || 0;
+  const ok = Math.min(_labQaTally[batchId] || 0, b.qty_packed), rej = b.qty_packed - ok;
   const reason = document.getElementById('lab-qa-reason-' + batchId)?.value || '';
-  if (ok + rej !== b.qty_packed) { toast('OK + rejected must equal ' + b.qty_packed, true); return; }
-  if (rej > 0 && !reason) { toast('Pick a reject reason', true); return; }
+  if (ok === 0 && !_labQaRejAll[batchId]) { toast('Tap + for every good vial — or "✕ reject all"', true); return; }
+  if (ok === 0 && !reason) { toast('Pick the reject reason', true); return; }
+  if (rej > 0 && !reason) { toast('Pick a reject reason for the ' + rej + ' not counted OK', true); return; }
   const what = b.order_item_id ? 'the order (' + escAttr(_labBatchName(b)) + ')' : 'HUB stock';
   const back = (rej && b.order_item_id) ? ' The rejected ' + rej + ' will go back to the Mixer for a remake.' : '';
   if (!confirm('Batch ' + b.batch_no + ': accept ' + ok + ' OK' + (rej ? ', reject ' + rej + ' (' + reason + ')' : '') + ' → ' + what + '?' + back)) return;
   const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: batchId, p_qty_ok: ok, p_qty_rejected: rej, p_reason: reason || null });
   if (error) { toast('✅ ' + _labErr(error), true); return; }
+  delete _labQaTally[batchId]; delete _labQaRejAll[batchId];
   toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : 'stock'));
   await loadLab(true);
 }
-async function labQaAcceptOrder(orderId) {   // v13.79: accept every line of the order that has no rejects; lines with rejects stay for a per-line Accept
-  const bs = labBatches.filter(b => b.stage === 'qa' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId);
-  if (!bs.length) return;
-  const clean = bs.filter(b => (parseInt(document.getElementById('lab-qa-rej-' + b.id)?.value) || 0) === 0);
-  const withRej = bs.length - clean.length;
-  if (!clean.length) { toast('Every line has rejects — accept them one by one with a reason', true); return; }
-  const c0 = _labItemOf(bs[0]);
-  if (!confirm('Accept ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' of ' + (c0 ? c0.order_num : 'this order') + ' (all OK) → order?' + (withRej ? ' ' + withRej + ' line' + (withRej === 1 ? '' : 's') + ' with rejects stay here.' : ''))) return;
+async function labQaAcceptOrder(orderId) {   // accept every line counted fully OK; lines with rejects stay for a per-line Accept with a reason
+  const clean = _labQaLinesClean(orderId);
+  if (!clean.length) { toast('Tap + for every good vial first', true); return; }
+  const total = labBatches.filter(b => b.stage === 'qa' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId).length;
+  const rest = total - clean.length;
+  const c0 = _labItemOf(clean[0]);
+  if (!confirm('Accept ' + clean.length + ' of ' + total + ' line' + (total === 1 ? '' : 's') + ' of ' + (c0 ? c0.order_num : 'this order') + ' (all OK) → order?' + (rest ? ' ' + rest + ' line' + (rest === 1 ? '' : 's') + ' not fully counted stay here.' : ''))) return;
   let failed = 0;
-  for (const b of clean) { const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: b.id, p_qty_ok: b.qty_packed, p_qty_rejected: 0, p_reason: null }); if (error) { failed++; toast('✅ ' + _labErr(error), true); } }
+  for (const b of clean) { const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: b.id, p_qty_ok: b.qty_packed, p_qty_rejected: 0, p_reason: null }); if (error) { failed++; toast('✅ ' + _labErr(error), true); } else delete _labQaTally[b.id]; }
   if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' accepted');
   await loadLab(true);
 }
