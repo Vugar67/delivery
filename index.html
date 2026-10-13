@@ -449,6 +449,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .lab-stockline{margin-top:8px;padding-top:6px;border-top:1px dashed var(--border)}   /* v13.78.1 */
 .lab-short{color:var(--yellow);font-weight:700}
+.lab-who b{color:var(--accent)}   /* v13.78.2: client / seller on lab cards */
 .lab-ok{color:var(--green)}
 /* v13.78: single station (tablet) — bigger type, everything stretched */
 .lab-cols.single .lab-name{font-size:17px}
@@ -1764,7 +1765,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.78.1';
+const APP_VERSION = 'v13.78.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5789,6 +5790,13 @@ function _labItemContext(c) {          // v13.74.3: the rest of the order this l
   const lis = parts.length ? parts.map(x => `<li>${escAttr(x.name)} <span>${_pcs(x.qty)}</span></li>`).join('') : `<li>${escAttr(c.with_items)}</li>`;
   return `<div class="lab-with">with<ul>${lis}</ul></div>`;
 }
+function _labWho(c) {   // v13.78.2: client + seller of the order (per-order lines only)
+  if (!c) return '';
+  const parts = [];
+  if (c.client_name) parts.push(`<span class="lab-who">👤 <b>${escAttr(c.client_name)}</b></span>`);
+  if (c.seller_name) parts.push(`<span class="lab-who">🏷 <b>${escAttr(c.seller_name)}</b></span>`);
+  return parts.join('');
+}
 function _labOrderNums(str) { const a = String(str || '').split(', ').filter(Boolean); return a.length > 4 ? a.slice(0, 4).join(', ') + ' +' + (a.length - 4) + ' more' : a.join(', '); }   // v13.78.1
 function _labUrgChip(prio, dateStr) {
   if (prio === 1) return `<span class="lab-urg">URGENT</span>`;
@@ -5953,7 +5961,7 @@ function renderLabMixer() {
     return `<div class="lab-card custom order-card${c0.priority === 1 ? ' urgent' : ''}${open ? ' open' : ''}" data-order="${escAttr(c0.order_id)}">
       <div class="lab-row">
         <div class="lab-name">${escAttr(c0.order_num)} ${_labUrgChip(c0.priority)} <span class="lab-chip custom">per order · ${lines.length} line${lines.length === 1 ? '' : 's'}${doneN ? ' · ' + doneN + ' done' : ''}</span></div>
-        <div class="lab-meta" style="margin:0">${c0.client_name ? `<span>${escAttr(c0.client_name)}</span>` : ''}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
+        <div class="lab-meta" style="margin:0">${_labWho(c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
       </div>
       <div class="lab-lines">${sorted.map(lineRow).join('')}</div>
       ${_labStockLine(c0)}
@@ -6086,6 +6094,7 @@ function renderLabPacker() {
         <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b)}</div>
         <div class="lab-need">${b.qty_mixed}<small>made</small></div>
       </div>
+      ${_labItemOf(b) && (_labItemOf(b).client_name || _labItemOf(b).seller_name) ? `<div class="lab-meta">${_labWho(_labItemOf(b))}</div>` : ''}
       ${_labItemContext(_labItemOf(b))}
       <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}</div>
       <div class="lab-form">
@@ -6119,6 +6128,7 @@ function renderLabQA() {
         <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b, ' — not stocked')}</div>
         <div class="lab-need">${b.qty_packed}<small>packed</small></div>
       </div>
+      ${_labItemOf(b) && (_labItemOf(b).client_name || _labItemOf(b).seller_name) ? `<div class="lab-meta">${_labWho(_labItemOf(b))}</div>` : ''}
       ${_labItemContext(_labItemOf(b))}
       <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span><span>packed ${_labWhen(b.packed_at)}</span>${b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}</div>
       <div class="lab-form">
