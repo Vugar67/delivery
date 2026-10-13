@@ -444,7 +444,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-line:first-child{border-top:none}
 .lab-line-name{font-weight:700;font-size:13px;flex:1 1 220px;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .lab-line.done .lab-line-name{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(139,145,176,.5)}
-.lab-line.handed .lab-line-name{color:var(--muted)}
+.lab-line.handed .lab-line-name,.lab-line.elsewhere .lab-line-name{color:var(--muted)}   /* v13.79: lines at another station */
 .lab-line-right{display:flex;align-items:center;gap:10px}
 .lab-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .lab-stockline{margin-top:8px;padding-top:6px;border-top:1px dashed var(--border)}   /* v13.78.1 */
@@ -1765,7 +1765,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.78.2';
+const APP_VERSION = 'v13.79';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6083,28 +6083,75 @@ async function labCancel(batchId) {
   await loadLab(true);
 }
 
-// ── PACKER ─────────────────────────────────────────────────────────────
-function renderLabPacker() {
-  const el = document.getElementById('lab-body-packer'); if (!el) return;
-  const rows = labBatches.filter(b => b.stage === 'packing').sort((a, b) => ((_labBatchUrgency(a) ?? 9) - (_labBatchUrgency(b) ?? 9)) || String(a.mixed_closed_at).localeCompare(String(b.mixed_closed_at)));
-  el.innerHTML = rows.length ? rows.map(b => {
-    const prio = _labBatchUrgency(b);
-    return `<div class="lab-card${prio === 1 ? ' urgent' : ''}${b.order_item_id ? ' custom' : ''}">
+// ── PACKER / QA — v13.79: the same picture as the Mixer: card = order (one row per line), stock batches as their own cards ──
+function _labLineStatus(c) {   // where a line of an order is right now (for rows that are NOT at this station)
+  if (c.done) return `<span class="lab-chip ok">✓ done</span>`;
+  const b = labBatches.find(x => x.order_item_id === c.order_item_id);
+  if (!b) return `<span class="lab-chip">not started</span>`;
+  if (b.stage === 'mixing') return `<span class="lab-chip">at Mixer · ${b.qty_mixed} made</span>`;
+  if (b.stage === 'packing') return `<span class="lab-chip ok">at Packer · ${escAttr(b.batch_no)}</span>`;
+  if (b.stage === 'qa') return `<span class="lab-chip ok">at QA · ${escAttr(b.batch_no)}</span>`;
+  return '';
+}
+function _labStationOrderCards(stage, lineCtrl, cardAction) {
+  // per-order batches at this station, grouped by order; every other line of the order shown muted with its status
+  const here = labBatches.filter(b => b.stage === stage && b.order_item_id);
+  const byOrder = new Map();
+  here.forEach(b => { const c = _labItemOf(b); const oid = c ? c.order_id : (b.order_id || 'o' + b.id); if (!byOrder.has(oid)) byOrder.set(oid, []); byOrder.get(oid).push(b); });
+  const cards = [];
+  byOrder.forEach((bs, oid) => {
+    const lines = labCustom.filter(c => c.order_id === oid).sort((a, b) => a.order_item_id - b.order_item_id);
+    const c0 = lines[0] || _labItemOf(bs[0]) || {};
+    const prio = c0.priority ?? _labBatchUrgency(bs[0]);
+    const rows = lines.length ? lines.map(c => {
+      const b = bs.find(x => x.order_item_id === c.order_item_id);
+      const name = `<div class="lab-line-name">${escAttr(c.custom_name)} <span class="lab-chip custom">${_labItemKind(c)}</span>${b ? `<span class="lab-meta" style="margin:0">batch ${escAttr(b.batch_no)}</span>` : ''}</div>`;
+      return `<div class="lab-line ${b ? 'here' : (c.done ? 'done' : 'elsewhere')}" data-item="${c.order_item_id}">${name}<div class="lab-line-right">${b ? lineCtrl(b) : _labLineStatus(c)}</div></div>`;
+    }).join('') : bs.map(b => `<div class="lab-line here"><div class="lab-line-name">${escAttr(_labBatchName(b))}</div><div class="lab-line-right">${lineCtrl(b)}</div></div>`).join('');
+    const when = stage === 'packing' ? bs.map(b => b.mixed_closed_at).sort()[0] : bs.map(b => b.packed_at).sort()[0];
+    cards.push({ prio: prio ?? 9, date: String(c0.sched_date || '9999'), when: String(when || ''), html: `<div class="lab-card custom order-card${prio === 1 ? ' urgent' : ''}" data-order="${escAttr(oid)}">
       <div class="lab-row">
-        <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b)}</div>
-        <div class="lab-need">${b.qty_mixed}<small>made</small></div>
+        <div class="lab-name">${escAttr(c0.order_num || '')} ${_labUrgChip(prio)} <span class="lab-chip custom">per order · ${bs.length} of ${lines.length || bs.length} line${(lines.length || bs.length) === 1 ? '' : 's'} here</span></div>
+        <div class="lab-meta" style="margin:0">${_labWho(lines.find(c => c.client_name || c.seller_name) || c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
       </div>
-      ${_labItemOf(b) && (_labItemOf(b).client_name || _labItemOf(b).seller_name) ? `<div class="lab-meta">${_labWho(_labItemOf(b))}</div>` : ''}
-      ${_labItemContext(_labItemOf(b))}
-      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}</div>
-      <div class="lab-form">
-        <label>Packed</label><input type="number" id="lab-pack-qty-${b.id}" min="1" max="${b.qty_mixed}" value="${b.qty_mixed}">
-        <button class="lab-btn primary" onclick="labPackDone(${b.id})">Packed → QA</button>
-        <button class="lab-btn" disabled title="Sticker printing — coming with the label spec">🖨 Stickers</button>
+      <div class="lab-lines">${rows}</div>
+      ${_labStockLine(c0)}
+      ${bs.length > 1 && cardAction ? `<div class="lab-actions">${cardAction(oid, bs)}</div>` : ''}
+    </div>` });
+  });
+  return cards;
+}
+function _labStationStockCard(b, stage, ctrl) {
+  const prio = _labBatchUrgency(b);
+  return `<div class="lab-card${prio === 1 ? ' urgent' : ''}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${b.for_stock ? ' <span class="lab-chip">for stock</span>' : ''}</div>
+        <div class="lab-need">${stage === 'packing' ? b.qty_mixed : b.qty_packed}<small>${stage === 'packing' ? 'made' : 'packed'}</small></div>
       </div>
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span>${stage === 'qa' ? `<span>packed ${_labWhen(b.packed_at)}</span>` : ''}${b.mixer_email ? `<span>${escAttr(b.mixer_email)}</span>` : ''}${stage === 'qa' && b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}</div>
+      <div class="lab-form">${ctrl(b)}</div>
     </div>`;
-  }).join('') : '<div class="lab-empty">Nothing to pack</div>';
-  const cnt = document.getElementById('lab-cnt-packer'); if (cnt) cnt.textContent = rows.length;
+}
+function _labStationRender(stage, bodyId, cntId, lineCtrl, cardAction, emptyText) {
+  const el = document.getElementById(bodyId); if (!el) return;
+  const stock = labBatches.filter(b => b.stage === stage && !b.order_item_id)
+    .map(b => ({ prio: _labBatchUrgency(b) ?? 9, date: '9999', when: String(stage === 'packing' ? b.mixed_closed_at : b.packed_at), html: _labStationStockCard(b, stage, lineCtrl) }));
+  const list = [..._labStationOrderCards(stage, lineCtrl, cardAction), ...stock]
+    .sort((a, b) => (a.prio - b.prio) || a.date.localeCompare(b.date) || a.when.localeCompare(b.when));
+  el.innerHTML = list.length ? list.map(x => x.html).join('') : `<div class="lab-empty">${emptyText}</div>`;
+  const cnt = document.getElementById(cntId); if (cnt) cnt.textContent = labBatches.filter(b => b.stage === stage).length;
+}
+
+// Packer: a row = a batch; "Packed" qty (default = made) → QA. Order card with several lines gets "All packed → QA".
+function _labPackCtrl(b) {
+  return `<label>Packed</label><input type="number" id="lab-pack-qty-${b.id}" min="1" max="${b.qty_mixed}" value="${b.qty_mixed}">
+      <span class="lab-meta" style="margin:0">of ${b.qty_mixed}</span>
+      <button class="lab-btn primary" onclick="labPackDone(${b.id})">Packed → QA</button>
+      <button class="lab-btn" disabled title="Sticker printing — coming with the label spec">🖨 Stickers</button>`;
+}
+function renderLabPacker() {
+  _labStationRender('packing', 'lab-body-packer', 'lab-cnt-packer', b => `<div class="lab-form" style="margin:0">${_labPackCtrl(b)}</div>`,
+    (oid, bs) => `<button class="lab-btn primary" onclick="labPackOrder('${escAttr(oid)}')">All packed → QA (${bs.length} lines)</button>`, 'Nothing to pack');
 }
 async function labPackDone(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
@@ -6116,30 +6163,31 @@ async function labPackDone(batchId) {
   toast('✅ Batch ' + b.batch_no + ' → QA');
   await loadLab(true);
 }
+async function labPackOrder(orderId) {   // v13.79: every line of the order at packing, with the qty typed in its row
+  const bs = labBatches.filter(b => b.stage === 'packing' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId);
+  if (!bs.length) return;
+  const plan = bs.map(b => ({ b, qty: parseInt(document.getElementById('lab-pack-qty-' + b.id)?.value) }));
+  const bad = plan.find(x => !x.qty || x.qty < 1 || x.qty > x.b.qty_mixed);
+  if (bad) { toast('Check the packed qty of ' + _labBatchName(bad.b) + ' (1..' + bad.b.qty_mixed + ')', true); return; }
+  const short = plan.filter(x => x.qty < x.b.qty_mixed);
+  const c0 = _labItemOf(bs[0]);
+  if (!confirm('Send ' + bs.length + ' lines of ' + (c0 ? c0.order_num : 'this order') + ' to QA' + (short.length ? ' — ' + short.length + ' line' + (short.length === 1 ? '' : 's') + ' packed short, the missing pieces will NOT go to QA' : '') + '?')) return;
+  let failed = 0;
+  for (const x of plan) { const { error } = await sb.rpc('lab_pack_done', { p_batch_id: x.b.id, p_qty: x.qty }); if (error) { failed++; toast('📦 ' + _labErr(error), true); } }
+  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + bs.length + ' lines → QA');
+  await loadLab(true);
+}
 
-// ── QA ─────────────────────────────────────────────────────────────────
+// QA: a row = a batch; OK + Rejected (= packed), reason when rejecting, Accept. Order card gets "Accept all" (only rows without rejects).
+function _labQaCtrl(b) {
+  return `<label>OK</label><input type="number" id="lab-qa-ok-${b.id}" min="0" max="${b.qty_packed}" value="${b.qty_packed}" oninput="labQaSync(${b.id}, 'ok')">
+      <label>Rejected</label><input type="number" id="lab-qa-rej-${b.id}" min="0" max="${b.qty_packed}" value="0" oninput="labQaSync(${b.id}, 'rej')">
+      <select id="lab-qa-reason-${b.id}" disabled><option value="">— reason —</option>${LAB_REJECT_REASONS.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+      <button class="lab-btn ok" onclick="labQaAccept(${b.id})">✓ Accept → ${b.order_item_id ? 'order' : 'stock'}</button>`;
+}
 function renderLabQA() {
-  const el = document.getElementById('lab-body-qa'); if (!el) return;
-  const rows = labBatches.filter(b => b.stage === 'qa').sort((a, b) => ((_labBatchUrgency(a) ?? 9) - (_labBatchUrgency(b) ?? 9)) || String(a.packed_at).localeCompare(String(b.packed_at)));
-  el.innerHTML = rows.length ? rows.map(b => {
-    const prio = _labBatchUrgency(b);
-    return `<div class="lab-card${prio === 1 ? ' urgent' : ''}${b.order_item_id ? ' custom' : ''}">
-      <div class="lab-row">
-        <div class="lab-name">${escAttr(_labBatchName(b))} ${_labUrgChip(prio)}${_labItemChip(b, ' — not stocked')}</div>
-        <div class="lab-need">${b.qty_packed}<small>packed</small></div>
-      </div>
-      ${_labItemOf(b) && (_labItemOf(b).client_name || _labItemOf(b).seller_name) ? `<div class="lab-meta">${_labWho(_labItemOf(b))}</div>` : ''}
-      ${_labItemContext(_labItemOf(b))}
-      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>mixed ${_labWhen(b.mixed_closed_at)}</span><span>packed ${_labWhen(b.packed_at)}</span>${b.packer_email ? `<span>${escAttr(b.packer_email)}</span>` : ''}</div>
-      <div class="lab-form">
-        <label>OK</label><input type="number" id="lab-qa-ok-${b.id}" min="0" max="${b.qty_packed}" value="${b.qty_packed}" oninput="labQaSync(${b.id}, 'ok')">
-        <label>Rejected</label><input type="number" id="lab-qa-rej-${b.id}" min="0" max="${b.qty_packed}" value="0" oninput="labQaSync(${b.id}, 'rej')">
-        <select id="lab-qa-reason-${b.id}" disabled><option value="">— reason —</option>${LAB_REJECT_REASONS.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
-        <button class="lab-btn ok" onclick="labQaAccept(${b.id})">✓ Accept → ${b.order_item_id ? 'order' : 'stock'}</button>
-      </div>
-    </div>`;
-  }).join('') : '<div class="lab-empty">Nothing at QA</div>';
-  const cnt = document.getElementById('lab-cnt-qa'); if (cnt) cnt.textContent = rows.length;
+  _labStationRender('qa', 'lab-body-qa', 'lab-cnt-qa', b => `<div class="lab-form" style="margin:0">${_labQaCtrl(b)}</div>`,
+    (oid, bs) => `<button class="lab-btn ok" onclick="labQaAcceptOrder('${escAttr(oid)}')">✓ Accept all → order (${bs.length} lines)</button>`, 'Nothing at QA');
 }
 function labQaSync(batchId, src) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
@@ -6162,6 +6210,19 @@ async function labQaAccept(batchId) {
   const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: batchId, p_qty_ok: ok, p_qty_rejected: rej, p_reason: reason || null });
   if (error) { toast('✅ ' + _labErr(error), true); return; }
   toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : 'stock'));
+  await loadLab(true);
+}
+async function labQaAcceptOrder(orderId) {   // v13.79: accept every line of the order that has no rejects; lines with rejects stay for a per-line Accept
+  const bs = labBatches.filter(b => b.stage === 'qa' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId);
+  if (!bs.length) return;
+  const clean = bs.filter(b => (parseInt(document.getElementById('lab-qa-rej-' + b.id)?.value) || 0) === 0);
+  const withRej = bs.length - clean.length;
+  if (!clean.length) { toast('Every line has rejects — accept them one by one with a reason', true); return; }
+  const c0 = _labItemOf(bs[0]);
+  if (!confirm('Accept ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' of ' + (c0 ? c0.order_num : 'this order') + ' (all OK) → order?' + (withRej ? ' ' + withRej + ' line' + (withRej === 1 ? '' : 's') + ' with rejects stay here.' : ''))) return;
+  let failed = 0;
+  for (const b of clean) { const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: b.id, p_qty_ok: b.qty_packed, p_qty_rejected: 0, p_reason: null }); if (error) { failed++; toast('✅ ' + _labErr(error), true); } }
+  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' accepted');
   await loadLab(true);
 }
 
