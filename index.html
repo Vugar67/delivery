@@ -1646,6 +1646,9 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div class="form-grid">
       <div class="form-group form-full"><label>Product Name</label><input id="p-name" placeholder="e.g. Fresh Dates 1kg"></div>
       <div class="form-group form-full"><label>Invoice Nickname <span style="color:var(--red)">*</span></label><input id="p-invoice-nickname" placeholder="Required — printed on the invoice instead of the product name" maxlength="120"></div>
+      <!-- v13.80.2: sticker fields — name and quantity/strength are two separate label fields -->
+      <div class="form-group"><label>Sticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-name" placeholder="e.g. RETAKLIK — empty = product name" maxlength="80"></div>
+      <div class="form-group"><label>Sticker Qty <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-qty" placeholder="e.g. 30 mg / 2.4 ml" maxlength="40"></div>
       <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
       <div class="form-group"><label>Shelf Position <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">1–64</span></label><input id="p-shelf" type="number" min="1" max="64" placeholder="e.g. 12"></div>
       <div class="form-group"><label>Unit</label>
@@ -1777,7 +1780,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.80.1';
+const APP_VERSION = 'v13.80.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7195,7 +7198,7 @@ function openNewProduct(){
   _productImageFile=null;
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
-  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode'].forEach(id=>document.getElementById(id).value='');
+  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode','p-sticker-name','p-sticker-qty'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=true;document.getElementById('p-made-to-order').checked=false;document.getElementById('p-no-stock-ahead').checked=false;document.getElementById('p-min-stock').value='0';syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7221,6 +7224,7 @@ function editProduct(id){
   document.getElementById('p-name').value=p.name;
   document.getElementById('p-category').value=p.category||'';
   document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
+  document.getElementById('p-sticker-name').value=p.sticker_name||'';document.getElementById('p-sticker-qty').value=p.sticker_qty||'';   // v13.80.2
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=p.lab_made!==false;document.getElementById('p-made-to-order').checked=!!p.made_to_order;document.getElementById('p-no-stock-ahead').checked=!!p.no_stock_ahead;document.getElementById('p-min-stock').value=String(parseFloat(p.min_stock)||0);syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7302,6 +7306,7 @@ async function saveProduct(){
   
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
   const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null,
+    sticker_name:(get('p-sticker-name')||'').trim()||null,sticker_qty:(get('p-sticker-qty')||'').trim()||null,   // v13.80.2 (migration add_lab_12)
     lab_made:document.getElementById('p-lab-made').checked,
     made_to_order:document.getElementById('p-lab-made').checked&&document.getElementById('p-made-to-order').checked,
     no_stock_ahead:document.getElementById('p-lab-made').checked&&!document.getElementById('p-made-to-order').checked&&document.getElementById('p-no-stock-ahead').checked,

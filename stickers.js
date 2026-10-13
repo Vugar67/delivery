@@ -1,5 +1,5 @@
 /* ============================================================================
-   MyCRM — stickers.js · label engine + template editor (v13.80.1)
+   MyCRM — stickers.js · label engine + template editor (v13.80.2)
    Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; later: packer / warehouse printing).
    Uses the page's globals: sb (PostgREST client), toast, escAttr, currentUser, clients.
    Template = data (public.label_templates): one per seller + 'default'. Label 53 × 50 mm, positions in mm.
@@ -7,7 +7,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.1';
+const STICKERS_VERSION = '1.2';
 // ── qrcode-generator 1.4.4 (MIT) ───────────────────────────────────────────
 //---------------------------------------------------------------------
 //
@@ -2315,7 +2315,9 @@ const PX_PER_MM = 6;                                            // preview scale
 const FIELD_DEFS = [
   { key: 'logo',    label: 'Seller logo',        kind: 'image' },
   { key: 'seller',  label: 'Seller name',        kind: 'text' },
-  { key: 'product', label: 'Product (order line)', kind: 'text' },
+  { key: 'sname',   label: 'Sticker name (product card)', kind: 'text' },
+  { key: 'sqty',    label: 'Sticker qty (product card)',  kind: 'text' },
+  { key: 'product', label: 'Product (order line name)',   kind: 'text' },
   { key: 'batch',   label: 'Batch no',           kind: 'text', prefix: 'Batch ' },
   { key: 'made',    label: 'Made (date · time)',   kind: 'text', prefix: 'Made ' },
   { key: 'packed',  label: 'Packed (date · time)', kind: 'text', prefix: 'Packed ' },
@@ -2329,7 +2331,9 @@ function defaultLayout() {
     fields: {
       logo:    { on: true,  x: 2,  y: 2,  w: 14, h: 8 },
       seller:  { on: true,  x: 17, y: 2.5, w: 34, size: 9, bold: true,  align: 'right' },
-      product: { on: true,  x: 2,  y: 12, w: 49, size: 10, bold: true,  align: 'left' },
+      sname:   { on: true,  x: 2,  y: 12, w: 49, size: 12, bold: true,  align: 'left' },
+      sqty:    { on: true,  x: 2,  y: 18, w: 49, size: 9,  bold: false, align: 'left' },
+      product: { on: false, x: 2,  y: 12, w: 49, size: 10, bold: true,  align: 'left' },
       batch:   { on: true,  x: 2,  y: 24, w: 31, size: 8, bold: false, align: 'left', prefix: 'Batch ' },
       made:    { on: true,  x: 2,  y: 29, w: 31, size: 7, bold: false, align: 'left', prefix: 'Made ' },
       packed:  { on: true,  x: 2,  y: 33, w: 31, size: 7, bold: false, align: 'left', prefix: 'Packed ' },
@@ -2436,7 +2440,7 @@ async function deleteTemplate(sellerId) {
 // Editor
 // ───────────────────────────────────────────────────────────────────────────
 const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false };
-const SAMPLE = () => ({ seller: ED.sellerName || 'Seller name', product: 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', batch: '261013-38',
+const SAMPLE = () => ({ seller: ED.sellerName || 'Seller name', product: 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: 'RETAKLIK', sqty: '30 mg / 2.4 ml', batch: '261013-38',
   made: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg });
 
 const EDITOR_CSS = `
@@ -2523,7 +2527,7 @@ async function openEditor(sellerId, sellerName) {
   try {
     const t = await loadTemplate(ED.sellerId);
     ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.bg = t.bg || null; ED.inherited = !!t.inherited; ED.meta = t;
-    if (!ED.layout.fields.note2) ED.layout.fields.note2 = JSON.parse(JSON.stringify(defaultLayout().fields.note2));   // templates saved before the static text existed
+    const dl = defaultLayout().fields; ['note2', 'sname', 'sqty'].forEach(k => { if (!ED.layout.fields[k]) ED.layout.fields[k] = JSON.parse(JSON.stringify(dl[k])); });   // fields added after the template was saved
     if (!ED.sellerName && t.seller_name) ED.sellerName = t.seller_name;
   } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; ED.bg = null; }
   renderEditor();
