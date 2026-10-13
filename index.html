@@ -1780,7 +1780,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.81';
+const APP_VERSION = 'v13.81.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6172,17 +6172,45 @@ function _labPackCtrl(b) {
     </div>`;
 }
 // v13.81: labels for a batch at the Packer — the seller's template (no template → Default), QR = batch no.
-// Asks how many (default: made by the Mixer); sticker name / qty from the product card, custom line → line name.
+// v13.81.1: a dialog instead of prompt(): count (default: made by the Mixer) + seller. Per-order line → the order's
+// seller, fixed. Stock batch (no order) → the packer picks the seller; the waiting orders and their sellers are shown
+// as a hint and, when they all belong to one seller, that seller is preselected. Sticker name / qty from the product
+// card, custom line → line name.
+let _labSellersCache = null;
+async function _labSellers() {
+  if (_labSellersCache) return _labSellersCache;
+  const { data, error } = await sb.from('clients').select('id,name,is_seller').eq('is_seller', true).order('name');
+  if (error) { console.warn('sellers:', error); return []; }
+  _labSellersCache = (data || []).map(c => ({ id: String(c.id), name: c.name || '' })).sort((a, b) => a.name.localeCompare(b.name));
+  setTimeout(() => { _labSellersCache = null; }, 5 * 60 * 1000);
+  return _labSellersCache;
+}
 async function labPrintLabels(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
   const c = _labItemOf(b);
-  const ans = prompt('Labels to print for batch ' + b.batch_no + (c ? ' (' + c.order_num + ')' : '') + ':', String(b.qty_mixed || 1));
-  if (ans === null) return;
-  const count = parseInt(ans);
-  if (!(count >= 1) || count > 500) { toast('Enter a number from 1 to 500', true); return; }
   const d = b.product_id ? labDemand.find(x => String(x.product_id) === String(b.product_id)) : null;
   const name = _labBatchName(b);
-  const seller = c ? (c.seller_name || (labCustom.find(x => x.order_id === c.order_id && x.seller_name) || {}).seller_name || '') : '';
+  const lineSeller = c ? (c.seller_name || (labCustom.find(x => x.order_id === c.order_id && x.seller_name) || {}).seller_name || '') : '';
+  let S;
+  try { S = await loadStickers(); } catch (e) { toast('🏷 ' + e.message, true); return; }
+  let sellers = [], preset = null, hint = '';
+  if (!c) {   // stock batch: who is it for? — the orders waiting for this product
+    sellers = await _labSellers();
+    const nums = d && d.order_nums ? String(d.order_nums).split(', ').map(x => x.trim()).filter(Boolean) : [];
+    if (nums.length) {
+      const { data } = await sb.from('orders').select('order_num,seller_name,priority').in('order_num', nums);
+      const rows = (data || []).sort((a, b2) => (a.priority || 3) - (b2.priority || 3) || String(a.order_num).localeCompare(String(b2.order_num)));
+      if (rows.length) {
+        hint = 'Waiting for ' + name + ': ' + rows.map(r => r.order_num + (r.seller_name ? ' · ' + r.seller_name : '')).join(', ');
+        const names = [...new Set(rows.map(r => (r.seller_name || '').trim().toLowerCase()).filter(Boolean))];
+        if (names.length === 1) { const sv = sellers.find(x => x.name.trim().toLowerCase() === names[0]); if (sv) preset = sv.id; }
+      }
+    } else hint = 'No order is waiting for ' + name + ' right now — pick the seller or print a Default label.';
+  }
+  const ans = await S.printDialog({ sub: name + ' · batch ' + b.batch_no + (c ? ' · ' + c.order_num : ' · stock'), count: b.qty_mixed || 1,
+    sellerFixed: c ? { id: c.seller_id || null, name: lineSeller } : null, sellers, sellerPreset: preset, hint });
+  if (!ans) return;
+  const sellerId = ans.sellerId || null, seller = ans.sellerName || '';
   const data = {
     seller,
     product: name,
@@ -6194,10 +6222,9 @@ async function labPrintLabels(batchId) {
     qr: b.batch_no,
   };
   try {
-    const S = await loadStickers();
-    const r = await S.printFor((c && c.seller_id) || null, data, count);
-    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { count: r.count, template: r.template, inherited: r.inherited, size: r.size, order_num: c ? c.order_num : null, seller: data.seller || null, product: name, station: 'packer' });
-    toast('🏷 ' + r.count + ' label' + (r.count === 1 ? '' : 's') + ' → printer (' + (r.inherited ? 'Default template' : 'template of ' + (seller || r.template)) + ')');
+    const r = await S.printFor(sellerId, data, ans.count, ans.win);
+    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { count: r.count, template: r.template, inherited: r.inherited, size: r.size, order_num: c ? c.order_num : null, seller: seller || null, product: name, station: 'packer' });
+    toast('🏷 ' + r.count + ' label' + (r.count === 1 ? '' : 's') + ' → printer (' + (r.inherited ? (seller ? seller + ' · Default layout' : 'Default label') : 'template of ' + (seller || r.template)) + ')');
   } catch (e) { toast('🏷 ' + e.message, true); }
 }
 function labPackTap(batchId, delta) {

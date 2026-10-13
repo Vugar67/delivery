@@ -7,7 +7,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.3';
+const STICKERS_VERSION = '1.3.1';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2391,10 +2391,15 @@ const LABEL_CSS = `.stk{position:relative;overflow:hidden;background:#fff;color:
 .stk-f{position:absolute;box-sizing:border-box;line-height:1.15;word-wrap:break-word}
 .stk-t{white-space:pre-wrap}`;
 
-function printLabels(layout, dataList) {
+function openPrintWindow() {   // call it synchronously inside the click handler — browsers block pop-ups opened after an await
+  const w = window.open('', '_blank', 'width=420,height=520');
+  if (w) { try { w.document.write('<!doctype html><title>Labels</title><body style="font-family:Arial;color:#666;padding:20px">Preparing labels…</body>'); } catch (e) {} }
+  return w;
+}
+function printLabels(layout, dataList, win) {
   const sz = sizeOf(layout);
   const labels = (dataList || []).map(d => labelHtml(layout, d)).join('');
-  const w = window.open('', '_blank', 'width=420,height=520');
+  const w = win || window.open('', '_blank', 'width=420,height=520');
   if (!w) { if (typeof toast === 'function') toast('Pop-up blocked — allow pop-ups for this site to print', true); return null; }
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
@@ -2440,14 +2445,59 @@ async function listTemplates() {   // sellers that have a template of their own 
 }
 // Print `count` identical labels for a batch with the seller's template (no template → Default).
 // data = { seller, product, sname, sqty, batch, made, packed, qr } — logo / bg come from the template.
-async function printFor(sellerId, data, count) {
+async function printFor(sellerId, data, count, win) {
   const n = Math.max(1, Math.min(500, parseInt(count) || 1));
-  const t = await loadTemplate(sellerId);
+  let t;
+  try { t = await loadTemplate(sellerId); } catch (e) { if (win) { try { win.close(); } catch (_) {} } throw e; }
   const d = { ...data, seller: data.seller || t.seller_name || '', logo: t.logo || null, bg: t.bg || null };
-  const w = printLabels(t.layout, Array.from({ length: n }, () => d));
+  const w = printLabels(t.layout, Array.from({ length: n }, () => d), win);
   if (!w) throw new Error('Pop-up blocked — allow pop-ups for this site to print');
   const sz = sizeOf(t.layout);
   return { count: n, template: t.inherited || t.missing ? 'default' : t.seller_key, inherited: !!(t.inherited || t.missing), size: sz.w + 'x' + sz.h };
+}
+// Station dialog: how many labels + which seller. Resolves { count, sellerId, sellerName, win } (win = print window opened on the click) or null.
+// o = { sub, count, sellerFixed: {id, name} | null, sellers: [{id, name}], sellerPreset, hint }
+const PRINT_CSS = `
+#stk-printdlg .stk-pr{display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-items:center;font-size:14px}
+#stk-printdlg .stk-pr label{font-family:var(--mono);font-size:12px;color:var(--muted)}
+#stk-printdlg .stk-pr input[type=number],#stk-printdlg .stk-pr select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:22px;font-weight:700;outline:none}
+#stk-printdlg .stk-pr select{font-size:16px;font-weight:600}
+#stk-printdlg .stk-pr-val{font-size:16px;font-weight:700}
+#stk-printdlg .stk-pr-actions{grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+#stk-printdlg .stk-pr-actions .btn{padding:12px 20px;font-size:15px}`;
+function printDialog(o) {
+  return new Promise(resolve => {
+    if (!document.getElementById('stk-print-css')) { const st = document.createElement('style'); st.id = 'stk-print-css'; st.textContent = PRINT_CSS; document.head.appendChild(st); }
+    const old = document.getElementById('stk-printdlg'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.className = 'overlay open'; ov.id = 'stk-printdlg'; ov.style.zIndex = '1310';
+    const sellers = o.sellers || [];
+    const sellerHtml = o.sellerFixed
+      ? `<div class="stk-pr-val" id="stk-pr-fixed">${esc(o.sellerFixed.name || '')}${o.sellerFixed.id ? '' : '<span class="stk-hint" style="font-weight:400"> no seller on the order — Default label</span>'}</div>`
+      : `<select id="stk-pr-seller"><option value="">— no seller (Default label) —</option>${sellers.map(s => `<option value="${esc(s.id)}" ${String(s.id) === String(o.sellerPreset || '') ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>`;
+    ov.innerHTML = `<div class="modal" style="max-width:480px">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><div class="modal-title">🏷 Print labels</div><div class="stk-hint" style="margin-top:2px">${esc(o.sub || '')}</div></div><button class="close-btn" id="stk-pr-close">&#10005;</button></div>
+      <div class="modal-body stk-pr">
+        <label>labels</label><input type="number" id="stk-pr-count" min="1" max="500" step="1" value="${Math.max(1, parseInt(o.count) || 1)}">
+        <label>seller</label>${sellerHtml}
+        ${o.hint ? `<div class="stk-hint" style="grid-column:1/-1;white-space:pre-wrap">${esc(o.hint)}</div>` : ''}
+        <div class="stk-pr-actions"><button class="btn btn-ghost" id="stk-pr-cancel">Cancel</button><button class="btn btn-primary" id="stk-pr-go">🖨 Print</button></div>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const done = v => { ov.remove(); resolve(v); };
+    document.getElementById('stk-pr-close').onclick = () => done(null);
+    document.getElementById('stk-pr-cancel').onclick = () => done(null);
+    ov.addEventListener('click', e => { if (e.target === ov) done(null); });
+    document.getElementById('stk-pr-go').onclick = () => {
+      const count = parseInt(document.getElementById('stk-pr-count').value);
+      if (!(count >= 1) || count > 500) { if (typeof toast === 'function') toast('Enter a number from 1 to 500', true); return; }
+      let sellerId = null, sellerName = '';
+      if (o.sellerFixed) { sellerId = o.sellerFixed.id || null; sellerName = o.sellerFixed.name || ''; }
+      else { const sel = document.getElementById('stk-pr-seller'); sellerId = sel.value || null; sellerName = sellerId ? sel.options[sel.selectedIndex].textContent : ''; }
+      const win = openPrintWindow();
+      done({ count, sellerId, sellerName, win });
+    };
+    setTimeout(() => { const i = document.getElementById('stk-pr-count'); if (i) { i.focus(); i.select(); } }, 30);
+  });
 }
 async function deleteTemplate(sellerId) {
   const key = sellerId ? String(sellerId) : 'default';
@@ -2716,5 +2766,5 @@ async function saveFromEditor() {
   finally { btn.disabled = false; }
 }
 
-window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, loadTemplate, listTemplates, saveTemplate, defaultLayout, sizeOf, FIELD_DEFS, LABEL, _ED: ED };
+window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, printDialog, openPrintWindow, loadTemplate, listTemplates, saveTemplate, defaultLayout, sizeOf, FIELD_DEFS, LABEL, _ED: ED };
 })();
