@@ -7,7 +7,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.3.1';
+const STICKERS_VERSION = '1.4';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2311,7 +2311,12 @@ var qrcode = function() {
 // ───────────────────────────────────────────────────────────────────────────
 const LABEL = { w: 55, h: 50 };                                 // mm — built-in default; every template carries its own w/h (v13.81)
 const SIZE_MIN = 20, SIZE_MAX = 120;                            // mm — editor limits for the label size
-const sizeOf = L => ({ w: Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.w, LABEL.w))), h: Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.h, LABEL.h))) });
+const TAPE_DEFAULT = 80, TAPE_MAX = 120;                        // mm — media (tape) width: the printed page is tape × label height, label centred
+function sizeOf(L) {
+  const w = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.w, LABEL.w))), h = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.h, LABEL.h)));
+  const tape = Math.min(TAPE_MAX, Math.max(w, num(L && L.tape, TAPE_DEFAULT)));
+  return { w, h, tape, margin: Math.round((tape - w) / 2 * 100) / 100 };
+}
 const PX_PER_MM = 6;                                            // preview scale
 const FIELD_DEFS = [
   { key: 'logo',    label: 'Seller logo',        kind: 'image' },
@@ -2328,7 +2333,7 @@ const FIELD_DEFS = [
 ];
 function defaultLayout() {
   return {
-    w: LABEL.w, h: LABEL.h,
+    w: LABEL.w, h: LABEL.h, tape: TAPE_DEFAULT,
     fields: {
       logo:    { on: true,  x: 2,  y: 2,  w: 14, h: 8 },
       seller:  { on: true,  x: 17, y: 2.5, w: 34, size: 9, bold: true,  align: 'right' },
@@ -2398,16 +2403,17 @@ function openPrintWindow() {   // call it synchronously inside the click handler
 }
 function printLabels(layout, dataList, win) {
   const sz = sizeOf(layout);
-  const labels = (dataList || []).map(d => labelHtml(layout, d)).join('');
+  // one page per label: page = tape width × label height, the label sits in the middle of the tape (equal margins left / right)
+  const labels = (dataList || []).map(d => `<div class="pg">${labelHtml(layout, d)}</div>`).join('');
   const w = win || window.open('', '_blank', 'width=420,height=520');
   if (!w) { if (typeof toast === 'function') toast('Pop-up blocked — allow pop-ups for this site to print', true); return null; }
   w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
-    @page{size:${sz.w}mm ${sz.h}mm;margin:0}
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels ${sz.tape}x${sz.h}</title><style>
+    @page{size:${sz.tape}mm ${sz.h}mm;margin:0}
     html,body{margin:0;padding:0;background:#fff}
     ${LABEL_CSS}
-    .stk{page-break-after:always;break-after:page}
-    .stk:last-child{page-break-after:auto;break-after:auto}
+    .pg{width:${sz.tape}mm;height:${sz.h}mm;box-sizing:border-box;padding-left:${sz.margin}mm;overflow:hidden;page-break-after:always;break-after:page}
+    .pg:last-child{page-break-after:auto;break-after:auto}
   </style></head><body>${labels}<script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`);
   w.document.close();
   return w;
@@ -2453,7 +2459,7 @@ async function printFor(sellerId, data, count, win) {
   const w = printLabels(t.layout, Array.from({ length: n }, () => d), win);
   if (!w) throw new Error('Pop-up blocked — allow pop-ups for this site to print');
   const sz = sizeOf(t.layout);
-  return { count: n, template: t.inherited || t.missing ? 'default' : t.seller_key, inherited: !!(t.inherited || t.missing), size: sz.w + 'x' + sz.h };
+  return { count: n, template: t.inherited || t.missing ? 'default' : t.seller_key, inherited: !!(t.inherited || t.missing), size: sz.w + 'x' + sz.h, tape: sz.tape };
 }
 // Station dialog: how many labels + which seller. Resolves { count, sellerId, sellerName, win } (win = print window opened on the click) or null.
 // o = { sub, count, sellerFixed: {id, name} | null, sellers: [{id, name}], sellerPreset, hint }
@@ -2525,6 +2531,7 @@ const EDITOR_CSS = `
 #stk-editor .stk-props{margin-top:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:11px;font-family:var(--mono);color:var(--muted)}
 #stk-editor .stk-props input[type=number],#stk-editor .stk-props select,#stk-editor .stk-props input[type=text]{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none}
 #stk-editor .stk-stage{display:flex;flex-direction:column;align-items:center;gap:8px}
+#stk-editor .stk-tapewrap{display:flex;justify-content:center;padding:12px 0;background:repeating-linear-gradient(135deg,rgba(255,255,255,.06) 0 6px,rgba(255,255,255,.02) 6px 12px);border-radius:6px;box-shadow:inset 0 0 0 1px var(--border)}
 #stk-editor .stk-board{position:relative;width:${LABEL.w * PX_PER_MM}px;height:${LABEL.h * PX_PER_MM}px;background:#fff;box-shadow:0 0 0 1px #999,0 6px 24px rgba(0,0,0,.35);
   background-image:linear-gradient(rgba(0,0,0,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.06) 1px,transparent 1px);background-size:${5 * PX_PER_MM}px ${5 * PX_PER_MM}px}
 #stk-editor .stk-board .stk{transform:scale(${PX_PER_MM / (96 / 25.4)});transform-origin:0 0;background:transparent}
@@ -2557,13 +2564,15 @@ function ensureEditorDom() {
           <div class="stk-props" id="stk-props"></div>
         </div>
         <div class="stk-stage">
-          <div class="stk-board" id="stk-board"></div>
+          <div class="stk-tapewrap" id="stk-tapewrap" title="the tape — the label is printed in the middle of it"><div class="stk-board" id="stk-board"></div></div>
           <div class="stk-hint" id="stk-size-hint">drag fields · grid 5 mm · ${PX_PER_MM} px = 1 mm</div>
           <div class="stk-props" id="stk-size" style="margin-top:0;grid-template-columns:auto 1fr auto 1fr;width:100%;max-width:360px">
             <div style="grid-column:1/-1;color:var(--text);font-weight:700">Label size (mm)</div>
             <label>width</label><input type="number" id="stk-w" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
             <label>height</label><input type="number" id="stk-h" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
-            <div class="stk-hint" style="grid-column:1/-1">Epson C4000e: set the same size in the printer dialog. Default 55 × 50.</div>
+            <label>tape width</label><input type="number" id="stk-tape" step="0.5" min="${SIZE_MIN}" max="${TAPE_MAX}" title="Width of the continuous tape in the printer — the label is centred on it">
+            <div class="stk-hint" id="stk-tape-hint" style="grid-column:3/-1"></div>
+            <div class="stk-hint" style="grid-column:1/-1">Printer dialog: paper = tape width × label height, margins none, scale 100 %. Media type in the Epson driver: continuous paper (no gap / black-mark detection).</div>
           </div>
         </div>
         <div class="stk-actions">
@@ -2594,9 +2603,10 @@ function ensureEditorDom() {
       addMissingFields(ED.layout); renderEditor(); toast('Copied from ' + name + ' — not saved yet');
     } catch (err) { toast('Copy: ' + err.message, true); }
   };
-  ['stk-w', 'stk-h'].forEach(id => { document.getElementById(id).onchange = e => {
-    const v = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(e.target.value, LABEL.w))); e.target.value = v;
-    ED.layout[id === 'stk-w' ? 'w' : 'h'] = v; ED.dirty = true; fitFields(ED.layout); renderEditor();
+  ['stk-w', 'stk-h', 'stk-tape'].forEach(id => { document.getElementById(id).onchange = e => {
+    const max = id === 'stk-tape' ? TAPE_MAX : SIZE_MAX;
+    const v = Math.min(max, Math.max(SIZE_MIN, num(e.target.value, LABEL.w))); e.target.value = v;
+    ED.layout[id === 'stk-w' ? 'w' : id === 'stk-h' ? 'h' : 'tape'] = v; ED.dirty = true; fitFields(ED.layout); renderEditor();
   }; });
   document.getElementById('stk-delete').onclick = async () => {
     if (!ED.sellerId) { toast('The Default template cannot be deleted', true); return; }
@@ -2613,7 +2623,7 @@ function sellerOptions(sel) {
 function addMissingFields(layout) {   // fields added after the template was saved
   const dl = defaultLayout().fields; layout.fields = layout.fields || {};
   Object.keys(dl).forEach(k => { if (!layout.fields[k]) layout.fields[k] = JSON.parse(JSON.stringify(dl[k])); });
-  const sz = sizeOf(layout); layout.w = sz.w; layout.h = sz.h;
+  const sz = sizeOf(layout); layout.w = sz.w; layout.h = sz.h; layout.tape = sz.tape;
 }
 function fitFields(layout) {   // after the label got smaller: keep every field inside
   const sz = sizeOf(layout);
@@ -2655,9 +2665,10 @@ function renderEditor() {
     row.onclick = e => { if (e.target.tagName === 'INPUT') return; ED.selected = row.dataset.key; renderEditor(); };
     row.querySelector('input').onchange = e => { f[row.dataset.key].on = e.target.checked; ED.dirty = true; renderEditor(); };
   });
-  const sz = sizeOf(ED.layout); const wi = document.getElementById('stk-w'), hi = document.getElementById('stk-h');
-  if (wi) wi.value = sz.w; if (hi) hi.value = sz.h;
-  const sh = document.getElementById('stk-size-hint'); if (sh) sh.textContent = sz.w + ' × ' + sz.h + ' mm · drag fields · grid 5 mm · ' + PX_PER_MM + ' px = 1 mm';
+  const sz = sizeOf(ED.layout); const wi = document.getElementById('stk-w'), hi = document.getElementById('stk-h'), ti = document.getElementById('stk-tape');
+  if (wi) wi.value = sz.w; if (hi) hi.value = sz.h; if (ti) ti.value = sz.tape;
+  const sh = document.getElementById('stk-size-hint'); if (sh) sh.textContent = sz.w + ' × ' + sz.h + ' mm on ' + sz.tape + ' mm tape · drag fields · grid 5 mm · ' + PX_PER_MM + ' px = 1 mm';
+  const th = document.getElementById('stk-tape-hint'); if (th) th.textContent = sz.margin > 0 ? 'page ' + sz.tape + ' × ' + sz.h + ' mm, label centred, ' + sz.margin + ' mm margin each side' : 'page = label, no side margins';
   renderProps(); renderBoard(); renderLogoBox(); renderBgBox();
 }
 function renderProps() {
@@ -2688,6 +2699,7 @@ function selectField(key) {   // highlight without re-rendering the board
 function renderBoard() {
   const board = document.getElementById('stk-board'); const sz = sizeOf(ED.layout);
   board.style.width = (sz.w * PX_PER_MM) + 'px'; board.style.height = (sz.h * PX_PER_MM) + 'px';
+  const tw = document.getElementById('stk-tapewrap'); if (tw) tw.style.width = (sz.tape * PX_PER_MM) + 'px';
   board.innerHTML = labelHtml(ED.layout, SAMPLE(), { editor: true, selected: ED.selected });
   board.querySelectorAll('.stk-f').forEach(el => {
     el.onpointerdown = e => {
