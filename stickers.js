@@ -1,14 +1,13 @@
 /* ============================================================================
-   MyCRM — stickers.js · label engine + template editor (v13.80.2)
-   Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; later: packer / warehouse printing).
+   MyCRM — stickers.js · label engine + template editor + station printing (v13.81)
+   Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; packer: 🏷 Print on a batch).
    Uses the page's globals: sb (PostgREST client), toast, escAttr, currentUser, clients.
-   Template = data (public.label_templates): one per seller + 'default'. Label 53 × 50 mm, positions in mm.
+   Template = data (public.label_templates): one per seller + 'default'. Label size per template (default 55 × 50 mm), positions in mm.
    Embeds qrcode-generator 1.4.4 (c) Kazuhiko Arase, MIT — see below.
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.2';
-// ── qrcode-generator 1.4.4 (MIT) ───────────────────────────────────────────
+const STICKERS_VERSION = '1.3';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2310,7 +2309,9 @@ var qrcode = function() {
 // ───────────────────────────────────────────────────────────────────────────
 // Engine
 // ───────────────────────────────────────────────────────────────────────────
-const LABEL = { w: 53, h: 50 };                                 // mm
+const LABEL = { w: 55, h: 50 };                                 // mm — built-in default; every template carries its own w/h (v13.81)
+const SIZE_MIN = 20, SIZE_MAX = 120;                            // mm — editor limits for the label size
+const sizeOf = L => ({ w: Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.w, LABEL.w))), h: Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.h, LABEL.h))) });
 const PX_PER_MM = 6;                                            // preview scale
 const FIELD_DEFS = [
   { key: 'logo',    label: 'Seller logo',        kind: 'image' },
@@ -2382,7 +2383,8 @@ function labelHtml(layout, data, opts) {
       inner += `<div class="stk-f stk-t${sel}" data-key="${def.key}" style="${pos}width:${num(cfg.w, 30)}mm;font-size:${num(cfg.size, 8)}pt;font-weight:${cfg.bold ? 700 : 400};text-align:${cfg.align || 'left'}">${esc(valueOf(def.key, cfg))}</div>`;
     }
   });
-  return `<div class="stk" style="width:${L.w || 53}mm;height:${L.h || 50}mm">${inner}</div>`;
+  const sz = sizeOf(L);
+  return `<div class="stk" style="width:${sz.w}mm;height:${sz.h}mm">${inner}</div>`;
 }
 const LABEL_CSS = `.stk{position:relative;overflow:hidden;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
 .stk-bg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;display:block}
@@ -2390,12 +2392,13 @@ const LABEL_CSS = `.stk{position:relative;overflow:hidden;background:#fff;color:
 .stk-t{white-space:pre-wrap}`;
 
 function printLabels(layout, dataList) {
+  const sz = sizeOf(layout);
   const labels = (dataList || []).map(d => labelHtml(layout, d)).join('');
   const w = window.open('', '_blank', 'width=420,height=520');
   if (!w) { if (typeof toast === 'function') toast('Pop-up blocked — allow pop-ups for this site to print', true); return null; }
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
-    @page{size:${LABEL.w}mm ${LABEL.h}mm;margin:0}
+    @page{size:${sz.w}mm ${sz.h}mm;margin:0}
     html,body{margin:0;padding:0;background:#fff}
     ${LABEL_CSS}
     .stk{page-break-after:always;break-after:page}
@@ -2408,17 +2411,17 @@ function printLabels(layout, dataList) {
 // ───────────────────────────────────────────────────────────────────────────
 // Template storage — public.label_templates (seller_key = seller id or 'default')
 // ───────────────────────────────────────────────────────────────────────────
-const _cache = {};
+const _cache = {}; const CACHE_MS = 5 * 60 * 1000;   // a station keeps a template for 5 min, then re-reads (admin may have edited it)
 async function loadTemplate(sellerId) {
   const key = sellerId ? String(sellerId) : 'default';
-  if (_cache[key]) return _cache[key];
+  if (_cache[key] && Date.now() - _cache[key]._at < CACHE_MS) return _cache[key];
   const { data, error } = await sb.from('label_templates').select('*').eq('seller_key', key);
   if (error) throw new Error(error.message || 'label_templates');
   const row = (data || [])[0];
   if (!row && key !== 'default') { const d = await loadTemplate(null); return { ...d, seller_key: key, inherited: true }; }
   const tpl = row ? { seller_key: key, seller_name: row.seller_name, layout: row.layout || defaultLayout(), logo: row.logo_data || null, bg: row.bg_data || null, updated_at: row.updated_at, updated_by: row.updated_by }
                   : { seller_key: key, layout: defaultLayout(), logo: null, bg: null, missing: true };
-  _cache[key] = tpl; return tpl;
+  tpl._at = Date.now(); _cache[key] = tpl; return tpl;
 }
 async function saveTemplate(sellerId, sellerName, layout, logo, bg) {
   const key = sellerId ? String(sellerId) : 'default';
@@ -2428,6 +2431,23 @@ async function saveTemplate(sellerId, sellerName, layout, logo, bg) {
   if (error) throw new Error(error.message || 'save failed');
   delete _cache[key];
   return true;
+}
+async function listTemplates() {   // sellers that have a template of their own (+ default) — for "Copy from…"
+  const { data, error } = await sb.from('label_templates').select('seller_key,seller_name,updated_at');
+  if (error) throw new Error(error.message || 'label_templates');
+  return (data || []).map(r => ({ key: r.seller_key, name: r.seller_key === 'default' ? 'Default' : (r.seller_name || r.seller_key), updated_at: r.updated_at }))
+    .sort((a, b) => (a.key === 'default' ? -1 : b.key === 'default' ? 1 : String(a.name).localeCompare(String(b.name))));
+}
+// Print `count` identical labels for a batch with the seller's template (no template → Default).
+// data = { seller, product, sname, sqty, batch, made, packed, qr } — logo / bg come from the template.
+async function printFor(sellerId, data, count) {
+  const n = Math.max(1, Math.min(500, parseInt(count) || 1));
+  const t = await loadTemplate(sellerId);
+  const d = { ...data, seller: data.seller || t.seller_name || '', logo: t.logo || null, bg: t.bg || null };
+  const w = printLabels(t.layout, Array.from({ length: n }, () => d));
+  if (!w) throw new Error('Pop-up blocked — allow pop-ups for this site to print');
+  const sz = sizeOf(t.layout);
+  return { count: n, template: t.inherited || t.missing ? 'default' : t.seller_key, inherited: !!(t.inherited || t.missing), size: sz.w + 'x' + sz.h };
 }
 async function deleteTemplate(sellerId) {
   const key = sellerId ? String(sellerId) : 'default';
@@ -2439,7 +2459,10 @@ async function deleteTemplate(sellerId) {
 // ───────────────────────────────────────────────────────────────────────────
 // Editor
 // ───────────────────────────────────────────────────────────────────────────
-const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false };
+const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false, snap: '' };
+const snapOf = () => JSON.stringify({ l: ED.layout, logo: ED.logo || null, bg: ED.bg || null });
+function isDirty() { return !!ED.layout && snapOf() !== ED.snap; }   // real changes only — a click on the label or a move-and-back does not count
+const LEAVE_MSG = () => 'Unsaved changes to the ' + (ED.sellerId ? '"' + ED.sellerName + '"' : 'Default') + ' label template will be lost. Continue?';
 const SAMPLE = () => ({ seller: ED.sellerName || 'Seller name', product: 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: 'RETAKLIK', sqty: '30 mg / 2.4 ml', batch: '261013-38',
   made: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg });
 
@@ -2485,14 +2508,20 @@ function ensureEditorDom() {
         </div>
         <div class="stk-stage">
           <div class="stk-board" id="stk-board"></div>
-          <div class="stk-hint">53 × 50 mm · drag fields · grid 5 mm · ${PX_PER_MM} px = 1 mm</div>
+          <div class="stk-hint" id="stk-size-hint">drag fields · grid 5 mm · ${PX_PER_MM} px = 1 mm</div>
+          <div class="stk-props" id="stk-size" style="margin-top:0;grid-template-columns:auto 1fr auto 1fr;width:100%;max-width:360px">
+            <div style="grid-column:1/-1;color:var(--text);font-weight:700">Label size (mm)</div>
+            <label>width</label><input type="number" id="stk-w" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
+            <label>height</label><input type="number" id="stk-h" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
+            <div class="stk-hint" style="grid-column:1/-1">Epson C4000e: set the same size in the printer dialog. Default 55 × 50.</div>
+          </div>
         </div>
         <div class="stk-actions">
           <div class="stk-logo" id="stk-logo-box"></div>
           <div class="stk-logo" id="stk-bg-box"></div>
           <button class="btn btn-primary" id="stk-save">💾 Save template</button>
           <button class="btn btn-ghost" id="stk-print">🖨 Print test</button>
-          <button class="btn btn-ghost" id="stk-copy-default" title="Replace this seller's layout with the Default one">Copy from Default</button>
+          <select class="btn btn-ghost" id="stk-copy-from" title="Replace this template (layout, logo, background) with another seller's one" style="width:100%;text-align:center;appearance:auto"><option value="">Copy from…</option></select>
           <button class="btn btn-ghost" id="stk-reset" title="Built-in starting layout">Reset layout</button>
           <button class="btn btn-ghost" id="stk-delete" style="color:var(--red)" title="Remove this seller's template — Default will be used">Delete template</button>
           <div class="stk-hint" id="stk-meta"></div>
@@ -2505,18 +2534,51 @@ function ensureEditorDom() {
   document.getElementById('stk-save').onclick = saveFromEditor;
   document.getElementById('stk-print').onclick = () => printLabels(ED.layout, [SAMPLE()]);
   document.getElementById('stk-reset').onclick = () => { if (!confirm('Replace the layout with the built-in starting layout?')) return; ED.layout = defaultLayout(); ED.dirty = true; renderEditor(); };
-  document.getElementById('stk-copy-default').onclick = async () => { if (!ED.sellerId) { toast('This is the Default template', true); return; } const d = await loadTemplate(null); ED.layout = JSON.parse(JSON.stringify(d.layout)); ED.dirty = true; renderEditor(); toast('Layout copied from Default — not saved yet'); };
+  document.getElementById('stk-copy-from').onchange = async e => {
+    const key = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; e.target.value = '';
+    if (!key) return;
+    if (!confirm('Replace the layout, logo and background of ' + (ED.sellerId ? ED.sellerName : 'Default') + ' with the template of ' + name + '? (not saved until you press Save)')) return;
+    try {
+      const d = await loadTemplate(key === 'default' ? null : key);
+      ED.layout = JSON.parse(JSON.stringify(d.layout || defaultLayout())); ED.logo = d.logo || null; ED.bg = d.bg || null; ED.dirty = true;
+      addMissingFields(ED.layout); renderEditor(); toast('Copied from ' + name + ' — not saved yet');
+    } catch (err) { toast('Copy: ' + err.message, true); }
+  };
+  ['stk-w', 'stk-h'].forEach(id => { document.getElementById(id).onchange = e => {
+    const v = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(e.target.value, LABEL.w))); e.target.value = v;
+    ED.layout[id === 'stk-w' ? 'w' : 'h'] = v; ED.dirty = true; fitFields(ED.layout); renderEditor();
+  }; });
   document.getElementById('stk-delete').onclick = async () => {
     if (!ED.sellerId) { toast('The Default template cannot be deleted', true); return; }
     if (!confirm('Delete the label template of ' + ED.sellerName + '? Labels will use the Default layout.')) return;
     try { await deleteTemplate(ED.sellerId); toast('Template deleted'); await openEditor(ED.sellerId, ED.sellerName); } catch (e) { toast('Delete: ' + e.message, true); }
   };
-  document.getElementById('stk-seller').onchange = e => { const v = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; if (ED.dirty && !confirm('Discard unsaved changes?')) { e.target.value = ED.sellerId || ''; return; } openEditor(v || null, v ? name : 'Default'); };
+  document.getElementById('stk-seller').onchange = e => { const v = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; if (isDirty() && !confirm(LEAVE_MSG())) { e.target.value = ED.sellerId || ''; return; } openEditor(v || null, v ? name : 'Default'); };
   ov.addEventListener('click', e => { if (e.target === ov) closeEditor(); });
 }
 function sellerOptions(sel) {
   const list = (typeof clients !== 'undefined' ? clients : []).filter(c => c.is_seller).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   return `<option value="" ${!sel ? 'selected' : ''}>Default (all sellers)</option>` + list.map(s => `<option value="${esc(s.id)}" ${String(s.id) === String(sel) ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+function addMissingFields(layout) {   // fields added after the template was saved
+  const dl = defaultLayout().fields; layout.fields = layout.fields || {};
+  Object.keys(dl).forEach(k => { if (!layout.fields[k]) layout.fields[k] = JSON.parse(JSON.stringify(dl[k])); });
+  const sz = sizeOf(layout); layout.w = sz.w; layout.h = sz.h;
+}
+function fitFields(layout) {   // after the label got smaller: keep every field inside
+  const sz = sizeOf(layout);
+  Object.entries(layout.fields || {}).forEach(([k, c]) => {
+    const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (k === 'qr' ? num(c.size, 16) : 4);
+    c.x = Math.max(0, Math.min(num(c.x, 0), sz.w - Math.min(wmm, sz.w))); c.y = Math.max(0, Math.min(num(c.y, 0), sz.h - Math.min(hmm, sz.h)));
+  });
+}
+async function fillCopyFrom() {
+  const sel = document.getElementById('stk-copy-from'); if (!sel) return;
+  try {
+    const list = (await listTemplates()).filter(t => t.key !== (ED.sellerId ? String(ED.sellerId) : 'default'));
+    sel.innerHTML = '<option value="">Copy from…</option>' + list.map(t => `<option value="${esc(t.key)}">${esc(t.name)}</option>`).join('');
+    sel.disabled = !list.length; if (!list.length) sel.innerHTML = '<option value="">Copy from… (none yet)</option>';
+  } catch (e) { sel.innerHTML = '<option value="">Copy from…</option>'; }
 }
 async function openEditor(sellerId, sellerName) {
   ensureEditorDom();
@@ -2527,12 +2589,13 @@ async function openEditor(sellerId, sellerName) {
   try {
     const t = await loadTemplate(ED.sellerId);
     ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.bg = t.bg || null; ED.inherited = !!t.inherited; ED.meta = t;
-    const dl = defaultLayout().fields; ['note2', 'sname', 'sqty'].forEach(k => { if (!ED.layout.fields[k]) ED.layout.fields[k] = JSON.parse(JSON.stringify(dl[k])); });   // fields added after the template was saved
+    addMissingFields(ED.layout);
     if (!ED.sellerName && t.seller_name) ED.sellerName = t.seller_name;
-  } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; ED.bg = null; }
-  renderEditor();
+  } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; ED.bg = null; ED.meta = null; }
+  ED.snap = snapOf();
+  renderEditor(); fillCopyFrom();
 }
-function closeEditor() { if (ED.dirty && !confirm('Discard unsaved changes?')) return; document.getElementById('stk-editor').classList.remove('open'); ED.open = false; }
+function closeEditor() { if (isDirty() && !confirm(LEAVE_MSG())) return; document.getElementById('stk-editor').classList.remove('open'); ED.open = false; }
 function renderEditor() {
   const f = ED.layout.fields;
   document.getElementById('stk-sub').textContent = (ED.sellerId ? ED.sellerName : 'Default — used by every seller without a template of their own') + (ED.inherited ? ' · no template yet: showing Default' : '');
@@ -2542,18 +2605,21 @@ function renderEditor() {
     row.onclick = e => { if (e.target.tagName === 'INPUT') return; ED.selected = row.dataset.key; renderEditor(); };
     row.querySelector('input').onchange = e => { f[row.dataset.key].on = e.target.checked; ED.dirty = true; renderEditor(); };
   });
+  const sz = sizeOf(ED.layout); const wi = document.getElementById('stk-w'), hi = document.getElementById('stk-h');
+  if (wi) wi.value = sz.w; if (hi) hi.value = sz.h;
+  const sh = document.getElementById('stk-size-hint'); if (sh) sh.textContent = sz.w + ' × ' + sz.h + ' mm · drag fields · grid 5 mm · ' + PX_PER_MM + ' px = 1 mm';
   renderProps(); renderBoard(); renderLogoBox(); renderBgBox();
 }
 function renderProps() {
   const el = document.getElementById('stk-props'); const k = ED.selected; const f = ED.layout.fields;
   if (!k || !f[k]) { el.innerHTML = '<div style="grid-column:1/-1">Click a field to edit its size and position, or drag it on the label.</div>'; return; }
-  const def = FIELD_DEFS.find(d => d.key === k), c = f[k];
+  const def = FIELD_DEFS.find(d => d.key === k), c = f[k]; const sz = sizeOf(ED.layout);
   const numIn = (p, step, min, max) => `<input type="number" step="${step}" min="${min}" max="${max}" value="${c[p] ?? ''}" data-prop="${p}">`;
   let h = `<div style="grid-column:1/-1;color:var(--text);font-weight:700">${esc(def.label)}</div>
-    <label>x mm</label>${numIn('x', 0.5, 0, LABEL.w)}<label>y mm</label>${numIn('y', 0.5, 0, LABEL.h)}`;
-  if (def.kind === 'image') h += `<label>width mm</label>${numIn('w', 0.5, 2, LABEL.w)}<label>height mm</label>${numIn('h', 0.5, 2, LABEL.h)}`;
+    <label>x mm</label>${numIn('x', 0.5, 0, sz.w)}<label>y mm</label>${numIn('y', 0.5, 0, sz.h)}`;
+  if (def.kind === 'image') h += `<label>width mm</label>${numIn('w', 0.5, 2, sz.w)}<label>height mm</label>${numIn('h', 0.5, 2, sz.h)}`;
   else if (def.kind === 'qr') h += `<label>size mm</label>${numIn('size', 0.5, 8, 40)}`;
-  else h += `<label>width mm</label>${numIn('w', 0.5, 5, LABEL.w)}<label>font pt</label>${numIn('size', 0.5, 4, 24)}
+  else h += `<label>width mm</label>${numIn('w', 0.5, 5, sz.w)}<label>font pt</label>${numIn('size', 0.5, 4, 24)}
     <label>bold</label><input type="checkbox" ${c.bold ? 'checked' : ''} data-prop="bold" style="width:15px;height:15px;justify-self:start">
     <label>align</label><select data-prop="align"><option value="left" ${c.align === 'left' ? 'selected' : ''}>left</option><option value="center" ${c.align === 'center' ? 'selected' : ''}>center</option><option value="right" ${c.align === 'right' ? 'selected' : ''}>right</option></select>
     ${def.prefix !== undefined ? `<label>prefix</label><input type="text" value="${esc(c.prefix ?? def.prefix)}" data-prop="prefix">` : ''}
@@ -2570,7 +2636,8 @@ function selectField(key) {   // highlight without re-rendering the board
   renderProps();
 }
 function renderBoard() {
-  const board = document.getElementById('stk-board');
+  const board = document.getElementById('stk-board'); const sz = sizeOf(ED.layout);
+  board.style.width = (sz.w * PX_PER_MM) + 'px'; board.style.height = (sz.h * PX_PER_MM) + 'px';
   board.innerHTML = labelHtml(ED.layout, SAMPLE(), { editor: true, selected: ED.selected });
   board.querySelectorAll('.stk-f').forEach(el => {
     el.onpointerdown = e => {
@@ -2580,9 +2647,10 @@ function renderBoard() {
       const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (c.size && key === 'qr' ? num(c.size, 16) : 4);
       if (ED.selected !== key) selectField(key);                                   // keep the board DOM — this node has the pointer capture
       const move = ev => {
-        c.x = Math.round(Math.min(LABEL.w - wmm, Math.max(0, ox + (ev.clientX - sx) / PX_PER_MM)) * 2) / 2;
-        c.y = Math.round(Math.min(LABEL.h - hmm, Math.max(0, oy + (ev.clientY - sy) / PX_PER_MM)) * 2) / 2;
-        ED.dirty = true;
+        const nx = Math.round(Math.min(sz.w - wmm, Math.max(0, ox + (ev.clientX - sx) / PX_PER_MM)) * 2) / 2;
+        const ny = Math.round(Math.min(sz.h - hmm, Math.max(0, oy + (ev.clientY - sy) / PX_PER_MM)) * 2) / 2;
+        if (nx === c.x && ny === c.y) return;                                       // a plain click / sub-step jitter is not an edit
+        c.x = nx; c.y = ny; ED.dirty = true;
         const node = board.querySelector(`.stk-f[data-key="${key}"]`); if (node) { node.style.left = c.x + 'mm'; node.style.top = c.y + 'mm'; }
         const px = document.querySelector('#stk-props [data-prop="x"]'), py = document.querySelector('#stk-props [data-prop="y"]'); if (px) px.value = c.x; if (py) py.value = c.y;
       };
@@ -2602,12 +2670,12 @@ function renderLogoBox() {
 }
 function renderBgBox() {
   const box = document.getElementById('stk-bg-box'); if (!box) return;
-  const on = ED.layout.bgOn !== false;
+  const on = ED.layout.bgOn !== false; const sz = sizeOf(ED.layout);
   box.innerHTML = `<div class="stk-hint" style="color:var(--text);font-weight:700">Background</div>
     ${ED.bg ? `<img src="${ED.bg}" alt="background" style="max-height:60px">` : '<div class="stk-hint">no background — white label</div>'}
     <label class="btn btn-ghost btn-sm" style="cursor:pointer">📁 ${ED.bg ? 'Replace background' : 'Upload background'}<input type="file" accept="image/png,image/jpeg" id="stk-bg-file" style="display:none"></label>
     ${ED.bg ? `<label class="stk-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="stk-bg-on" ${on ? 'checked' : ''} style="width:14px;height:14px"> show on the label</label><button class="btn btn-ghost btn-sm" id="stk-bg-remove">Remove background</button>` : ''}
-    <div class="stk-hint">PNG / JPG, stretched to 53 × 50 mm (make it 626 × 591 px or the same ratio)</div>`;
+    <div class="stk-hint">PNG / JPG, stretched to ${sz.w} × ${sz.h} mm (make it ${Math.round(sz.w / 25.4 * 300)} × ${Math.round(sz.h / 25.4 * 300)} px at 300 dpi, or the same ratio)</div>`;
   document.getElementById('stk-bg-file').onchange = e => { const file = e.target.files[0]; if (file) loadImageFile(file, 'bg'); };
   const rm = document.getElementById('stk-bg-remove'); if (rm) rm.onclick = () => { ED.bg = null; ED.dirty = true; renderEditor(); };
   const cb = document.getElementById('stk-bg-on'); if (cb) cb.onchange = () => { ED.layout.bgOn = cb.checked; ED.dirty = true; renderBoard(); };
@@ -2641,12 +2709,12 @@ async function saveFromEditor() {
     const layout = JSON.parse(JSON.stringify(ED.layout));
     Object.values(layout.fields).forEach(c => { delete c._ratioSet; });
     await saveTemplate(ED.sellerId, ED.sellerName, layout, ED.logo, ED.bg);
-    ED.dirty = false; ED.inherited = false;
+    ED.dirty = false; ED.inherited = false; ED.snap = snapOf();
     toast('🏷 Label template saved' + (ED.sellerId ? ' for ' + ED.sellerName : ' (Default)'));
-    ED.meta = await loadTemplate(ED.sellerId); renderEditor();
+    ED.meta = await loadTemplate(ED.sellerId); renderEditor(); fillCopyFrom();
   } catch (e) { toast('Save: ' + e.message, true); }
   finally { btn.disabled = false; }
 }
 
-window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, loadTemplate, saveTemplate, defaultLayout, FIELD_DEFS, LABEL, _ED: ED };
+window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, loadTemplate, listTemplates, saveTemplate, defaultLayout, sizeOf, FIELD_DEFS, LABEL, _ED: ED };
 })();

@@ -981,7 +981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <select id="brand-seller-filter" onchange="renderBrandProfiles()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;min-width:200px">
             <option value="">All Sellers</option>
           </select>
-          <button class="btn btn-ghost" onclick="openLabelEditor(null, 'Default')" title="Sticker layout 53×50 mm — Default and per seller (v13.80)">🏷 Label templates</button>
+          <button class="btn btn-ghost" onclick="openLabelEditor(null, 'Default')" title="Sticker layout (size per template, default 55×50 mm) — Default and per seller">🏷 Label templates</button>
           <button class="btn btn-primary" onclick="openNewAlias()">+ Add Alias</button>
         </div>
       </div>
@@ -1780,7 +1780,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.80.2';
+const APP_VERSION = 'v13.81';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6168,7 +6168,37 @@ function _labPackCtrl(b) {
       <div class="lab-count${n >= b.qty_mixed ? ' capped' : ''}" id="lab-pack-count-${b.id}">${n} <span>/ ${b.qty_mixed}</span><small>PACKED</small></div>
       <button class="lab-tap" onclick="labPackTap(${b.id}, 1)" ${n >= b.qty_mixed ? 'disabled' : ''} title="One more packed">+</button>
       <button class="lab-btn primary" id="lab-pack-go-${b.id}" onclick="labPackDone(${b.id})" ${n <= 0 ? 'disabled' : ''}>→ QA</button>
+      <button class="lab-btn" onclick="labPrintLabels(${b.id})" title="Print labels for this batch (seller's template, QR = batch no)">🏷 Print</button>
     </div>`;
+}
+// v13.81: labels for a batch at the Packer — the seller's template (no template → Default), QR = batch no.
+// Asks how many (default: made by the Mixer); sticker name / qty from the product card, custom line → line name.
+async function labPrintLabels(batchId) {
+  const b = labBatches.find(x => x.id === batchId); if (!b) return;
+  const c = _labItemOf(b);
+  const ans = prompt('Labels to print for batch ' + b.batch_no + (c ? ' (' + c.order_num + ')' : '') + ':', String(b.qty_mixed || 1));
+  if (ans === null) return;
+  const count = parseInt(ans);
+  if (!(count >= 1) || count > 500) { toast('Enter a number from 1 to 500', true); return; }
+  const d = b.product_id ? labDemand.find(x => String(x.product_id) === String(b.product_id)) : null;
+  const name = _labBatchName(b);
+  const seller = c ? (c.seller_name || (labCustom.find(x => x.order_id === c.order_id && x.seller_name) || {}).seller_name || '') : '';
+  const data = {
+    seller,
+    product: name,
+    sname: (c && c.sticker_name) || (d && d.sticker_name) || name,
+    sqty: (c && c.sticker_qty) || (d && d.sticker_qty) || '',
+    batch: b.batch_no,
+    made: b.mixed_closed_at || b.mixed_started_at || null,
+    packed: new Date().toISOString(),
+    qr: b.batch_no,
+  };
+  try {
+    const S = await loadStickers();
+    const r = await S.printFor((c && c.seller_id) || null, data, count);
+    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { count: r.count, template: r.template, inherited: r.inherited, size: r.size, order_num: c ? c.order_num : null, seller: data.seller || null, product: name, station: 'packer' });
+    toast('🏷 ' + r.count + ' label' + (r.count === 1 ? '' : 's') + ' → printer (' + (r.inherited ? 'Default template' : 'template of ' + (seller || r.template)) + ')');
+  } catch (e) { toast('🏷 ' + e.message, true); }
 }
 function labPackTap(batchId, delta) {
   const b = labBatches.find(x => x.id === batchId); if (!b || b.stage !== 'packing') return;
