@@ -981,6 +981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <select id="brand-seller-filter" onchange="renderBrandProfiles()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;min-width:200px">
             <option value="">All Sellers</option>
           </select>
+          <button class="btn btn-ghost" onclick="openLabelEditor(null, 'Default')" title="Sticker layout 53×50 mm — Default and per seller (v13.80)">🏷 Label templates</button>
           <button class="btn btn-primary" onclick="openNewAlias()">+ Add Alias</button>
         </div>
       </div>
@@ -1776,7 +1777,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.79.2';
+const APP_VERSION = 'v13.80';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6870,6 +6871,25 @@ async function loadAliases() {
   aliases = data || [];
 }
 
+// v13.80: stickers.js — label engine + template editor, a separate file next to index.html, loaded on demand
+let _stickersP = null;
+function loadStickers() {
+  if (window.Stickers) return Promise.resolve(window.Stickers);
+  if (_stickersP) return _stickersP;
+  _stickersP = new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = 'stickers.js?v=' + encodeURIComponent(APP_VERSION);
+    sc.onload = () => window.Stickers ? res(window.Stickers) : rej(new Error('stickers.js loaded but no Stickers object'));
+    sc.onerror = () => { _stickersP = null; rej(new Error('stickers.js not found — upload it next to index.html')); };
+    document.head.appendChild(sc);
+  });
+  return _stickersP;
+}
+async function openLabelEditor(sellerId, sellerName) {
+  if (currentRole !== 'admin') { toast('🔒 Admin only', true); return; }
+  try { const S = await loadStickers(); await S.openEditor(sellerId || null, sellerName || ''); }
+  catch (e) { toast('🏷 ' + (e.message || 'cannot open the label editor'), true); }
+}
 function renderBrandProfiles() {
   const sellers = clients.filter(c => c.is_seller);
   const sellerFilter = document.getElementById('brand-seller-filter');
@@ -6905,8 +6925,9 @@ function renderBrandProfiles() {
       </tr>`;
     }).join('');
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;overflow:hidden">
-      <div style="padding:12px 16px;background:var(--surface2);font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">
-        🏢 ${seller ? seller.name : sellerId}
+      <div style="padding:12px 16px;background:var(--surface2);font-weight:700;font-size:13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span>🏢 ${seller ? seller.name : sellerId}</span>
+        <button class="act-btn" onclick="openLabelEditor('${escAttr(sellerId)}', '${escAttr(seller ? seller.name : sellerId)}')" title="Sticker layout for this seller">🏷 Label</button>
       </div>
       <table class="tbl" style="margin:0">
         <thead><tr>
