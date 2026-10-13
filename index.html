@@ -447,6 +447,9 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-line.handed .lab-line-name{color:var(--muted)}
 .lab-line-right{display:flex;align-items:center;gap:10px}
 .lab-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.lab-stockline{margin-top:8px;padding-top:6px;border-top:1px dashed var(--border)}   /* v13.78.1 */
+.lab-short{color:var(--yellow);font-weight:700}
+.lab-ok{color:var(--green)}
 /* v13.78: single station (tablet) — bigger type, everything stretched */
 .lab-cols.single .lab-name{font-size:17px}
 .lab-cols.single .lab-line-name{font-size:16px}
@@ -1761,7 +1764,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.78';
+const APP_VERSION = 'v13.78.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5766,12 +5769,27 @@ function _labItemChip(b, suffix) {     // chip for a per-order batch: kind + ord
   const c = _labItemOf(b);
   return ` <span class="lab-chip custom">${_labItemKind(b)}${c ? ' · ' + escAttr(c.order_num) : ''}${suffix || ''}</span>`;
 }
+function _pcs(q) { const n = parseFloat(q) || 0; return n + (n === 1 ? ' pc' : ' pcs'); }   // v13.78.1: "× 1" read like a delete cross
+// v13.78.1: stock lines of an order with their state — ⚠ short (the product is in the mixer's list) or ✓ in stock
+function _labStockLine(c) {
+  let items = Array.isArray(c.stock_items_json) ? c.stock_items_json : null;
+  if (!items && c.stock_items) items = [...String(c.stock_items).matchAll(/(.+?) × ([\d.]+)(?:, |$)/g)].map(m => ({ name: m[1], qty: m[2] }));
+  if (!items || !items.length) return '';
+  const parts = items.map(it => {
+    const d = it.product_id != null ? labDemand.find(x => String(x.product_id) === String(it.product_id)) : null;
+    const short = d && (parseFloat(d.need) || 0) > 0;
+    const mark = it.product_id == null || it.lab_made === false ? '' : (short ? ' <span class="lab-short">⚠ short — in your list</span>' : ' <span class="lab-ok">✓</span>');
+    return `<b>${escAttr(it.name)}</b> ${_pcs(it.qty)}${mark}`;
+  });
+  return `<div class="lab-meta lab-stockline"><span>Warehouse takes from stock:</span>${parts.map(x => `<span>${x}</span>`).join('')}</div>`;
+}
 function _labItemContext(c) {          // v13.74.3: the rest of the order this line belongs to — one product per line
   if (!c || !c.with_items) return '';
   const parts = [...String(c.with_items).matchAll(/(.+?) × ([\d.]+)(?:, |$)/g)].map(m => ({ name: m[1], qty: m[2] }));
-  const lis = parts.length ? parts.map(x => `<li>${escAttr(x.name)} <span>× ${escAttr(x.qty)}</span></li>`).join('') : `<li>${escAttr(c.with_items)}</li>`;
+  const lis = parts.length ? parts.map(x => `<li>${escAttr(x.name)} <span>${_pcs(x.qty)}</span></li>`).join('') : `<li>${escAttr(c.with_items)}</li>`;
   return `<div class="lab-with">with<ul>${lis}</ul></div>`;
 }
+function _labOrderNums(str) { const a = String(str || '').split(', ').filter(Boolean); return a.length > 4 ? a.slice(0, 4).join(', ') + ' +' + (a.length - 4) + ' more' : a.join(', '); }   // v13.78.1
 function _labUrgChip(prio, dateStr) {
   if (prio === 1) return `<span class="lab-urg">URGENT</span>`;
   if (prio === 2) return `<span class="lab-chip" style="color:var(--yellow);border-color:rgba(251,191,36,.5)">P2</span>`;
@@ -5896,7 +5914,7 @@ function renderLabMixer() {
                 <button class="lab-btn primary" onclick="labOpen(${d.product_id}, null, ${forStock ? 'true' : 'false'})">Open batch</button>` : ''}
       </div>
       <div class="lab-meta">
-        ${!forStock ? `<span>for <b>${d.orders_waiting}</b> order${d.orders_waiting == 1 ? '' : 's'}</span>${d.nearest_date ? `<span>nearest <b>${_labDate(d.nearest_date)}</b></span>` : ''}` : `<span>min stock <b>${num(d.min_stock)}</b></span>`}
+        ${!forStock ? `<span>for <b>${d.orders_waiting}</b> order${d.orders_waiting == 1 ? '' : 's'}${d.order_nums ? ': <b>' + escAttr(_labOrderNums(d.order_nums)) + '</b>' : ''}</span>${d.nearest_date ? `<span>nearest <b>${_labDate(d.nearest_date)}</b></span>` : ''}` : `<span>min stock <b>${num(d.min_stock)}</b></span>`}
         <span>free in HUB <b>${num(d.free)}</b></span>${num(d.in_pipeline) > 0 ? `<span>in progress <b>${num(d.in_pipeline)}</b></span>` : ''}
       </div>
       ${b ? _labTallyHtml(b) : ''}
@@ -5938,7 +5956,7 @@ function renderLabMixer() {
         <div class="lab-meta" style="margin:0">${c0.client_name ? `<span>${escAttr(c0.client_name)}</span>` : ''}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
       </div>
       <div class="lab-lines">${sorted.map(lineRow).join('')}</div>
-      <div class="lab-meta">${c0.stock_items ? `<span>from stock: <b>${escAttr(c0.stock_items)}</b></span>` : ''}<span>made to order — not stocked</span></div>
+      ${_labStockLine(c0)}
       <div class="lab-actions"><button class="lab-btn primary" onclick="labCloseOrder('${escAttr(c0.order_id)}')" ${canClose ? '' : 'disabled'}>Close batch → Packer</button></div>
     </div>`;
   };
