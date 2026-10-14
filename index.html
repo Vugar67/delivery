@@ -990,7 +990,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <select id="brand-seller-filter" onchange="renderBrandProfiles()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none;min-width:200px">
             <option value="">All Sellers</option>
           </select>
-          <button class="btn btn-ghost" onclick="openLabelEditor(null, 'Default')" title="Sticker layout (size per template, default 55×50 mm) — Default and per seller">🏷 Label templates</button>
+          <button class="btn btn-ghost" onclick="openLabelEditor(null, 'Default')" title="Sticker layout (size per template, default 55×50 mm) — Default, per seller, per product and per kind (PEN / VIAL / PREMIX / SERUM / SPRAY)">🏷 Label templates</button>
           <button class="btn btn-primary" onclick="openNewAlias()">+ Add Alias</button>
         </div>
       </div>
@@ -1676,6 +1676,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <!-- v13.80.2: sticker fields — name and quantity/strength are two separate label fields -->
       <div class="form-group"><label>Sticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-name" placeholder="e.g. RETAKLIK — empty = product name" maxlength="80"></div>
       <div class="form-group"><label>Sticker Qty <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-qty" placeholder="e.g. 30 mg / 2.4 ml" maxlength="40"></div>
+      <!-- v13.83: Good = shelf life in months → label EXP = MFG + Good (not printed itself; empty = 24) -->
+      <div class="form-group"><label>Good <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(months → label EXP = MFG + Good)</span></label><input id="p-good-months" type="number" min="1" max="240" step="1" placeholder="24"></div>
       <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
       <div class="form-group"><label>Shelf Position <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">1–64</span></label><input id="p-shelf" type="number" min="1" max="64" placeholder="e.g. 12"></div>
       <div class="form-group"><label>Unit</label>
@@ -1807,7 +1809,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.82';
+const APP_VERSION = 'v13.83';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3998,7 +4000,7 @@ function renderCart() {
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
       <div class="shop-cart-item-name" id="cart-name-${i}">
-        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}
+        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
         ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
       </div>
@@ -4111,6 +4113,7 @@ function commitCartNameEdit(i, name, unit) {
       toast('🧾 A custom line must keep starting with its name from the Custom Products list — you can change the kind/dosage part after it. ' + (currentRole === 'admin' ? 'New names: Directories → Custom Products.' : 'New names: ask the admin.'), true);
       return;
     }
+    if (name !== String(item.product_name || '').trim()) item.name_edited = true;   // v13.83: a renamed custom line gets no label at the Packer
     item.product_name = name; item.unit = unit || 'pcs';
   } else {
     // Same as the catalog/alias text → no override (keeps the line "clean")
@@ -4187,11 +4190,15 @@ function addCustomItem() {
   if (!customItemType) { toast('Select product type (Pen, Vial…)', true); return; }
 
   // Add to cart as a custom item (no product_id)
+  // v13.83: the line remembers its Custom Products entry and the KIND chip (label_kind) — the packer matches the
+  // label template by them (name is composed, so it cannot be looked up). Written for every kind; only PEN / VIAL /
+  // PREMIX / SERUM / SPRAY have kind templates.
   const existing = cart.find(c => c.product_id === null && c.product_name === name);
   if (existing) {
     existing.quantity += qty;
   } else {
-    cart.push({ product_id: null, product_name: name, price, quantity: qty, unit, is_custom: true });
+    const _dirId = (customProducts || []).find(c => c.name === baseName)?.id || null;
+    cart.push({ product_id: null, product_name: name, price, quantity: qty, unit, is_custom: true, custom_product_id: _dirId, label_kind: customItemType.toUpperCase(), name_edited: false });
   }
 
   // Reset form (also hides it)
@@ -4847,7 +4854,8 @@ async function editOrder(id){
   cart=items.map(item=>{
     // Custom item — no product_id or product not found
     if (!item.product_id) {
-      return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true };
+      return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true,
+               custom_product_id: item.custom_product_id || null, label_kind: item.label_kind || null, name_edited: item.name_edited === true };   // v13.83: label facts round-trip
     }
     const p=products.find(x=>x.id===item.product_id)||{id:item.product_id,name:item.product_name,price:item.price,unit:item.unit};
     const savedPrice = parseFloat(item.price);
@@ -5387,7 +5395,8 @@ async function saveOrder(){
     const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
     return qty > 0;
   }).map(item=> {
-    if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null};
+    if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null,
+                                custom_product_id:item.custom_product_id||null, label_kind:item.label_kind||null, name_edited:item.name_edited===true};   // v13.83 (migration add_lab_14)
     const alias = _sId ? getAlias(_sId, item.product.id) : null;
     const hasCustomComp = item.customComponents && item.customComponents.length > 0;
     // Check if custom components differ from standard
@@ -6213,6 +6222,32 @@ async function _labSellers() {
   setTimeout(() => { _labSellersCache = null; }, 5 * 60 * 1000);
   return _labSellersCache;
 }
+// v13.83: the template is picked by seller + product + kind (stickers.js resolveTemplate: seller+product+kind → seller+product →
+// seller+kind → seller → product+kind → product → kind → Default). Regular product: kind = product card (products.type).
+// Custom line: the Custom Products entry + the KIND chip saved on the line (order_items.custom_product_id / label_kind, read
+// through lab_label_lines_v); a custom line renamed with ✎ (name_edited) gets NO label; old lines (no link) → seller → Default.
+// Stock batch (no order): seller from the dialog → Default only (decided 14.10). MFG = batch closed by the Mixer (MM/YYYY),
+// EXP = MFG + Good (months, product card, empty = 24) — written to lab_batches.expiry_date on the FIRST print (lab_set_expiry),
+// later prints reuse the stored date.
+async function _labLabelCtx(b, c) {   // → { productId, customId, kind, goodMonths, blocked }
+  const ctx = { productId: null, customId: null, kind: null, goodMonths: null, blocked: '' };
+  if (c && !c.product_id) {   // custom line
+    const { data: ll, error } = await sb.from('lab_label_lines_v').select('*').eq('order_item_id', c.order_item_id).single();
+    if (error) console.warn('lab_label_lines_v:', error);   // view missing (migration add_lab_14 not run yet) → seller / Default label
+    if (ll) {
+      if (ll.name_edited) ctx.blocked = 'renamed';
+      ctx.customId = ll.custom_product_id || null; ctx.kind = ll.label_kind || null; ctx.goodMonths = ll.good_months || null;
+    }
+    return ctx;
+  }
+  if (b.product_id) {   // regular product (per-order made-to-order line or stock batch)
+    let p = (window._allProducts || products || []).find(x => String(x.id) === String(b.product_id)) || null;
+    try { const { data } = await sb.from('products').select('id,type,good_months').eq('id', b.product_id).single(); if (data) p = { ...(p || {}), ...data }; } catch (e) {}
+    ctx.goodMonths = p && p.good_months || null;
+    if (c) { ctx.productId = String(b.product_id); ctx.kind = (p && p.type) || null; }   // stock batch → no product templates
+  }
+  return ctx;
+}
 async function labPrintLabels(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
   const c = _labItemOf(b);
@@ -6221,6 +6256,14 @@ async function labPrintLabels(batchId) {
   const lineSeller = c ? (c.seller_name || (labCustom.find(x => x.order_id === c.order_id && x.seller_name) || {}).seller_name || '') : '';
   let S;
   try { S = await loadStickers(); } catch (e) { toast('🏷 ' + e.message, true); return; }
+  const ctx = await _labLabelCtx(b, c);
+  if (ctx.blocked === 'renamed') {
+    toast('🏷 "' + name + '" was renamed (✎) in ' + (c ? c.order_num : 'the order') + ' — no label is printed for a renamed custom line. Ask the admin to restore the name, or print the label manually.', true);
+    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { refused: 'name_edited', order_num: c ? c.order_num : null, product: name, station: 'packer' });
+    return;
+  }
+  const made = b.mixed_closed_at || b.mixed_started_at || null;
+  const exp = b.expiry_date || S.expiryDate(made, ctx.goodMonths);
   let sellers = [], preset = null, hint = '';
   if (!c) {   // stock batch: who is it for? — the orders waiting for this product
     sellers = await _labSellers();
@@ -6236,23 +6279,35 @@ async function labPrintLabels(batchId) {
     } else hint = 'No order is waiting for ' + name + ' right now — pick the seller or print a Default label.';
   }
   const ans = await S.printDialog({ sub: name + ' · batch ' + b.batch_no + (c ? ' · ' + c.order_num : ' · stock'), count: b.qty_mixed || 1,
-    sellerFixed: c ? { id: c.seller_id || null, name: lineSeller } : null, sellers, sellerPreset: preset, hint });
+    sellerFixed: c ? { id: c.seller_id || null, name: lineSeller } : null, sellers, sellerPreset: preset, hint,
+    dates: 'MFG:' + S.fmtMY(made) + ' · EXP:' + S.fmtMY(exp) + (b.expiry_date ? '' : ' (' + (ctx.goodMonths || S.GOOD_DEFAULT) + ' months good)') });
   if (!ans) return;
   const sellerId = ans.sellerId || null, seller = ans.sellerName || '';
+  // first print fixes the expiry date on the batch; a later change of Good on the card does not move it
+  let expStored = b.expiry_date || null;
+  if (!expStored) {
+    try {
+      const { data: saved, error } = await sb.rpc('lab_set_expiry', { p_batch_id: b.id, p_expiry: exp });
+      if (error) console.warn('lab_set_expiry:', error); else if (saved) expStored = String(saved).slice(0, 10);
+    } catch (e) { console.warn('lab_set_expiry:', e); }
+    b.expiry_date = expStored || exp;
+  }
   const data = {
     seller,
     product: name,
     sname: (c && c.sticker_name) || (d && d.sticker_name) || name,
     sqty: (c && c.sticker_qty) || (d && d.sticker_qty) || '',
     batch: b.batch_no,
-    made: b.mixed_closed_at || b.mixed_started_at || null,
+    made,
+    exp: expStored || exp,
     packed: new Date().toISOString(),
     qr: b.batch_no,
   };
   try {
-    const r = await S.printFor(sellerId, data, ans.count, ans.win);
-    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { count: r.count, template: r.template, inherited: r.inherited, size: r.size, order_num: c ? c.order_num : null, seller: seller || null, product: name, station: 'packer' });
-    toast('🏷 ' + r.count + ' label' + (r.count === 1 ? '' : 's') + ' → printer (' + (r.inherited ? (seller ? seller + ' · Default layout' : 'Default label') : 'template of ' + (seller || r.template)) + ')');
+    const r = await S.printFor({ sellerId, productId: ctx.productId, customId: ctx.customId, kind: ctx.kind, goodMonths: ctx.goodMonths }, data, ans.count, ans.win);
+    logEvent('LABEL_PRINT', 'lab_batch', b.batch_no, { count: r.count, template: r.template, template_name: r.name, level: r.level, inherited: r.inherited, size: r.size, order_num: c ? c.order_num : null, seller: seller || null, product: name,
+      product_id: ctx.productId, custom_product_id: ctx.customId, kind: ctx.kind, mfg: S.fmtMY(made), exp: data.exp, exp_stored: !!expStored, station: 'packer' });
+    toast('🏷 ' + r.count + ' label' + (r.count === 1 ? '' : 's') + ' → printer (' + (r.template === 'default' ? 'Default label' : 'template: ' + r.name) + ' · EXP:' + S.fmtMY(data.exp) + ')');
   } catch (e) { toast('🏷 ' + e.message, true); }
 }
 function labPackTap(batchId, delta) {
@@ -6973,9 +7028,9 @@ function loadStickers() {
   });
   return _stickersP;
 }
-async function openLabelEditor(sellerId, sellerName) {
+async function openLabelEditor(sellerId, sellerName, opts) {   // v13.83: opts = { productId | customId, kind } — template for seller + product + kind
   if (currentRole !== 'admin') { toast('🔒 Admin only', true); return; }
-  try { const S = await loadStickers(); await S.openEditor(sellerId || null, sellerName || ''); }
+  try { const S = await loadStickers(); await S.openEditor(sellerId || null, sellerName || '', opts || null); }
   catch (e) { toast('🏷 ' + (e.message || 'cannot open the label editor'), true); }
 }
 function renderBrandProfiles() {
@@ -7244,6 +7299,7 @@ function renderProducts(){
         <div><span class="product-price">${parseFloat(p.price).toFixed(2)} AED</span> <span class="product-unit">/ ${p.unit}</span></div>
         ${currentRole==='admin'?`<div class="product-actions">
           <button class="act-btn" onclick="editProduct(${p.id})">Edit</button>
+          <button class="act-btn" onclick="openLabelEditor(null, 'Default', { productId: ${p.id} })" title="Label template for this product (v13.83) — pick the seller inside">🏷</button>
           <button class="act-btn del" onclick="deleteProduct(${p.id})">&#10005;</button>
         </div>`:''}
       </div>
@@ -7269,6 +7325,7 @@ function renderProducts(){
         <td>
           ${currentRole==='admin'?`<div class="product-actions">
             <button class="act-btn" onclick="editProduct(${p.id})">Edit</button>
+            <button class="act-btn" onclick="openLabelEditor(null, 'Default', { productId: ${p.id} })" title="Label template for this product (v13.83) — pick the seller inside">🏷</button>
             <button class="act-btn del" onclick="deleteProduct(${p.id})">&#10005;</button>
           </div>`:''}
         </td>
@@ -7283,7 +7340,7 @@ function openNewProduct(){
   _productImageFile=null;
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
-  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode','p-sticker-name','p-sticker-qty'].forEach(id=>document.getElementById(id).value='');
+  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode','p-sticker-name','p-sticker-qty','p-good-months'].forEach(id=>document.getElementById(id).value='');   // v13.83: + Good (months)
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=true;document.getElementById('p-made-to-order').checked=false;document.getElementById('p-no-stock-ahead').checked=false;document.getElementById('p-min-stock').value='0';syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7310,6 +7367,7 @@ function editProduct(id){
   document.getElementById('p-category').value=p.category||'';
   document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
   document.getElementById('p-sticker-name').value=p.sticker_name||'';document.getElementById('p-sticker-qty').value=p.sticker_qty||'';   // v13.80.2
+  document.getElementById('p-good-months').value=p.good_months?String(p.good_months):'';   // v13.83 (empty = 24)
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=p.lab_made!==false;document.getElementById('p-made-to-order').checked=!!p.made_to_order;document.getElementById('p-no-stock-ahead').checked=!!p.no_stock_ahead;document.getElementById('p-min-stock').value=String(parseFloat(p.min_stock)||0);syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7392,6 +7450,7 @@ async function saveProduct(){
   const shelfVal = parseInt(document.getElementById('p-shelf').value) || null;
   const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null,
     sticker_name:(get('p-sticker-name')||'').trim()||null,sticker_qty:(get('p-sticker-qty')||'').trim()||null,   // v13.80.2 (migration add_lab_12)
+    good_months:(()=>{const g=parseInt(get('p-good-months'));return g>=1&&g<=240?g:null;})(),   // v13.83 (migration add_lab_14): shelf life months, null = 24
     lab_made:document.getElementById('p-lab-made').checked,
     made_to_order:document.getElementById('p-lab-made').checked&&document.getElementById('p-made-to-order').checked,
     no_stock_ahead:document.getElementById('p-lab-made').checked&&!document.getElementById('p-made-to-order').checked&&document.getElementById('p-no-stock-ahead').checked,
@@ -7750,8 +7809,16 @@ function renderCustomProductsGrid() {
             <span style="font-size:12px">🧾</span>
             <input value="${escAttr(c.invoice_nickname || '')}" placeholder="invoice nickname (required)" maxlength="120" onchange="saveCustomProductNickname(${c.id}, this.value)" style="flex:1;min-width:0;background:var(--surface2);border:1px solid ${c.invoice_nickname?'var(--accent)':'var(--border)'};border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
           </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px" title="Good — shelf life in months: the label prints EXP = MFG + Good (empty = 24). Good itself is not printed.">
+            <span style="font-size:12px">⏳</span>
+            <input type="number" min="1" max="240" step="1" value="${c.good_months ? escAttr(String(c.good_months)) : ''}" placeholder="24" onchange="saveCustomProductGood(${c.id}, this.value)" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">months good → label EXP</span>
+          </div>
         </div>
-        <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="act-btn" onclick="openLabelEditor(null, 'Default', { customId: ${c.id} })" title="Label template for this custom product (v13.83) — pick the seller and the kind inside">🏷</button>
+          <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
+        </div>
       </div>`).join('')
     : '<div style="color:var(--muted);font-size:13px">No custom products defined</div>';
 }
@@ -7790,6 +7857,19 @@ async function saveCustomProductNickname(id, value) {
   logEvent('UPDATE', 'custom_product', id, { action: 'invoice_nickname_set', name: c ? c.name : '', invoice_nickname: nick });
   renderCustomProductsGrid();
   toast('🧾 Nickname saved');
+}
+
+// v13.83: inline save of a custom product's Good (shelf life, months) — label EXP = MFG + Good; empty = 24
+async function saveCustomProductGood(id, value) {
+  const g = parseInt(value);
+  const good = g >= 1 && g <= 240 ? g : null;
+  if (String(value || '').trim() && !good) { toast('Good: enter months from 1 to 240 (empty = 24)', true); renderCustomProductsGrid(); return; }
+  const { error } = await sb.from('custom_products').update({ good_months: good }).eq('id', id);
+  if (error) { console.log('DB error:', error); toast('Could not save Good — run the add_lab_14 migration?', true); renderCustomProductsGrid(); return; }
+  const c = (customProducts || []).find(x => x.id === id);
+  if (c) c.good_months = good;
+  logEvent('UPDATE', 'custom_product', id, { action: 'good_months_set', name: c ? c.name : '', good_months: good });
+  toast('⏳ Good saved: ' + (good || '24 (default)') + ' months');
 }
 
 async function deleteCustomProduct(id) {

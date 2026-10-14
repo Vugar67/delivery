@@ -1,13 +1,14 @@
 /* ============================================================================
-   MyCRM — stickers.js · label engine + template editor + station printing (v13.81)
+   MyCRM — stickers.js · label engine + template editor + station printing (v13.83)
    Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; packer: 🏷 Print on a batch).
    Uses the page's globals: sb (PostgREST client), toast, escAttr, currentUser, clients.
-   Template = data (public.label_templates): one per seller + 'default'. Label size per template (default 55 × 50 mm), positions in mm.
+   Template = data (public.label_templates): per seller + product + kind, 'default' as the last resort (v13.83). Label size per template (default 55 × 50 mm), positions in mm.
+   Uses the page's globals: products / _allProducts / customProducts (editor product pick). MFG / EXP = month/year; EXP = MFG + Good (months) from the product card.
    Embeds qrcode-generator 1.4.4 (c) Kazuhiko Arase, MIT — see below.
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.4';
+const STICKERS_VERSION = '1.5';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2312,6 +2313,8 @@ var qrcode = function() {
 const LABEL = { w: 55, h: 50 };                                 // mm — built-in default; every template carries its own w/h (v13.81)
 const SIZE_MIN = 20, SIZE_MAX = 120;                            // mm — editor limits for the label size
 const TAPE_DEFAULT = 80, TAPE_MAX = 120;                        // mm — media (tape) width: the printed page is tape × label height, label centred
+const GOOD_DEFAULT = 24;                                        // months — shelf life when the product card has no Good (v13.83)
+const KINDS = ['PEN', 'VIAL', 'PREMIX', 'SERUM', 'SPRAY'];      // v13.83: the kinds a template can be made for (other kinds → no kind level)
 function sizeOf(L) {
   const w = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.w, LABEL.w))), h = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.h, LABEL.h)));
   const tape = Math.min(TAPE_MAX, Math.max(w, num(L && L.tape, TAPE_DEFAULT)));
@@ -2325,7 +2328,8 @@ const FIELD_DEFS = [
   { key: 'sqty',    label: 'Sticker qty (product card)',  kind: 'text' },
   { key: 'product', label: 'Product (order line name)',   kind: 'text' },
   { key: 'batch',   label: 'Batch no',           kind: 'text', prefix: 'Batch ' },
-  { key: 'made',    label: 'Made (date · time)',   kind: 'text', prefix: 'Made ' },
+  { key: 'made',    label: 'MFG (month/year)',   kind: 'text', prefix: 'MFG:' },     // v13.83: was "Made dd.mm.yyyy hh:mm"
+  { key: 'exp',     label: 'EXP (month/year) = MFG + Good', kind: 'text', prefix: 'EXP:' },   // v13.83
   { key: 'packed',  label: 'Packed (date · time)', kind: 'text', prefix: 'Packed ' },
   { key: 'qr',      label: 'QR code',            kind: 'qr' },
   { key: 'note2',   label: 'Static text',        kind: 'text', text: 'Sterile Solution for\nSubcutaneous Injection\nRESEARCH PURPOSE ONLY' },
@@ -2341,7 +2345,8 @@ function defaultLayout() {
       sqty:    { on: true,  x: 2,  y: 18, w: 49, size: 9,  bold: false, align: 'left' },
       product: { on: false, x: 2,  y: 12, w: 49, size: 10, bold: true,  align: 'left' },
       batch:   { on: true,  x: 2,  y: 24, w: 31, size: 8, bold: false, align: 'left', prefix: 'Batch ' },
-      made:    { on: true,  x: 2,  y: 29, w: 31, size: 7, bold: false, align: 'left', prefix: 'Made ' },
+      made:    { on: true,  x: 2,  y: 29, w: 15.5, size: 7, bold: false, align: 'left', prefix: 'MFG:' },
+      exp:     { on: true,  x: 17.5, y: 29, w: 15.5, size: 7, bold: false, align: 'left', prefix: 'EXP:' },
       packed:  { on: true,  x: 2,  y: 33, w: 31, size: 7, bold: false, align: 'left', prefix: 'Packed ' },
       qr:      { on: true,  x: 35, y: 24, size: 16 },
       note2:   { on: true,  x: 2,  y: 37, w: 31, size: 6, bold: false, align: 'left', text: 'Sterile Solution for\nSubcutaneous Injection\nRESEARCH PURPOSE ONLY' },
@@ -2352,12 +2357,32 @@ function defaultLayout() {
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v, d) => { const n = parseFloat(v); return isFinite(n) ? n : d; };
+const normKind = k => String(k || '').trim().toUpperCase();
+const tplKind = k => { const n = normKind(k); return KINDS.includes(n) ? n : ''; };   // kinds outside the five → no kind level
+function dubaiParts(v) {   // → { y, m, d, hh, mi } in Dubai time; a date-only string (YYYY-MM-DD) is taken as is
+  if (!v) return null;
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { y: +s.slice(0, 4), m: +s.slice(5, 7), d: +s.slice(8, 10), hh: 0, mi: 0 };
+  const dt = new Date(v); if (isNaN(dt)) return null;
+  const u = new Date(dt.getTime() + 4 * 3600 * 1000);
+  return { y: u.getUTCFullYear(), m: u.getUTCMonth() + 1, d: u.getUTCDate(), hh: u.getUTCHours(), mi: u.getUTCMinutes() };
+}
+const p2 = n => String(n).padStart(2, '0');
 function fmtDT(v) {   // Dubai time, dd.mm.yyyy hh:mm
-  if (!v) return '';
-  const d = new Date(v); if (isNaN(d)) return String(v);
-  const u = new Date(d.getTime() + 4 * 3600 * 1000);
-  const p = n => String(n).padStart(2, '0');
-  return p(u.getUTCDate()) + '.' + p(u.getUTCMonth() + 1) + '.' + u.getUTCFullYear() + ' ' + p(u.getUTCHours()) + ':' + p(u.getUTCMinutes());
+  const p = dubaiParts(v); if (!p) return v ? String(v) : '';
+  return p2(p.d) + '.' + p2(p.m) + '.' + p.y + ' ' + p2(p.hh) + ':' + p2(p.mi);
+}
+function fmtMY(v) {   // v13.83: MM/YYYY (Dubai) — MFG / EXP
+  const p = dubaiParts(v); if (!p) return v ? String(v) : '';
+  return p2(p.m) + '/' + p.y;
+}
+// v13.83: EXP = MFG + Good months — same day of month (clamped to the last day of the target month), Dubai date → 'YYYY-MM-DD'
+function expiryDate(made, goodMonths) {
+  const p = dubaiParts(made) || dubaiParts(new Date().toISOString());
+  const g = Math.max(1, Math.min(240, parseInt(goodMonths) || GOOD_DEFAULT));
+  const m0 = p.m - 1 + g; const y = p.y + Math.floor(m0 / 12), m = m0 % 12 + 1;
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return y + '-' + p2(m) + '-' + p2(Math.min(p.d, last));
 }
 function qrSvg(text, mm) {
   try {
@@ -2367,12 +2392,12 @@ function qrSvg(text, mm) {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" width="${mm}mm" height="${mm}mm" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
   } catch (e) { return `<div style="width:${mm}mm;height:${mm}mm;border:1px dashed #999;font-size:6pt;color:#999">QR?</div>`; }
 }
-// data = { seller, product, batch, made, packed, qr, logo (data URL) }
+// data = { seller, product, sname, sqty, batch, made, exp, packed, qr, logo (data URL), bg }
 function labelHtml(layout, data, opts) {
   const L = layout || defaultLayout(); const f = L.fields || {}; const o = opts || {};
   const valueOf = (key, cfg) => {
     if (key === 'note' || key === 'note2') return cfg.text || '';
-    const raw = key === 'made' || key === 'packed' ? fmtDT(data[key]) : (data[key] ?? '');
+    const raw = key === 'packed' ? fmtDT(data[key]) : (key === 'made' || key === 'exp') ? fmtMY(data[key]) : (data[key] ?? '');
     return (cfg.prefix || '') + raw;
   };
   let inner = data.bg && L.bgOn !== false ? `<img class="stk-bg" src="${data.bg}" alt="">` : '';
@@ -2420,46 +2445,131 @@ function printLabels(layout, dataList, win) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Template storage — public.label_templates (seller_key = seller id or 'default')
+// Template storage — public.label_templates
+// v13.83: a template is for seller + product + kind, any of them "any".
+//   key (seller_key, pk) = '<seller id>' | 'default'                       — seller only (rows from v13.80–v13.82 keep their key)
+//                        | '<seller id|default>|p<product id>|<KIND>'     — + regular product (products.id) and/or kind
+//                        | '<seller id|default>|c<custom product id>|<KIND>'
+//   T (target) = { sellerId, sellerName, productId, customId, productName, kind }
 // ───────────────────────────────────────────────────────────────────────────
-const _cache = {}; const CACHE_MS = 5 * 60 * 1000;   // a station keeps a template for 5 min, then re-reads (admin may have edited it)
-async function loadTemplate(sellerId) {
-  const key = sellerId ? String(sellerId) : 'default';
-  if (_cache[key] && Date.now() - _cache[key]._at < CACHE_MS) return _cache[key];
-  const { data, error } = await sb.from('label_templates').select('*').eq('seller_key', key);
-  if (error) throw new Error(error.message || 'label_templates');
-  const row = (data || [])[0];
-  if (!row && key !== 'default') { const d = await loadTemplate(null); return { ...d, seller_key: key, inherited: true }; }
-  const tpl = row ? { seller_key: key, seller_name: row.seller_name, layout: row.layout || defaultLayout(), logo: row.logo_data || null, bg: row.bg_data || null, updated_at: row.updated_at, updated_by: row.updated_by }
-                  : { seller_key: key, layout: defaultLayout(), logo: null, bg: null, missing: true };
-  tpl._at = Date.now(); _cache[key] = tpl; return tpl;
+function keyOf(t) {
+  t = t || {};
+  const s = t.sellerId ? String(t.sellerId) : 'default';
+  const p = t.productId ? 'p' + t.productId : t.customId ? 'c' + t.customId : '';
+  const k = tplKind(t.kind);
+  return (p || k) ? s + '|' + p + '|' + k : s;
 }
-async function saveTemplate(sellerId, sellerName, layout, logo, bg) {
-  const key = sellerId ? String(sellerId) : 'default';
-  const row = { seller_key: key, seller_id: sellerId ? String(sellerId) : null, seller_name: sellerName || (sellerId ? null : 'Default'), layout, logo_data: logo || null, bg_data: bg || null,
+function parseKey(key) {
+  const [s, p, k] = String(key || 'default').split('|');
+  const t = { sellerId: s && s !== 'default' ? s : null, productId: null, customId: null, kind: tplKind(k) };
+  if (p && p[0] === 'p') t.productId = p.slice(1); else if (p && p[0] === 'c') t.customId = p.slice(1);
+  return t;
+}
+function tplName(t) {   // "Seller One · RETAKLIK · PEN" / "Default" / "Default · all PEN"
+  t = t || {};
+  const parts = [t.sellerId ? (t.sellerName || t.sellerId) : 'Default'];
+  if (t.productId || t.customId) parts.push(t.productName || ((t.productId ? 'product #' + t.productId : 'custom #' + t.customId)));
+  const k = tplKind(t.kind); if (k) parts.push((t.productId || t.customId) ? k : 'all ' + k);
+  return parts.join(' · ');
+}
+// Old layouts: "Made dd.mm.yyyy hh:mm" → "MFG:MM/YYYY", EXP added next to it (applied on every load, so templates saved
+// before v13.83 print the new way without being re-saved; the admin can still move the fields).
+function upgradeLayout(layout) {
+  if (!layout || !layout.fields) return layout;
+  const f = layout.fields;
+  if (f.made && (f.made.prefix === undefined || /^made\b/i.test(String(f.made.prefix)))) f.made.prefix = 'MFG:';
+  if (!f.exp) {
+    const m = f.made || defaultLayout().fields.made; const sz = sizeOf(layout);
+    const w = Math.min(15.5, Math.max(8, num(m.w, 31) / 2)), x = Math.min(sz.w - w, num(m.x, 2) + w);
+    f.exp = { on: m.on !== false, x: Math.round(x * 2) / 2, y: num(m.y, 29), w, size: num(m.size, 7), bold: !!m.bold, align: 'left', prefix: 'EXP:' };
+    if (num(m.w, 31) > w) m.w = w;
+  }
+  return layout;
+}
+const _cache = {}; const CACHE_MS = 5 * 60 * 1000;   // a station keeps a template for 5 min, then re-reads (admin may have edited it)
+function rowToTpl(row) {
+  const t = parseKey(row.seller_key);
+  return { key: row.seller_key, seller_key: row.seller_key, ...t, sellerName: row.seller_name, seller_name: row.seller_name, productName: row.product_name || null,
+           productId: row.product_id != null ? String(row.product_id) : t.productId, customId: row.custom_product_id != null ? String(row.custom_product_id) : t.customId,
+           kind: tplKind(row.kind) || t.kind, layout: upgradeLayout(row.layout || defaultLayout()), logo: row.logo_data || null, bg: row.bg_data || null,
+           updated_at: row.updated_at, updated_by: row.updated_by };
+}
+async function fetchTemplates(keys) {   // → { key: tpl | null } (cached 5 min; a miss is cached too)
+  const out = {}; const need = [];
+  keys.forEach(k => { const c = _cache[k]; if (c && Date.now() - c._at < CACHE_MS) out[k] = c.tpl; else need.push(k); });
+  if (need.length) {
+    const { data, error } = await sb.from('label_templates').select('*').in('seller_key', need);
+    if (error) throw new Error(error.message || 'label_templates');
+    need.forEach(k => { const row = (data || []).find(r => r.seller_key === k); const tpl = row ? rowToTpl(row) : null; _cache[k] = { tpl, _at: Date.now() }; out[k] = tpl; });
+  }
+  return out;
+}
+// loadTemplate(sellerId | key | T): the template under that key. Seller-only key without a template → Default (inherited),
+// as before; a composite key without a template → { missing: true } (the fallback chain is resolveTemplate's job).
+async function loadTemplate(target) {
+  const key = target && typeof target === 'object' ? keyOf(target) : (target ? String(target) : 'default');
+  const got = await fetchTemplates([key]);
+  if (got[key]) return { ...got[key], _at: Date.now() };
+  if (key !== 'default' && key.indexOf('|') < 0) { const d = await loadTemplate(null); return { ...d, seller_key: key, key, inherited: true }; }
+  return { key, seller_key: key, ...parseKey(key), layout: defaultLayout(), logo: null, bg: null, missing: true, _at: Date.now() };
+}
+// v13.83: which template prints for a batch — the most specific one that exists:
+//   1 seller+product+kind · 2 seller+product · 3 seller+kind · 4 seller · 5 product+kind · 6 product · 7 kind · 8 Default
+// ctx = { sellerId, productId | customId, kind } (any may be empty). → { ...tpl, level, candidates } or the built-in layout (missing).
+function candidateKeys(ctx) {
+  const c = ctx || {}; const S = c.sellerId ? String(c.sellerId) : null; const p = c.productId ? 'p' + c.productId : c.customId ? 'c' + c.customId : ''; const k = tplKind(c.kind);
+  const list = [];
+  const add = (lvl, key) => { if (!list.some(x => x.key === key)) list.push({ level: lvl, key }); };
+  if (S) { if (p && k) add(1, S + '|' + p + '|' + k); if (p) add(2, S + '|' + p + '|'); if (k) add(3, S + '||' + k); add(4, S); }
+  if (p && k) add(5, 'default|' + p + '|' + k); if (p) add(6, 'default|' + p + '|'); if (k) add(7, 'default||' + k); add(8, 'default');
+  return list;
+}
+async function resolveTemplate(ctx) {
+  const cands = candidateKeys(ctx);
+  const got = await fetchTemplates(cands.map(c => c.key));
+  for (const c of cands) if (got[c.key]) return { ...got[c.key], level: c.level, candidates: cands.length };
+  return { key: 'default', seller_key: 'default', ...parseKey('default'), layout: defaultLayout(), logo: null, bg: null, missing: true, level: 8, candidates: cands.length };
+}
+async function saveTemplate(target, sellerNameOrLayout, layoutOrLogo, logoOrBg, bgMaybe) {
+  // saveTemplate(T, layout, logo, bg) — v13.83; legacy saveTemplate(sellerId, sellerName, layout, logo, bg) still accepted
+  let t, layout, logo, bg;
+  if (target && typeof target === 'object') { t = target; layout = sellerNameOrLayout; logo = layoutOrLogo; bg = logoOrBg; }
+  else { t = { sellerId: target || null, sellerName: sellerNameOrLayout }; layout = layoutOrLogo; logo = logoOrBg; bg = bgMaybe; }
+  const key = keyOf(t);
+  const row = { seller_key: key, seller_id: t.sellerId ? String(t.sellerId) : null, seller_name: t.sellerName || (t.sellerId ? null : 'Default'),
+                product_id: t.productId ? Number(t.productId) : null, custom_product_id: t.customId ? Number(t.customId) : null, kind: tplKind(t.kind) || null, product_name: t.productName || null,
+                layout, logo_data: logo || null, bg_data: bg || null,
                 updated_by: (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || null, updated_at: new Date().toISOString() };
   const { error } = await sb.from('label_templates').upsert(row, { onConflict: 'seller_key' });
   if (error) throw new Error(error.message || 'save failed');
   delete _cache[key];
   return true;
 }
-async function listTemplates() {   // sellers that have a template of their own (+ default) — for "Copy from…"
-  const { data, error } = await sb.from('label_templates').select('seller_key,seller_name,updated_at');
+async function listTemplates() {   // every template there is (+ default) — for "Copy from…"
+  const { data, error } = await sb.from('label_templates').select('seller_key,seller_name,product_id,custom_product_id,kind,product_name,updated_at');
   if (error) throw new Error(error.message || 'label_templates');
-  return (data || []).map(r => ({ key: r.seller_key, name: r.seller_key === 'default' ? 'Default' : (r.seller_name || r.seller_key), updated_at: r.updated_at }))
+  return (data || []).map(r => { const t = rowToTplMeta(r); return { key: r.seller_key, name: tplName(t), ...t, updated_at: r.updated_at }; })
     .sort((a, b) => (a.key === 'default' ? -1 : b.key === 'default' ? 1 : String(a.name).localeCompare(String(b.name))));
 }
-// Print `count` identical labels for a batch with the seller's template (no template → Default).
-// data = { seller, product, sname, sqty, batch, made, packed, qr } — logo / bg come from the template.
-async function printFor(sellerId, data, count, win) {
+function rowToTplMeta(r) {
+  const t = parseKey(r.seller_key);
+  return { sellerId: t.sellerId, sellerName: r.seller_name, productId: r.product_id != null ? String(r.product_id) : t.productId, customId: r.custom_product_id != null ? String(r.custom_product_id) : t.customId,
+           productName: r.product_name || null, kind: tplKind(r.kind) || t.kind };
+}
+// Print `count` identical labels for a batch. ctx = { sellerId, productId | customId, kind } (or a seller id, as before) →
+// the most specific template (see resolveTemplate). data = { seller, product, sname, sqty, batch, made, exp, packed, qr } — logo / bg come from the template.
+async function printFor(ctx, data, count, win) {
   const n = Math.max(1, Math.min(500, parseInt(count) || 1));
+  const c = ctx && typeof ctx === 'object' ? ctx : { sellerId: ctx || null };
   let t;
-  try { t = await loadTemplate(sellerId); } catch (e) { if (win) { try { win.close(); } catch (_) {} } throw e; }
+  try { t = await resolveTemplate(c); } catch (e) { if (win) { try { win.close(); } catch (_) {} } throw e; }
   const d = { ...data, seller: data.seller || t.seller_name || '', logo: t.logo || null, bg: t.bg || null };
+  if (!d.exp && d.made) d.exp = expiryDate(d.made, c.goodMonths);
   const w = printLabels(t.layout, Array.from({ length: n }, () => d), win);
   if (!w) throw new Error('Pop-up blocked — allow pop-ups for this site to print');
   const sz = sizeOf(t.layout);
-  return { count: n, template: t.inherited || t.missing ? 'default' : t.seller_key, inherited: !!(t.inherited || t.missing), size: sz.w + 'x' + sz.h, tape: sz.tape };
+  const name = t.missing ? 'Default' : tplName(t);
+  return { count: n, template: t.key || 'default', name, level: t.level, inherited: !!(t.missing || (t.level === 8 && (c.sellerId || c.productId || c.customId))), size: sz.w + 'x' + sz.h, tape: sz.tape, exp: d.exp || null };
 }
 // Station dialog: how many labels + which seller. Resolves { count, sellerId, sellerName, win } (win = print window opened on the click) or null.
 // o = { sub, count, sellerFixed: {id, name} | null, sellers: [{id, name}], sellerPreset, hint }
@@ -2485,6 +2595,7 @@ function printDialog(o) {
       <div class="modal-body stk-pr">
         <label>labels</label><input type="number" id="stk-pr-count" min="1" max="500" step="1" value="${Math.max(1, parseInt(o.count) || 1)}">
         <label>seller</label>${sellerHtml}
+        ${o.dates ? `<label>dates</label><div class="stk-pr-val" id="stk-pr-dates" style="font-weight:600;font-size:14px">${esc(o.dates)}</div>` : ''}
         ${o.hint ? `<div class="stk-hint" style="grid-column:1/-1;white-space:pre-wrap">${esc(o.hint)}</div>` : ''}
         <div class="stk-pr-actions"><button class="btn btn-ghost" id="stk-pr-cancel">Cancel</button><button class="btn btn-primary" id="stk-pr-go">🖨 Print</button></div>
       </div></div>`;
@@ -2505,8 +2616,9 @@ function printDialog(o) {
     setTimeout(() => { const i = document.getElementById('stk-pr-count'); if (i) { i.focus(); i.select(); } }, 30);
   });
 }
-async function deleteTemplate(sellerId) {
-  const key = sellerId ? String(sellerId) : 'default';
+async function deleteTemplate(target) {
+  const key = target && typeof target === 'object' ? keyOf(target) : (target ? String(target) : 'default');
+  if (key === 'default') throw new Error('The Default template cannot be deleted');
   const { error } = await sb.from('label_templates').delete().eq('seller_key', key);
   if (error) throw new Error(error.message || 'delete failed');
   delete _cache[key];
@@ -2515,12 +2627,25 @@ async function deleteTemplate(sellerId) {
 // ───────────────────────────────────────────────────────────────────────────
 // Editor
 // ───────────────────────────────────────────────────────────────────────────
-const ED = { open: false, sellerId: null, sellerName: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false, snap: '' };
+const ED = { open: false, sellerId: null, sellerName: '', productId: null, customId: null, productName: '', kind: '', regular: false, cardKind: '', layout: null, logo: null, bg: null, selected: null, dirty: false, inherited: false, inheritedFrom: '', snap: '' };
+const edTarget = () => ({ sellerId: ED.sellerId, sellerName: ED.sellerName, productId: ED.productId, customId: ED.customId, productName: ED.productName, kind: ED.regular ? '' : ED.kind });   // a regular product's kind is on its card — never part of its key
+const edName = () => tplName(edTarget());
 const snapOf = () => JSON.stringify({ l: ED.layout, logo: ED.logo || null, bg: ED.bg || null });
 function isDirty() { return !!ED.layout && snapOf() !== ED.snap; }   // real changes only — a click on the label or a move-and-back does not count
-const LEAVE_MSG = () => 'Unsaved changes to the ' + (ED.sellerId ? '"' + ED.sellerName + '"' : 'Default') + ' label template will be lost. Continue?';
-const SAMPLE = () => ({ seller: ED.sellerName || 'Seller name', product: 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: 'RETAKLIK', sqty: '30 mg / 2.4 ml', batch: '261013-38',
-  made: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg });
+const LEAVE_MSG = () => 'Unsaved changes to the "' + edName() + '" label template will be lost. Continue?';
+const SAMPLE = () => {
+  const p = edProduct();
+  const made = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+  return { seller: ED.sellerName || 'Seller name', product: p ? p.name : 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: (p && p.sticker_name) || (p ? p.name : 'RETAKLIK'), sqty: p ? (p.sticker_qty || '') : '30 mg / 2.4 ml', batch: '261013-38',
+    made, exp: expiryDate(made, p ? p.good_months : null), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg };
+};
+function edProduct() {   // the product card behind the editor's product pick (regular: products / _allProducts; custom: customProducts)
+  if (ED.productId) return allProducts().find(p => String(p.id) === String(ED.productId)) || null;
+  if (ED.customId) { const c = customList().find(x => String(x.id) === String(ED.customId)); return c ? { ...c, sticker_name: c.name, sticker_qty: '' } : null; }
+  return null;
+}
+const allProducts = () => (typeof window !== 'undefined' && window._allProducts) || (typeof products !== 'undefined' ? products : []) || [];
+const customList = () => (typeof customProducts !== 'undefined' ? customProducts : []) || [];
 
 const EDITOR_CSS = `
 #stk-editor .stk-wrap{display:grid;grid-template-columns:300px 1fr 230px;gap:16px;align-items:start}
@@ -2543,6 +2668,13 @@ const EDITOR_CSS = `
 #stk-editor .stk-actions .btn{justify-content:center}
 #stk-editor .stk-logo{border:1px dashed var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;align-items:center}
 #stk-editor .stk-logo img{max-width:180px;max-height:70px;background:#fff;padding:4px;border-radius:4px}
+#stk-editor .stk-head-sel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;max-width:260px}
+#stk-editor .stk-for{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;margin-bottom:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)}
+#stk-editor .stk-for .stk-hint{font-size:11px}
+#stk-editor .stk-kinds{display:flex;gap:6px;flex-wrap:wrap}
+#stk-editor .stk-kind{padding:5px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer}
+#stk-editor .stk-kind.active{border-color:var(--accent);background:rgba(245,166,35,.18)}
+#stk-editor .stk-kind:disabled{opacity:.45;cursor:default}
 @media (max-width: 1100px){#stk-editor .stk-wrap{grid-template-columns:1fr}}`;
 
 function ensureEditorDom() {
@@ -2553,11 +2685,18 @@ function ensureEditorDom() {
     <div class="modal-header">
       <div><div class="modal-title">🏷 Label template</div><div id="stk-sub" style="font-size:12px;color:var(--muted);margin-top:2px"></div></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <select id="stk-seller" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none"></select>
+        <select id="stk-seller" class="stk-head-sel" title="Seller — Default = every seller without a template of their own"></select>
         <button class="close-btn" id="stk-close">&#10005;</button>
       </div>
     </div>
     <div class="modal-body">
+      <div class="stk-for" id="stk-for">
+        <span class="stk-hint">product</span>
+        <select id="stk-product" class="stk-head-sel" title="A template for one product (regular or custom) — leave on «any product» for a seller-wide template"></select>
+        <span class="stk-hint">kind</span>
+        <div class="stk-kinds" id="stk-kinds"></div>
+        <span class="stk-hint" id="stk-kind-hint"></span>
+      </div>
       <div class="stk-wrap">
         <div>
           <div class="stk-side" id="stk-fields"></div>
@@ -2580,9 +2719,9 @@ function ensureEditorDom() {
           <div class="stk-logo" id="stk-bg-box"></div>
           <button class="btn btn-primary" id="stk-save">💾 Save template</button>
           <button class="btn btn-ghost" id="stk-print">🖨 Print test</button>
-          <select class="btn btn-ghost" id="stk-copy-from" title="Replace this template (layout, logo, background) with another seller's one" style="width:100%;text-align:center;appearance:auto"><option value="">Copy from…</option></select>
+          <select class="btn btn-ghost" id="stk-copy-from" title="Replace this template (layout, logo, background) with another one" style="width:100%;text-align:center;appearance:auto"><option value="">Copy from…</option></select>
           <button class="btn btn-ghost" id="stk-reset" title="Built-in starting layout">Reset layout</button>
-          <button class="btn btn-ghost" id="stk-delete" style="color:var(--red)" title="Remove this seller's template — Default will be used">Delete template</button>
+          <button class="btn btn-ghost" id="stk-delete" style="color:var(--red)" title="Remove this template — the next one in the chain (seller → product → kind → Default) will be used">Delete template</button>
           <div class="stk-hint" id="stk-meta"></div>
         </div>
       </div>
@@ -2596,9 +2735,9 @@ function ensureEditorDom() {
   document.getElementById('stk-copy-from').onchange = async e => {
     const key = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; e.target.value = '';
     if (!key) return;
-    if (!confirm('Replace the layout, logo and background of ' + (ED.sellerId ? ED.sellerName : 'Default') + ' with the template of ' + name + '? (not saved until you press Save)')) return;
+    if (!confirm('Replace the layout, logo and background of "' + edName() + '" with the template "' + name + '"? (not saved until you press Save)')) return;
     try {
-      const d = await loadTemplate(key === 'default' ? null : key);
+      const d = await loadTemplate(key);
       ED.layout = JSON.parse(JSON.stringify(d.layout || defaultLayout())); ED.logo = d.logo || null; ED.bg = d.bg || null; ED.dirty = true;
       addMissingFields(ED.layout); renderEditor(); toast('Copied from ' + name + ' — not saved yet');
     } catch (err) { toast('Copy: ' + err.message, true); }
@@ -2609,18 +2748,52 @@ function ensureEditorDom() {
     ED.layout[id === 'stk-w' ? 'w' : id === 'stk-h' ? 'h' : 'tape'] = v; ED.dirty = true; fitFields(ED.layout); renderEditor();
   }; });
   document.getElementById('stk-delete').onclick = async () => {
-    if (!ED.sellerId) { toast('The Default template cannot be deleted', true); return; }
-    if (!confirm('Delete the label template of ' + ED.sellerName + '? Labels will use the Default layout.')) return;
-    try { await deleteTemplate(ED.sellerId); toast('Template deleted'); await openEditor(ED.sellerId, ED.sellerName); } catch (e) { toast('Delete: ' + e.message, true); }
+    const key = keyOf(edTarget());
+    if (key === 'default') { toast('The Default template cannot be deleted', true); return; }
+    if (ED.inherited) { toast('"' + edName() + '" has no template of its own yet — nothing to delete', true); return; }
+    if (!confirm('Delete the label template "' + edName() + '"? Labels will use the next template in the chain (' + (ED.inheritedFrom || 'seller → product → kind → Default') + ').')) return;
+    try { await deleteTemplate(key); toast('Template deleted'); await openEditor(ED.sellerId, ED.sellerName, { productId: ED.productId, customId: ED.customId, productName: ED.productName, kind: ED.kind }); } catch (e) { toast('Delete: ' + e.message, true); }
   };
-  document.getElementById('stk-seller').onchange = e => { const v = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; if (isDirty() && !confirm(LEAVE_MSG())) { e.target.value = ED.sellerId || ''; return; } openEditor(v || null, v ? name : 'Default'); };
+  const retarget = patch => {   // seller / product / kind changed in the header → reopen on the new target (same dirty guard as before)
+    if (isDirty() && !confirm(LEAVE_MSG())) { renderTargetBar(); return; }
+    const t = { productId: ED.productId, customId: ED.customId, productName: ED.productName, kind: ED.kind, ...patch };
+    openEditor('sellerId' in patch ? patch.sellerId : ED.sellerId, 'sellerName' in patch ? patch.sellerName : ED.sellerName, t);
+  };
+  document.getElementById('stk-seller').onchange = e => { const v = e.target.value; const name = e.target.options[e.target.selectedIndex].textContent; retarget({ sellerId: v || null, sellerName: v ? name : 'Default' }); };
+  document.getElementById('stk-product').onchange = e => {
+    const v = e.target.value; const name = v ? e.target.options[e.target.selectedIndex].textContent : '';
+    retarget({ productId: v && v[0] === 'p' ? v.slice(1) : null, customId: v && v[0] === 'c' ? v.slice(1) : null, productName: name });
+  };
+  document.getElementById('stk-kinds').onclick = e => {
+    const b = e.target.closest('.stk-kind'); if (!b || b.disabled) return;
+    retarget({ kind: ED.kind === b.dataset.kind ? '' : b.dataset.kind });
+  };
   ov.addEventListener('click', e => { if (e.target === ov) closeEditor(); });
 }
 function sellerOptions(sel) {
   const list = (typeof clients !== 'undefined' ? clients : []).filter(c => c.is_seller).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   return `<option value="" ${!sel ? 'selected' : ''}>Default (all sellers)</option>` + list.map(s => `<option value="${esc(s.id)}" ${String(s.id) === String(sel) ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
+function productOptions() {   // regular (active) products + custom products; value = p<id> | c<id>
+  const reg = allProducts().filter(p => p.active !== false).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const cus = customList().slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const cur = ED.productId ? 'p' + ED.productId : ED.customId ? 'c' + ED.customId : '';
+  const opt = (v, n) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(n)}</option>`;
+  return opt('', '— any product —')
+    + (reg.length ? `<optgroup label="Products">${reg.map(p => opt('p' + p.id, p.name + (p.type ? ' · ' + p.type : ''))).join('')}</optgroup>` : '')
+    + (cus.length ? `<optgroup label="Custom products">${cus.map(c => opt('c' + c.id, c.name)).join('')}</optgroup>` : '');
+}
+function renderTargetBar() {
+  const ps = document.getElementById('stk-product'); if (ps) ps.innerHTML = productOptions();
+  const ss = document.getElementById('stk-seller'); if (ss) ss.innerHTML = sellerOptions(ED.sellerId);
+  const kb = document.getElementById('stk-kinds'), kh = document.getElementById('stk-kind-hint'); if (!kb) return;
+  const fixed = ED.regular;   // regular product → kind comes from the product card
+  kb.innerHTML = KINDS.map(k => `<button type="button" class="stk-kind${(fixed ? tplKind(ED.cardKind) === k : ED.kind === k) ? ' active' : ''}" data-kind="${k}" ${fixed ? 'disabled' : ''}>${k}</button>`).join('');
+  if (fixed) kh.textContent = (ED.cardKind ? 'kind ' + normKind(ED.cardKind) : 'no kind') + ' — from the product card' + (tplKind(ED.cardKind) ? '' : ' (no kind templates for it)');
+  else kh.textContent = ED.kind ? (ED.productId || ED.customId ? 'this product as ' + ED.kind : 'every ' + ED.kind + (ED.sellerId ? ' of ' + ED.sellerName : '')) : 'any kind';
+}
 function addMissingFields(layout) {   // fields added after the template was saved
+  upgradeLayout(layout);
   const dl = defaultLayout().fields; layout.fields = layout.fields || {};
   Object.keys(dl).forEach(k => { if (!layout.fields[k]) layout.fields[k] = JSON.parse(JSON.stringify(dl[k])); });
   const sz = sizeOf(layout); layout.w = sz.w; layout.h = sz.h; layout.tape = sz.tape;
@@ -2635,20 +2808,32 @@ function fitFields(layout) {   // after the label got smaller: keep every field 
 async function fillCopyFrom() {
   const sel = document.getElementById('stk-copy-from'); if (!sel) return;
   try {
-    const list = (await listTemplates()).filter(t => t.key !== (ED.sellerId ? String(ED.sellerId) : 'default'));
+    const me = keyOf(edTarget());
+    const list = (await listTemplates()).filter(t => t.key !== me);
     sel.innerHTML = '<option value="">Copy from…</option>' + list.map(t => `<option value="${esc(t.key)}">${esc(t.name)}</option>`).join('');
     sel.disabled = !list.length; if (!list.length) sel.innerHTML = '<option value="">Copy from… (none yet)</option>';
   } catch (e) { sel.innerHTML = '<option value="">Copy from…</option>'; }
 }
-async function openEditor(sellerId, sellerName) {
+// openEditor(sellerId, sellerName, opts) — opts = { productId | customId, productName, kind } (v13.83). Without a template of its own
+// the target starts from what would print for it today (resolveTemplate) — marked "no template yet: showing …".
+async function openEditor(sellerId, sellerName, opts) {
   ensureEditorDom();
+  const o = opts || {};
   ED.sellerId = sellerId || null; ED.sellerName = sellerId ? (sellerName || '') : 'Default'; ED.selected = null; ED.dirty = false;
-  document.getElementById('stk-seller').innerHTML = sellerOptions(ED.sellerId);
+  ED.productId = o.productId ? String(o.productId) : null; ED.customId = !o.productId && o.customId ? String(o.customId) : null;
+  const card = edProduct();
+  ED.productName = (card && card.name) || o.productName || '';
+  ED.regular = !!ED.productId; ED.cardKind = ED.regular ? ((card && card.type) || '') : '';     // regular product: kind from the card, not a choice
+  ED.kind = ED.regular ? '' : tplKind(o.kind);
+  renderTargetBar();
   document.getElementById('stk-editor').classList.add('open'); ED.open = true;
   document.getElementById('stk-sub').textContent = 'Loading…';
   try {
-    const t = await loadTemplate(ED.sellerId);
-    ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.bg = t.bg || null; ED.inherited = !!t.inherited; ED.meta = t;
+    const target = edTarget(); const key = keyOf(target);
+    let t = await loadTemplate(key);
+    ED.inherited = !!(t.inherited || t.missing); ED.inheritedFrom = '';
+    if (ED.inherited && key !== 'default') { const r = await resolveTemplate({ sellerId: target.sellerId, productId: target.productId, customId: target.customId, kind: ED.regular ? ED.cardKind : target.kind }); t = r; ED.inheritedFrom = r.missing ? 'built-in layout' : tplName(r); }
+    ED.layout = JSON.parse(JSON.stringify(t.layout || defaultLayout())); ED.logo = t.logo || null; ED.bg = t.bg || null; ED.meta = ED.inherited ? null : t;
     addMissingFields(ED.layout);
     if (!ED.sellerName && t.seller_name) ED.sellerName = t.seller_name;
   } catch (e) { toast('Labels: ' + e.message, true); ED.layout = defaultLayout(); ED.logo = null; ED.bg = null; ED.meta = null; }
@@ -2658,7 +2843,8 @@ async function openEditor(sellerId, sellerName) {
 function closeEditor() { if (isDirty() && !confirm(LEAVE_MSG())) return; document.getElementById('stk-editor').classList.remove('open'); ED.open = false; }
 function renderEditor() {
   const f = ED.layout.fields;
-  document.getElementById('stk-sub').textContent = (ED.sellerId ? ED.sellerName : 'Default — used by every seller without a template of their own') + (ED.inherited ? ' · no template yet: showing Default' : '');
+  const key = keyOf(edTarget());
+  document.getElementById('stk-sub').textContent = (key === 'default' ? 'Default — used when nothing more specific exists' : edName()) + (ED.inherited ? ' · no template yet: showing ' + (ED.inheritedFrom || 'Default') : '');
   document.getElementById('stk-meta').textContent = ED.meta && ED.meta.updated_at ? 'saved ' + fmtDT(ED.meta.updated_at) + (ED.meta.updated_by ? ' by ' + ED.meta.updated_by : '') : (ED.inherited ? '' : 'not saved yet');
   document.getElementById('stk-fields').innerHTML = FIELD_DEFS.map(d => `<div class="stk-row${ED.selected === d.key ? ' sel' : ''}" data-key="${d.key}"><input type="checkbox" ${f[d.key] && f[d.key].on ? 'checked' : ''} data-toggle="${d.key}"><span>${esc(d.label)}</span></div>`).join('');
   document.querySelectorAll('#stk-fields .stk-row').forEach(row => {
@@ -2684,6 +2870,7 @@ function renderProps() {
     <label>bold</label><input type="checkbox" ${c.bold ? 'checked' : ''} data-prop="bold" style="width:15px;height:15px;justify-self:start">
     <label>align</label><select data-prop="align"><option value="left" ${c.align === 'left' ? 'selected' : ''}>left</option><option value="center" ${c.align === 'center' ? 'selected' : ''}>center</option><option value="right" ${c.align === 'right' ? 'selected' : ''}>right</option></select>
     ${def.prefix !== undefined ? `<label>prefix</label><input type="text" value="${esc(c.prefix ?? def.prefix)}" data-prop="prefix">` : ''}
+    ${k === 'exp' ? `<div class="stk-hint" style="grid-column:1/-1">EXP = MFG + Good (months) from the product card (empty = ${GOOD_DEFAULT}); written to the batch on the first print</div>` : ''}
     ${k === 'note' || k === 'note2' ? `<label style="align-self:start">text</label><textarea data-prop="text" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;resize:vertical">${esc(c.text ?? '')}</textarea>` : ''}`;
   el.innerHTML = h;
   el.querySelectorAll('[data-prop]').forEach(inp => {
@@ -2770,13 +2957,15 @@ async function saveFromEditor() {
   try {
     const layout = JSON.parse(JSON.stringify(ED.layout));
     Object.values(layout.fields).forEach(c => { delete c._ratioSet; });
-    await saveTemplate(ED.sellerId, ED.sellerName, layout, ED.logo, ED.bg);
-    ED.dirty = false; ED.inherited = false; ED.snap = snapOf();
-    toast('🏷 Label template saved' + (ED.sellerId ? ' for ' + ED.sellerName : ' (Default)'));
-    ED.meta = await loadTemplate(ED.sellerId); renderEditor(); fillCopyFrom();
+    const target = edTarget();
+    await saveTemplate(target, layout, ED.logo, ED.bg);
+    ED.dirty = false; ED.inherited = false; ED.inheritedFrom = ''; ED.snap = snapOf();
+    toast('🏷 Label template saved: ' + tplName(target));
+    ED.meta = await loadTemplate(keyOf(target)); renderEditor(); fillCopyFrom();
   } catch (e) { toast('Save: ' + e.message, true); }
   finally { btn.disabled = false; }
 }
 
-window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, printDialog, openPrintWindow, loadTemplate, listTemplates, saveTemplate, defaultLayout, sizeOf, FIELD_DEFS, LABEL, _ED: ED };
+window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, printDialog, openPrintWindow, loadTemplate, resolveTemplate, candidateKeys, listTemplates, saveTemplate, deleteTemplate,
+                    defaultLayout, upgradeLayout, sizeOf, keyOf, parseKey, tplName, expiryDate, fmtMY, FIELD_DEFS, LABEL, KINDS, GOOD_DEFAULT, _ED: ED, _cache };
 })();
