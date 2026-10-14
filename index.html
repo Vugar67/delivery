@@ -777,6 +777,12 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-primary btn-sm" onclick="openNewDriver()">+ Add Driver</button>
       </div>
       <div id="drivers-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px"></div>
+      <!-- v13.82: Partners — who brought the client (picked in the client card) -->
+      <div class="section-head" style="margin-bottom:14px">
+        <div class="section-title">&#129309; Partners</div>
+        <button class="btn btn-primary btn-sm" id="partner-add-btn" onclick="openNewPartner()">+ Add Partner</button>
+      </div>
+      <div id="partners-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px"></div>
       <div class="section-head" style="margin-bottom:14px">
         <div class="section-title">&#128666; Delivery Rates</div>
       </div>
@@ -829,6 +835,9 @@ select option{background:#1a1d27;color:#f0f2ff}
             <option value="seller">Sellers only</option>
             <option value="both">Both (Client + Seller)</option>
           </select>
+          <select id="client-partner-filter" onchange="renderClients()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+            <option value="">All Partners</option>
+          </select>
           <button class="btn btn-ghost" id="cl-export-btn" onclick="exportClientsCSV()">&#8595; XLSX</button>
           <button class="btn btn-primary" id="cl-add-btn" onclick="openNewClient()">+ Add Client</button>
         </div>
@@ -836,7 +845,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="table-wrap">
         <table class="tbl">
           <thead><tr>
-            <th>Name</th><th>Category</th><th style="text-align:center">Client</th><th style="text-align:center">Seller</th><th>Phone</th><th>Emirate</th><th>District</th><th>Villa</th><th>Notes</th><th></th>
+            <th>Name</th><th>Category</th><th style="text-align:center">Client</th><th style="text-align:center">Seller</th><th>Partner</th><th>Phone</th><th>Emirate</th><th>District</th><th>Villa</th><th>Notes</th><th></th>
           </tr></thead>
           <tbody id="clients-tbody"></tbody>
         </table>
@@ -1236,11 +1245,29 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Villa / Apt #</label><input id="cl-villa" placeholder="e.g. Villa 12"></div>
       <div class="form-group"><label>Location URL</label><input id="cl-location" placeholder="Google Maps link"></div>
       <div class="form-group"><label>TRN <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">15 digits</span></label><input id="cl-trn" placeholder="e.g. 100335421200003" maxlength="15" oninput="this.value=this.value.replace(/\D/g,'')"></div>
+      <div class="form-group" id="cl-partner-group"><label>Partner <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">who brought the client</span></label>
+        <select id="cl-partner"><option value="">— none —</option></select>
+      </div>
       <div class="form-group form-full"><label>Notes</label><input id="cl-notes" placeholder="Any additional info..."></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('client-modal')">Cancel</button>
       <button class="btn btn-primary" id="save-client-btn" onclick="saveClient()">Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- PARTNER MODAL (v13.82) -->
+<div class="overlay" id="partner-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head">
+      <div class="modal-title" id="partner-modal-title">Add Partner</div>
+      <button class="close-btn" onclick="closeModal('partner-modal')">&#10005;</button>
+    </div>
+    <div class="form-group"><label>Name</label><input id="pt-name" maxlength="120" placeholder="e.g. Dr. Karim / Fitness Club X"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('partner-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-partner-btn" onclick="savePartner()">Save</button>
     </div>
   </div>
 </div>
@@ -1780,7 +1807,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.81.2';
+const APP_VERSION = 'v13.82';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2169,6 +2196,7 @@ const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse','lab'];   // v1
 let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[],fridges:[]};  // v13.71.4: productCategory = registry kept by the admin app · v13.76: fridges = places inside HUB
 let products=[], orderItems={};
 let clients=[], editClientId=null;
+let partners=[], _partnersReady=false, editPartnerId=null;   // v13.82
 let editId=null, editProductId=null;
 let currentPage=1;
 const PAGE_SIZE=15;
@@ -2411,7 +2439,7 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadPartners(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
@@ -2497,7 +2525,7 @@ function showView(v){
   if(v==='lab') initLabView(); else stopLabPolling();                                       // v13.74
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
-  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderPartnersGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
   if(v==='logs'){loadLogs();}
   if(v==='users')renderUsers();
   if(v==='products'){
@@ -7535,16 +7563,17 @@ async function exportProductsCSV(){
 async function exportClientsCSV(){
   if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.63
   const XL = await _loadXLSX();
-  const headers = ['Name','Category','Is Client','Is Seller','Phone','Emirate','District','Villa','Notes'];
+  const headers = ['Name','Category','Is Client','Is Seller','Partner','Phone','Emirate','District','Villa','Notes'];
   const data = [headers, ...clients.map(c => [
     c.name, c.category,
     c.is_client !== false ? 'Yes' : 'No',
     c.is_seller ? 'Yes' : 'No',
+    _partnerName(c.partner_id),
     _xlsxPhone(c.phone),
     c.emirate||'', c.district||'', c.villa||'', c.notes||''
   ])];
   const ws = XL.utils.aoa_to_sheet(data.map((row,ri)=> ri===0?row:row.map(_xlsxSafe)));
-  ws['!cols'] = [{wch:28},{wch:16},{wch:10},{wch:10},{wch:18},{wch:12},{wch:18},{wch:24},{wch:30}];
+  ws['!cols'] = [{wch:28},{wch:16},{wch:10},{wch:10},{wch:22},{wch:18},{wch:12},{wch:18},{wch:24},{wch:30}];
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Clients');
   XL.writeFile(wb, 'clients-' + new Date(Date.now() + 4*60*60*1000).toISOString().split('T')[0] + '.xlsx');
@@ -8720,6 +8749,7 @@ async function sendToDriver(orderId) {
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 initSchedTimeSelects();
 document.getElementById('dir-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveDirItem();});
+document.getElementById('pt-name').addEventListener('keydown',e=>{if(e.key==='Enter')savePartner();});   // v13.82
 document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el && el.id !== 'order-modal' && el.id !== 'wh-modal')el.classList.remove('open');}));
 
@@ -8733,6 +8763,7 @@ function renderClients() {
   const q = (document.getElementById('client-search')?.value || '').toLowerCase();
   const cat = document.getElementById('client-cat-filter')?.value || '';
   const typeF = document.getElementById('client-type-filter')?.value || '';
+  const partnerF = _fillClientPartnerFilter();   // v13.82: '' | '__any' | '__none' | partner id
   const tbody = document.getElementById('clients-tbody');
   if (!tbody) return;
 
@@ -8741,15 +8772,18 @@ function renderClients() {
     if (typeF === 'client' && !c.is_client) return false;
     if (typeF === 'seller' && !c.is_seller) return false;
     if (typeF === 'both' && !(c.is_client && c.is_seller)) return false;
+    if (partnerF === '__any' && !c.partner_id) return false;
+    if (partnerF === '__none' && c.partner_id) return false;
+    if (partnerF && partnerF !== '__any' && partnerF !== '__none' && c.partner_id !== partnerF) return false;
     if (q) {
-      const hay = [c.name, c.phone, c.emirate, c.district, c.villa, c.notes].join(' ').toLowerCase();
+      const hay = [c.name, c.phone, c.emirate, c.district, c.villa, c.notes, _partnerName(c.partner_id)].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   });
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👥</div><div>No clients found</div></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11"><div class="empty"><div class="empty-icon">👥</div><div>No clients found</div></div></td></tr>`;
     return;
   }
 
@@ -8762,6 +8796,7 @@ function renderClients() {
       <td><span style="font-size:11px;background:rgba(255,200,0,.15);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:var(--mono)">${c.category||'—'}</span></td>
       <td style="text-align:center">${c.is_client !== false ? tick : dash}</td>
       <td style="text-align:center">${c.is_seller ? tick : dash}</td>
+      <td style="font-size:12px">${_partnerCell(c.partner_id)}</td>
       <td style="font-family:var(--mono);font-size:12px">${c.phone||'—'}</td>
       <td style="font-size:12px">${c.emirate||'—'}</td>
       <td style="font-size:12px">${c.district||'—'}</td>
@@ -8851,6 +8886,7 @@ function openNewClient() {
   });
   document.getElementById('cl-is-client').checked = true;
   document.getElementById('cl-is-seller').checked = false;
+  _fillClientPartnerSelect(null);   // v13.82
   // Populate category
   const catSel = document.getElementById('cl-category');
   catSel.innerHTML = '<option value="">— Select —</option>' +
@@ -8878,6 +8914,7 @@ function editClient(id) {
   document.getElementById('cl-notes').value = c.notes||'';
   document.getElementById('cl-is-client').checked = c.is_client !== false;
   document.getElementById('cl-is-seller').checked = !!c.is_seller;
+  _fillClientPartnerSelect(c.partner_id || null);   // v13.82
   populateClientEmirateSelect(c.emirate||'');
   setTimeout(() => onClientEmirateChange(c.city||'', c.district||''), 50);
   document.getElementById('client-modal').classList.add('open');
@@ -8912,6 +8949,10 @@ async function saveClient() {
     is_seller: document.getElementById('cl-is-seller').checked,
     updated_at: new Date().toISOString()
   };
+  // v13.82: partner — only when the partners table exists (code is safe to deploy before the migration)
+  const _prevClient = editClientId ? clients.find(x => x.id === editClientId) : null;
+  const _prevPartnerId = _prevClient?.partner_id || null;
+  if (_partnersReady) payload.partner_id = document.getElementById('cl-partner').value || null;
 
   let error;
   if (editClientId) {
@@ -8923,7 +8964,13 @@ async function saveClient() {
   btn.disabled = false; btn.textContent = 'Save Client';
   if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
   const _clientId = editClientId || (await sb.from('clients').select('id').eq('name', name).single()).data?.id;
-  logEvent(editClientId ? 'UPDATE' : 'CREATE', 'client', _clientId || '', { name, phone: payload.phone, category: payload.category, is_client: payload.is_client, is_seller: payload.is_seller });
+  const _clLog = { name, phone: payload.phone, category: payload.category, is_client: payload.is_client, is_seller: payload.is_seller };
+  if (_partnersReady) {   // v13.82
+    _clLog.partner = _partnerName(payload.partner_id) || null;
+    if (editClientId && (payload.partner_id || null) !== _prevPartnerId)
+      _clLog.field_changes = { partner: { before: _partnerName(_prevPartnerId) || null, after: _clLog.partner } };
+  }
+  logEvent(editClientId ? 'UPDATE' : 'CREATE', 'client', _clientId || '', _clLog);
   toast(editClientId ? '✅ Client updated' : '✅ Client added');
   document.getElementById('client-modal').classList.remove('open');
   await loadClients();
@@ -8940,6 +8987,196 @@ async function deleteClient(id) {
   toast('Client deleted');
   await loadClients();
   renderClients();
+}
+
+// ─── PARTNERS (v13.82) ────────────────────────────────────────────
+// Partner = who brought the client. Directory → Partners (admin), picked in
+// the client card (clients.partner_id → partners.id). No business logic is
+// tied to it yet. Table missing (migration add_partners.sql not run) →
+// _partnersReady=false: the section shows a note, the client card hides the
+// field and never sends partner_id — so this build is safe before the migration.
+async function loadPartners() {
+  const { data, error } = await sb.from('partners').select('*').order('name');
+  if (error) {
+    partners = []; _partnersReady = false;
+    console.warn('Partners not available (run add_partners.sql):', error.message);
+    return;
+  }
+  partners = data || []; _partnersReady = true;
+}
+
+function _partnerNorm(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+function _partnerName(id) { if (!id) return ''; const p = partners.find(x => x.id === id); return p ? p.name : ''; }
+function _partnerSorted() {
+  return [...partners].sort((a, b) =>
+    (a.active === false) - (b.active === false) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+function _partnerClientCount(id) { return clients.filter(c => c.partner_id === id).length; }
+
+function _partnerCell(id) {
+  if (!id) return `<span style="color:var(--border);font-size:13px">—</span>`;
+  const p = partners.find(x => x.id === id);
+  if (!p) return `<span style="color:var(--muted)">?</span>`;
+  return p.active === false
+    ? `<span style="color:var(--muted)">${escHtml(p.name)} <span style="font-size:10px;font-family:var(--mono)">(inactive)</span></span>`
+    : escHtml(p.name);
+}
+
+// Client card select: "— none —" + active partners; the client's current
+// partner stays selectable even if it was deactivated later.
+function _fillClientPartnerSelect(currentId) {
+  const grp = document.getElementById('cl-partner-group');
+  const sel = document.getElementById('cl-partner');
+  if (!grp || !sel) return;
+  grp.style.display = _partnersReady ? '' : 'none';
+  if (!_partnersReady) { sel.innerHTML = '<option value="">— none —</option>'; return; }
+  let h = '<option value="">— none —</option>';
+  _partnerSorted().forEach(p => {
+    if (p.active === false && p.id !== currentId) return;
+    h += `<option value="${escAttr(p.id)}">${escHtml(p.name)}${p.active === false ? ' (inactive)' : ''}</option>`;
+  });
+  if (currentId && !partners.some(p => p.id === currentId))
+    h += `<option value="${escAttr(currentId)}">(unknown partner)</option>`;
+  sel.innerHTML = h;
+  sel.value = currentId || '';
+}
+
+// Clients list filter: All / With partner / No partner / each partner. Returns the selected value.
+function _fillClientPartnerFilter() {
+  const sel = document.getElementById('client-partner-filter');
+  if (!sel) return '';
+  sel.style.display = _partnersReady ? '' : 'none';
+  if (!_partnersReady) return '';
+  const cur = sel.value;
+  let h = '<option value="">All Partners</option><option value="__any">With partner</option><option value="__none">No partner</option>';
+  _partnerSorted().forEach(p => {
+    h += `<option value="${escAttr(p.id)}">${escHtml(p.name)}${p.active === false ? ' (inactive)' : ''}</option>`;
+  });
+  sel.innerHTML = h;
+  const ok = cur === '' || cur === '__any' || cur === '__none' || partners.some(p => p.id === cur);
+  sel.value = ok ? cur : '';
+  return sel.value;
+}
+
+function renderPartnersGrid() {
+  const grid = document.getElementById('partners-grid');
+  const addBtn = document.getElementById('partner-add-btn');
+  if (!grid) return;
+  if (addBtn) addBtn.style.display = _partnersReady ? '' : 'none';
+  if (!_partnersReady) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">Partners are not available yet — the database migration has not been run.</div>';
+    return;
+  }
+  if (!partners.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">No partners yet.</div>';
+    return;
+  }
+  grid.innerHTML = _partnerSorted().map(p => {
+    const n = _partnerClientCount(p.id);
+    const off = p.active === false;
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;${off ? 'opacity:.55' : ''}">
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow-wrap:anywhere">${escHtml(p.name)}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${n} client${n === 1 ? '' : 's'}${off ? ' · inactive' : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <button class="act-btn" onclick="openEditPartner('${escAttr(p.id)}')">Edit</button>
+        <button class="act-btn" onclick="togglePartnerActive('${escAttr(p.id)}')" title="${off ? 'Show it in the client card again' : 'Hide from the client card; clients keep it'}">${off ? 'Activate' : 'Deactivate'}</button>
+        ${n === 0 ? `<button class="act-btn del" onclick="deletePartner('${escAttr(p.id)}')" title="Delete (only partners without clients)">&#10005;</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openNewPartner() {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }
+  if (!_partnersReady) { toast('Partners are not available yet', true); return; }
+  editPartnerId = null;
+  document.getElementById('partner-modal-title').textContent = 'Add Partner';
+  document.getElementById('pt-name').value = '';
+  document.getElementById('partner-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pt-name').focus(), 100);
+}
+
+function openEditPartner(id) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }
+  const p = partners.find(x => x.id === id);
+  if (!p) return;
+  editPartnerId = id;
+  document.getElementById('partner-modal-title').textContent = 'Edit Partner';
+  document.getElementById('pt-name').value = p.name;
+  document.getElementById('partner-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pt-name').focus(), 100);
+}
+
+async function _partnersRefresh() {
+  await loadPartners();
+  renderPartnersGrid();
+  const cv = document.getElementById('view-clients');
+  if (cv && cv.style.display !== 'none') renderClients();
+}
+
+async function savePartner() {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }
+  if (savePartner._busy) return;
+  const name = _partnerNorm(document.getElementById('pt-name').value);
+  if (!name) { toast('Name is required', true); return; }
+  const key = name.toLowerCase();
+  const dup = partners.find(p => p.id !== editPartnerId && _partnerNorm(p.name).toLowerCase() === key);
+  if (dup) { toast(`Partner "${dup.name}" already exists${dup.active === false ? ' (inactive — activate it instead)' : ''}`, true); return; }
+  const prev = editPartnerId ? partners.find(x => x.id === editPartnerId) : null;
+  if (prev && prev.name === name) { closeModal('partner-modal'); return; }
+  const btn = document.getElementById('save-partner-btn');
+  savePartner._busy = true; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  let error;
+  try {
+    if (editPartnerId) ({ error } = await sb.from('partners').update({ name }).eq('id', editPartnerId));
+    else ({ error } = await sb.from('partners').insert({ name, active: true, created_by: currentUser?.email || null }));
+  } finally { savePartner._busy = false; btn.disabled = false; btn.textContent = 'Save'; }
+  if (error) {
+    console.log('DB error:', error);
+    toast(/duplicate|unique/i.test(error.message || '') ? `Partner "${name}" already exists` : 'Something went wrong. Please try again.', true);
+    return;
+  }
+  const wasEdit = !!editPartnerId;
+  closeModal('partner-modal');
+  await _partnersRefresh();
+  if (wasEdit) logEvent('UPDATE', 'partner', prev.id, { name, field_changes: { name: { before: prev.name, after: name } } });
+  else logEvent('CREATE', 'partner', partners.find(p => p.name === name)?.id || '', { name });
+  toast(wasEdit ? '✅ Partner renamed' : '✅ Partner added');
+}
+
+async function togglePartnerActive(id) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }
+  const p = partners.find(x => x.id === id);
+  if (!p) return;
+  const active = p.active === false;   // flip
+  const { error } = await sb.from('partners').update({ active }).eq('id', id);
+  if (error) { console.log('DB error:', error); toast('Something went wrong. Please try again.', true); return; }
+  logEvent('UPDATE', 'partner', id, { name: p.name, action: active ? 'activate' : 'deactivate', field_changes: { active: { before: !active, after: active } } });
+  await _partnersRefresh();
+  toast(active ? `Partner "${p.name}" is active again` : `Partner "${p.name}" deactivated — clients keep it`);
+}
+
+async function deletePartner(id) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }
+  const p = partners.find(x => x.id === id);
+  if (!p) return;
+  const n = _partnerClientCount(id);
+  if (n > 0) { toast(`${n} client${n === 1 ? '' : 's'} use this partner — deactivate it instead`, true); return; }
+  if (!confirm(`Delete partner "${p.name}"?`)) return;
+  const { error } = await sb.from('partners').delete().eq('id', id);
+  if (error) {
+    console.log('DB error:', error);
+    toast(/foreign key|violates/i.test(error.message || '') ? 'Some clients use this partner — deactivate it instead' : 'Something went wrong. Please try again.', true);
+    await loadClients();
+    await _partnersRefresh();
+    return;
+  }
+  logEvent('DELETE', 'partner', id, { name: p.name });
+  await _partnersRefresh();
+  toast('Partner deleted');
 }
 
 // ─── END CLIENTS ──────────────────────────────────────────────────
