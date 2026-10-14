@@ -1272,6 +1272,30 @@ select option{background:#1a1d27;color:#f0f2ff}
   </div>
 </div>
 
+<!-- CUSTOM PRODUCT MODAL (v13.84): one window for every field of a Custom Products entry — name, unit, Invoice Nickname,
+     Sticker Name / SubSticker Name / Sticker Qty (label), Good (months → label EXP). Replaces the three prompts + inline fields. -->
+<div class="overlay" id="custom-product-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head">
+      <div class="modal-title" id="custom-product-modal-title">New Custom Product</div>
+      <button class="close-btn" onclick="closeModal('custom-product-modal')">&#10005;</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group form-full"><label>Name</label><input id="cp-name" maxlength="120" placeholder="base name only — kind and dosage are added on the order line"></div>
+      <div class="form-group"><label>Unit</label><input id="cp-unit" maxlength="20" placeholder="mg / ml / pcs"></div>
+      <div class="form-group"><label>Invoice Nickname <span style="color:var(--red)">*</span></label><input id="cp-nick" maxlength="120" placeholder="printed on the invoice instead of the name"></div>
+      <div class="form-group"><label>Sticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="cp-sticker-name" maxlength="80" placeholder="empty = line name"></div>
+      <div class="form-group"><label>Sticker Qty <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="cp-sticker-qty" maxlength="40" placeholder="e.g. 10 mg / 2 ml"></div>
+      <div class="form-group"><label>SubSticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label · 2nd line)</span></label><input id="cp-sub-sticker-name" maxlength="80" placeholder="2nd line of the name — empty = none"></div>
+      <div class="form-group"><label>Good <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(months → label EXP)</span></label><input id="cp-good-months" type="number" min="1" max="240" step="1" placeholder="24"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('custom-product-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-custom-product-btn" onclick="saveCustomProduct()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- DRIVER MODAL -->
 <div class="overlay" id="driver-modal">
   <div class="modal" style="max-width:380px">
@@ -1676,6 +1700,8 @@ select option{background:#1a1d27;color:#f0f2ff}
       <!-- v13.80.2: sticker fields — name and quantity/strength are two separate label fields -->
       <div class="form-group"><label>Sticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-name" placeholder="e.g. RETAKLIK — empty = product name" maxlength="80"></div>
       <div class="form-group"><label>Sticker Qty <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="p-sticker-qty" placeholder="e.g. 30 mg / 2.4 ml" maxlength="40"></div>
+      <!-- v13.84: SubSticker Name — 2nd line of the sticker name (long names are split over two lines) -->
+      <div class="form-group"><label>SubSticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label · 2nd line)</span></label><input id="p-sub-sticker-name" placeholder="2nd line of the name — empty = none" maxlength="80"></div>
       <!-- v13.83: Good = shelf life in months → label EXP = MFG + Good (not printed itself; empty = 24) -->
       <div class="form-group"><label>Good <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(months → label EXP = MFG + Good)</span></label><input id="p-good-months" type="number" min="1" max="240" step="1" placeholder="24"></div>
       <div class="form-group"><label>Category</label><input id="p-category" list="p-category-list" autocomplete="off" oninput="this.value=this.value.toUpperCase()" placeholder="e.g. WELLNESS, BRAIN..."><datalist id="p-category-list"></datalist></div>
@@ -1809,7 +1835,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.83';
+const APP_VERSION = 'v13.84';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6229,21 +6255,23 @@ async function _labSellers() {
 // Stock batch (no order): seller from the dialog → Default only (decided 14.10). MFG = batch closed by the Mixer (MM/YYYY),
 // EXP = MFG + Good (months, product card, empty = 24) — written to lab_batches.expiry_date on the FIRST print (lab_set_expiry),
 // later prints reuse the stored date.
-async function _labLabelCtx(b, c) {   // → { productId, customId, kind, goodMonths, blocked }
-  const ctx = { productId: null, customId: null, kind: null, goodMonths: null, blocked: '' };
+async function _labLabelCtx(b, c) {   // → { productId, customId, kind, goodMonths, blocked, sname, ssub, sqty } (v13.84: sticker fields of the line's product card)
+  const ctx = { productId: null, customId: null, kind: null, goodMonths: null, blocked: '', sname: null, ssub: null, sqty: null };
   if (c && !c.product_id) {   // custom line
     const { data: ll, error } = await sb.from('lab_label_lines_v').select('*').eq('order_item_id', c.order_item_id).single();
     if (error) console.warn('lab_label_lines_v:', error);   // view missing (migration add_lab_14 not run yet) → seller / Default label
     if (ll) {
       if (ll.name_edited) ctx.blocked = 'renamed';
       ctx.customId = ll.custom_product_id || null; ctx.kind = ll.label_kind || null; ctx.goodMonths = ll.good_months || null;
+      ctx.sname = ll.sticker_name || null; ctx.ssub = ll.sub_sticker_name || null; ctx.sqty = ll.sticker_qty || null;   // v13.84 (add_lab_15; older view → undefined → null)
     }
     return ctx;
   }
   if (b.product_id) {   // regular product (per-order made-to-order line or stock batch)
     let p = (window._allProducts || products || []).find(x => String(x.id) === String(b.product_id)) || null;
-    try { const { data } = await sb.from('products').select('id,type,good_months').eq('id', b.product_id).single(); if (data) p = { ...(p || {}), ...data }; } catch (e) {}
+    try { const { data } = await sb.from('products').select('*').eq('id', b.product_id).single(); if (data) p = { ...(p || {}), ...data }; } catch (e) {}
     ctx.goodMonths = p && p.good_months || null;
+    ctx.sname = (p && p.sticker_name) || null; ctx.ssub = (p && p.sub_sticker_name) || null; ctx.sqty = (p && p.sticker_qty) || null;   // v13.84
     if (c) { ctx.productId = String(b.product_id); ctx.kind = (p && p.type) || null; }   // stock batch → no product templates
   }
   return ctx;
@@ -6295,8 +6323,9 @@ async function labPrintLabels(batchId) {
   const data = {
     seller,
     product: name,
-    sname: (c && c.sticker_name) || (d && d.sticker_name) || name,
-    sqty: (c && c.sticker_qty) || (d && d.sticker_qty) || '',
+    sname: ctx.sname || (c && c.sticker_name) || (d && d.sticker_name) || name,   // v13.84: product card first (custom lines via the directory link)
+    ssub: ctx.ssub || '',
+    sqty: ctx.sqty || (c && c.sticker_qty) || (d && d.sticker_qty) || '',
     batch: b.batch_no,
     made,
     exp: expStored || exp,
@@ -7340,7 +7369,7 @@ function openNewProduct(){
   _productImageFile=null;
   _productCurrentImageUrl=null;
   document.getElementById('product-modal-title').textContent='New Product';
-  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode','p-sticker-name','p-sticker-qty','p-good-months'].forEach(id=>document.getElementById(id).value='');   // v13.83: + Good (months)
+  ['p-name','p-invoice-nickname','p-category','p-desc','p-barcode','p-sticker-name','p-sticker-qty','p-sub-sticker-name','p-good-months'].forEach(id=>document.getElementById(id).value='');   // v13.83: + Good (months) · v13.84: + SubSticker Name
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=true;document.getElementById('p-made-to-order').checked=false;document.getElementById('p-no-stock-ahead').checked=false;document.getElementById('p-min-stock').value='0';syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7368,6 +7397,7 @@ function editProduct(id){
   document.getElementById('p-invoice-nickname').value=p.invoice_nickname||'';   // v13.72
   document.getElementById('p-sticker-name').value=p.sticker_name||'';document.getElementById('p-sticker-qty').value=p.sticker_qty||'';   // v13.80.2
   document.getElementById('p-good-months').value=p.good_months?String(p.good_months):'';   // v13.83 (empty = 24)
+  document.getElementById('p-sub-sticker-name').value=p.sub_sticker_name||'';   // v13.84
   document.getElementById('p-invoice-nickname').style.borderColor='';   // v13.73
   document.getElementById('p-lab-made').checked=p.lab_made!==false;document.getElementById('p-made-to-order').checked=!!p.made_to_order;document.getElementById('p-no-stock-ahead').checked=!!p.no_stock_ahead;document.getElementById('p-min-stock').value=String(parseFloat(p.min_stock)||0);syncProductLabFields();   // v13.74
   _fillCategoryDatalist();
@@ -7451,6 +7481,7 @@ async function saveProduct(){
   const payload={name,category:get('p-category').toUpperCase(),price:parseFloat(get('p-price'))||0,unit:get('p-unit'),description:get('p-desc'),shelf_position:shelfVal,barcode:get('p-barcode')||null,product_type:get('p-type')||'Regular',type:document.getElementById('p-product-type').value||null,active:true,invoice_nickname:(get('p-invoice-nickname')||'').trim()||null,
     sticker_name:(get('p-sticker-name')||'').trim()||null,sticker_qty:(get('p-sticker-qty')||'').trim()||null,   // v13.80.2 (migration add_lab_12)
     good_months:(()=>{const g=parseInt(get('p-good-months'));return g>=1&&g<=240?g:null;})(),   // v13.83 (migration add_lab_14): shelf life months, null = 24
+    sub_sticker_name:(get('p-sub-sticker-name')||'').trim()||null,   // v13.84 (migration add_lab_15): 2nd line of the sticker name
     lab_made:document.getElementById('p-lab-made').checked,
     made_to_order:document.getElementById('p-lab-made').checked&&document.getElementById('p-made-to-order').checked,
     no_stock_ahead:document.getElementById('p-lab-made').checked&&!document.getElementById('p-made-to-order').checked&&document.getElementById('p-no-stock-ahead').checked,
@@ -7799,23 +7830,20 @@ async function deleteComponent(id) {
 function renderCustomProductsGrid() {
   const el = document.getElementById('custom-products-grid');
   if (!el) return;
+  // v13.84: the card is a summary; every field is edited in the Custom Product window (Edit). 🏷 = label template for this entry.
+  const mono = 'font-family:var(--mono);font-size:11px;';
   el.innerHTML = (customProducts || []).length
     ? customProducts.map(c => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
         <div style="min-width:0;flex:1">
           <div style="font-weight:600;font-size:13px">${escAttr(c.name)}</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escAttr(c.unit || '')}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:6px" title="Invoice Nickname — replaces the name on the invoice (kind and dosage stay)">
-            <span style="font-size:12px">🧾</span>
-            <input value="${escAttr(c.invoice_nickname || '')}" placeholder="invoice nickname (required)" maxlength="120" onchange="saveCustomProductNickname(${c.id}, this.value)" style="flex:1;min-width:0;background:var(--surface2);border:1px solid ${c.invoice_nickname?'var(--accent)':'var(--border)'};border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:6px" title="Good — shelf life in months: the label prints EXP = MFG + Good (empty = 24). Good itself is not printed.">
-            <span style="font-size:12px">⏳</span>
-            <input type="number" min="1" max="240" step="1" value="${c.good_months ? escAttr(String(c.good_months)) : ''}" placeholder="24" onchange="saveCustomProductGood(${c.id}, this.value)" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">months good → label EXP</span>
-          </div>
+          <div style="${mono}font-size:12px;color:var(--accent)">${escAttr(c.unit || '')}</div>
+          <div style="${mono}margin-top:6px;color:${c.invoice_nickname ? 'var(--accent)' : 'var(--red)'}" title="Invoice Nickname (required)">🧾 ${c.invoice_nickname ? escAttr(c.invoice_nickname) : '<i>no invoice nickname</i>'}</div>
+          <div style="${mono}margin-top:3px;color:${c.sticker_name || c.sub_sticker_name || c.sticker_qty ? 'var(--text)' : 'var(--muted)'}" title="Sticker Name · SubSticker Name · Sticker Qty (label)">🏷 ${[c.sticker_name, c.sub_sticker_name, c.sticker_qty].filter(Boolean).map(escAttr).join(' · ') || '<i>label: line name</i>'}</div>
+          <div style="${mono}margin-top:3px;color:var(--muted)" title="Good — shelf life in months: label EXP = MFG + Good">⏳ ${c.good_months ? escAttr(String(c.good_months)) + ' months' : '24 months (default)'}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="act-btn" onclick="editCustomProduct(${c.id})" title="Edit every field of this custom product">Edit</button>
           <button class="act-btn" onclick="openLabelEditor(null, 'Default', { customId: ${c.id} })" title="Label template for this custom product (v13.83) — pick the seller and the kind inside">🏷</button>
           <button class="act-btn del" onclick="deleteCustomProduct(${c.id})">✕</button>
         </div>
@@ -7823,54 +7851,64 @@ function renderCustomProductsGrid() {
     : '<div style="color:var(--muted);font-size:13px">No custom products defined</div>';
 }
 
+// v13.84: one window for a custom product (new / edit) — replaces the prompts (v13.73) and the inline nickname / Good fields
+let editCustomProductId = null;
+function _fillCustomProductForm(c) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
+  set('cp-name', c ? c.name : ''); set('cp-unit', c ? (c.unit || 'pcs') : 'mg'); set('cp-nick', c ? (c.invoice_nickname || '') : '');
+  set('cp-sticker-name', c ? (c.sticker_name || '') : ''); set('cp-sticker-qty', c ? (c.sticker_qty || '') : ''); set('cp-sub-sticker-name', c ? (c.sub_sticker_name || '') : '');
+  set('cp-good-months', c && c.good_months ? c.good_months : '');
+  const nk = document.getElementById('cp-nick'); if (nk) nk.style.borderColor = '';
+}
 function openNewCustomProduct() {
-  const name = prompt('Custom product name:');
-  if (!name || !name.trim()) return;
-  const unit = prompt('Unit (e.g. mg, ml, pcs):', 'mg');
-  if (unit === null) return;
-  // v13.73: Invoice Nickname is mandatory — enter only the base name; kind and dosage are added on the invoice
-  let nick = prompt('Invoice Nickname (REQUIRED) — printed on the invoice instead of "' + name.trim() + '".\nBase name only: kind (PEN, VIAL…) and dosage are added automatically.', '');
-  if (nick === null) return;
-  nick = String(nick).trim();
-  if (!nick) { toast('Invoice Nickname is required — custom product not added', true); return; }
-  sb.from('custom_products').insert({ name: name.trim(), unit: (unit || 'pcs').trim() || 'pcs', invoice_nickname: nick }).then(async ({ error }) => {
-    if (error) { toast('Could not add — check the custom_products table exists', true); return; }
+  if (currentRole !== 'admin') { toast('🔒 Admin only', true); return; }
+  editCustomProductId = null;
+  document.getElementById('custom-product-modal-title').textContent = 'New Custom Product';
+  _fillCustomProductForm(null);
+  document.getElementById('custom-product-modal').classList.add('open');
+  setTimeout(() => { const n = document.getElementById('cp-name'); if (n) n.focus(); }, 30);
+}
+function editCustomProduct(id) {
+  if (currentRole !== 'admin') { toast('🔒 Admin only', true); return; }
+  const c = (customProducts || []).find(x => x.id === id); if (!c) return;
+  editCustomProductId = id;
+  document.getElementById('custom-product-modal-title').textContent = 'Edit Custom Product';
+  _fillCustomProductForm(c);
+  document.getElementById('custom-product-modal').classList.add('open');
+}
+async function saveCustomProduct() {
+  const get = id => (document.getElementById(id)?.value || '').trim();
+  const name = get('cp-name'), nick = get('cp-nick');
+  if (!name) { toast('Name is required', true); return; }
+  if (!nick) {   // v13.73: Invoice Nickname is mandatory
+    const nk = document.getElementById('cp-nick'); if (nk) { nk.style.borderColor = 'var(--red)'; nk.focus(); nk.addEventListener('input', () => { nk.style.borderColor = ''; }, { once: true }); }
+    toast('Invoice Nickname is required — it is what prints on the invoice', true); return;
+  }
+  const g = parseInt(get('cp-good-months'));
+  if (get('cp-good-months') && !(g >= 1 && g <= 240)) { toast('Good: enter months from 1 to 240 (empty = 24)', true); return; }
+  const dup = (customProducts || []).find(c => c.id !== editCustomProductId && String(c.name || '').trim().toLowerCase() === name.toLowerCase());
+  if (dup) { toast('"' + dup.name + '" already exists in Custom Products', true); return; }
+  const payload = { name, unit: get('cp-unit') || 'pcs', invoice_nickname: nick,
+    sticker_name: get('cp-sticker-name') || null, sticker_qty: get('cp-sticker-qty') || null, sub_sticker_name: get('cp-sub-sticker-name') || null,   // v13.84 (migration add_lab_15)
+    good_months: g >= 1 && g <= 240 ? g : null };
+  const btn = document.getElementById('save-custom-product-btn'); btn.disabled = true;
+  try {
+    const before = editCustomProductId ? (customProducts || []).find(x => x.id === editCustomProductId) : null;
+    const { error } = editCustomProductId
+      ? await sb.from('custom_products').update(payload).eq('id', editCustomProductId)
+      : await sb.from('custom_products').insert(payload);
+    if (error) { console.log('DB error:', error); toast('Could not save — run the add_lab_15 migration? (' + String(error.message || '').slice(0, 120) + ')', true); return; }
+    const changes = {};
+    if (before) Object.keys(payload).forEach(k => { if (String(before[k] ?? '') !== String(payload[k] ?? '')) changes[k] = { before: before[k] ?? null, after: payload[k] }; });
+    logEvent(editCustomProductId ? 'UPDATE' : 'CREATE', 'custom_product', editCustomProductId || name, { action: editCustomProductId ? 'custom_product_edit' : 'custom_product_add', name, ...(before ? { field_changes: changes } : payload) });
     await loadCustomProducts();
     renderCustomProductsGrid();
     renderCustomItemPickers();
-    toast('Custom product added');
-  });
+    closeModal('custom-product-modal');
+    toast(editCustomProductId ? '✅ Custom product saved' : '✅ Custom product added');
+  } finally { btn.disabled = false; }
 }
-
-// v13.72: inline save of a custom product's Invoice Nickname (Directories card)
-async function saveCustomProductNickname(id, value) {
-  const nick = String(value || '').trim() || null;
-  if (!nick) {   // v13.73: mandatory — an emptied field is not saved, the previous nickname comes back
-    toast('Invoice Nickname is required — not cleared', true);
-    renderCustomProductsGrid();
-    return;
-  }
-  const { error } = await sb.from('custom_products').update({ invoice_nickname: nick }).eq('id', id);
-  if (error) { console.log('DB error:', error); toast('Could not save nickname — run the add_invoice_nickname migration?', true); return; }
-  const c = (customProducts || []).find(x => x.id === id);
-  if (c) c.invoice_nickname = nick;
-  logEvent('UPDATE', 'custom_product', id, { action: 'invoice_nickname_set', name: c ? c.name : '', invoice_nickname: nick });
-  renderCustomProductsGrid();
-  toast('🧾 Nickname saved');
-}
-
-// v13.83: inline save of a custom product's Good (shelf life, months) — label EXP = MFG + Good; empty = 24
-async function saveCustomProductGood(id, value) {
-  const g = parseInt(value);
-  const good = g >= 1 && g <= 240 ? g : null;
-  if (String(value || '').trim() && !good) { toast('Good: enter months from 1 to 240 (empty = 24)', true); renderCustomProductsGrid(); return; }
-  const { error } = await sb.from('custom_products').update({ good_months: good }).eq('id', id);
-  if (error) { console.log('DB error:', error); toast('Could not save Good — run the add_lab_14 migration?', true); renderCustomProductsGrid(); return; }
-  const c = (customProducts || []).find(x => x.id === id);
-  if (c) c.good_months = good;
-  logEvent('UPDATE', 'custom_product', id, { action: 'good_months_set', name: c ? c.name : '', good_months: good });
-  toast('⏳ Good saved: ' + (good || '24 (default)') + ' months');
-}
+document.getElementById('cp-name').addEventListener('keydown', e => { if (e.key === 'Enter') saveCustomProduct(); });
 
 async function deleteCustomProduct(id) {
   if (!confirm('Delete this custom product?')) return;

@@ -1,5 +1,5 @@
 /* ============================================================================
-   MyCRM — stickers.js · label engine + template editor + station printing (v13.83)
+   MyCRM — stickers.js · label engine + template editor + station printing (v13.84)
    Loaded lazily by index.html (admin: Brand Profiles → 🏷 Label templates; packer: 🏷 Print on a batch).
    Uses the page's globals: sb (PostgREST client), toast, escAttr, currentUser, clients.
    Template = data (public.label_templates): per seller + product + kind, 'default' as the last resort (v13.83). Label size per template (default 55 × 50 mm), positions in mm.
@@ -8,7 +8,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.5';
+const STICKERS_VERSION = '1.7';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2315,16 +2315,41 @@ const SIZE_MIN = 20, SIZE_MAX = 120;                            // mm — editor
 const TAPE_DEFAULT = 80, TAPE_MAX = 120;                        // mm — media (tape) width: the printed page is tape × label height, label centred
 const GOOD_DEFAULT = 24;                                        // months — shelf life when the product card has no Good (v13.83)
 const KINDS = ['PEN', 'VIAL', 'PREMIX', 'SERUM', 'SPRAY'];      // v13.83: the kinds a template can be made for (other kinds → no kind level)
+// v13.83.1: layout.rot = 90 → the label is printed turned 90° (clockwise) on the tape: page = tape × label WIDTH, the label's
+// HEIGHT lies across the tape (55 × 50 on a 51 mm tape → page 51 × 55). Nothing else is auto-adjusted — the user picks the sizes.
 function sizeOf(L) {
   const w = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.w, LABEL.w))), h = Math.min(SIZE_MAX, Math.max(SIZE_MIN, num(L && L.h, LABEL.h)));
-  const tape = Math.min(TAPE_MAX, Math.max(w, num(L && L.tape, TAPE_DEFAULT)));
-  return { w, h, tape, margin: Math.round((tape - w) / 2 * 100) / 100 };
+  const rot = L && (L.rot === 90 || L.rot === '90' || L.rot === true) ? 90 : 0;
+  const across = rot ? h : w, along = rot ? w : h;                    // across the tape / along the tape
+  const tape = Math.min(TAPE_MAX, Math.max(across, num(L && L.tape, TAPE_DEFAULT)));
+  return { w, h, tape, margin: Math.round((tape - across) / 2 * 100) / 100, rot, pw: tape, ph: along };
+}
+// v13.83.1: a field can be duplicated ("+" in the editor): copies live in layout.fields as '<key>_2', '<key>_3'… — same data as the
+// original (second name, second qty, the same logo twice), own position / size / style; Static / Free text copies keep their own text.
+const baseKey = k => String(k || '').replace(/_\d+$/, '');
+const defOf = k => FIELD_DEFS.find(d => d.key === baseKey(k));
+function fieldKeys(L) {   // every field of the layout in print order: each base field, then its copies by number
+  const f = (L && L.fields) || {}; const out = [];
+  FIELD_DEFS.forEach(d => {
+    if (f[d.key]) out.push(d.key);
+    Object.keys(f).filter(k => k !== d.key && baseKey(k) === d.key && /_\d+$/.test(k)).sort((a, b) => parseInt(a.split('_').pop()) - parseInt(b.split('_').pop())).forEach(k => out.push(k));
+  });
+  return out;
+}
+function addFieldCopy(layout, key) {   // → the new key; copies of the QR are not offered
+  const f = layout.fields; const base = baseKey(key); const src = f[key] || f[base]; if (!src || base === 'qr') return null;
+  let n = 2; while (f[base + '_' + n]) n++;
+  const sz = sizeOf(layout); const c = JSON.parse(JSON.stringify(src)); delete c._ratioSet; c.on = true;
+  const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : 4;
+  c.x = Math.max(0, Math.min(num(c.x, 0) + 3, sz.w - Math.min(wmm, sz.w))); c.y = Math.max(0, Math.min(num(c.y, 0) + 3, sz.h - Math.min(hmm, sz.h)));
+  f[base + '_' + n] = c; return base + '_' + n;
 }
 const PX_PER_MM = 6;                                            // preview scale
 const FIELD_DEFS = [
   { key: 'logo',    label: 'Seller logo',        kind: 'image' },
   { key: 'seller',  label: 'Seller name',        kind: 'text' },
   { key: 'sname',   label: 'Sticker name (product card)', kind: 'text' },
+  { key: 'ssub',    label: 'SubSticker name (product card)', kind: 'text' },   // v13.84: 2nd line of the name
   { key: 'sqty',    label: 'Sticker qty (product card)',  kind: 'text' },
   { key: 'product', label: 'Product (order line name)',   kind: 'text' },
   { key: 'batch',   label: 'Batch no',           kind: 'text', prefix: 'Batch ' },
@@ -2342,7 +2367,8 @@ function defaultLayout() {
       logo:    { on: true,  x: 2,  y: 2,  w: 14, h: 8 },
       seller:  { on: true,  x: 17, y: 2.5, w: 34, size: 9, bold: true,  align: 'right' },
       sname:   { on: true,  x: 2,  y: 12, w: 49, size: 12, bold: true,  align: 'left' },
-      sqty:    { on: true,  x: 2,  y: 18, w: 49, size: 9,  bold: false, align: 'left' },
+      ssub:    { on: true,  x: 2,  y: 16.5, w: 49, size: 10, bold: true,  align: 'left' },
+      sqty:    { on: true,  x: 2,  y: 20.5, w: 49, size: 9,  bold: false, align: 'left' },
       product: { on: false, x: 2,  y: 12, w: 49, size: 10, bold: true,  align: 'left' },
       batch:   { on: true,  x: 2,  y: 24, w: 31, size: 8, bold: false, align: 'left', prefix: 'Batch ' },
       made:    { on: true,  x: 2,  y: 29, w: 15.5, size: 7, bold: false, align: 'left', prefix: 'MFG:' },
@@ -2392,25 +2418,26 @@ function qrSvg(text, mm) {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" width="${mm}mm" height="${mm}mm" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
   } catch (e) { return `<div style="width:${mm}mm;height:${mm}mm;border:1px dashed #999;font-size:6pt;color:#999">QR?</div>`; }
 }
-// data = { seller, product, sname, sqty, batch, made, exp, packed, qr, logo (data URL), bg }
+// data = { seller, product, sname, ssub, sqty, batch, made, exp, packed, qr, logo (data URL), bg }
 function labelHtml(layout, data, opts) {
   const L = layout || defaultLayout(); const f = L.fields || {}; const o = opts || {};
-  const valueOf = (key, cfg) => {
-    if (key === 'note' || key === 'note2') return cfg.text || '';
-    const raw = key === 'packed' ? fmtDT(data[key]) : (key === 'made' || key === 'exp') ? fmtMY(data[key]) : (data[key] ?? '');
+  const valueOf = (key, cfg) => {   // key may be a copy ('sname_2') — the data comes from its base field
+    const b = baseKey(key);
+    if (b === 'note' || b === 'note2') return cfg.text || '';
+    const raw = b === 'packed' ? fmtDT(data[b]) : (b === 'made' || b === 'exp') ? fmtMY(data[b]) : (data[b] ?? '');
     return (cfg.prefix || '') + raw;
   };
   let inner = data.bg && L.bgOn !== false ? `<img class="stk-bg" src="${data.bg}" alt="">` : '';
-  FIELD_DEFS.forEach(def => {
-    const cfg = f[def.key]; if (!cfg || !cfg.on) return;
+  fieldKeys(L).forEach(key => {
+    const def = defOf(key), cfg = f[key]; if (!def || !cfg || !cfg.on) return;
     const pos = `left:${num(cfg.x, 0)}mm;top:${num(cfg.y, 0)}mm;`;
-    const sel = o.selected === def.key ? ' sel' : '';
+    const sel = o.selected === key ? ' sel' : '';
     if (def.kind === 'image') {
-      inner += `<div class="stk-f${sel}" data-key="${def.key}" style="${pos}width:${num(cfg.w, 14)}mm;height:${num(cfg.h, 8)}mm">${data.logo ? `<img src="${data.logo}" style="width:100%;height:100%;object-fit:contain;display:block">` : (o.editor ? '<div class="stk-ph">logo</div>' : '')}</div>`;
+      inner += `<div class="stk-f${sel}" data-key="${key}" style="${pos}width:${num(cfg.w, 14)}mm;height:${num(cfg.h, 8)}mm">${data.logo ? `<img src="${data.logo}" style="width:100%;height:100%;object-fit:contain;display:block">` : (o.editor ? '<div class="stk-ph">logo</div>' : '')}</div>`;
     } else if (def.kind === 'qr') {
-      inner += `<div class="stk-f${sel}" data-key="${def.key}" style="${pos}width:${num(cfg.size, 16)}mm;height:${num(cfg.size, 16)}mm">${qrSvg(data.qr, num(cfg.size, 16))}</div>`;
+      inner += `<div class="stk-f${sel}" data-key="${key}" style="${pos}width:${num(cfg.size, 16)}mm;height:${num(cfg.size, 16)}mm">${qrSvg(data.qr, num(cfg.size, 16))}</div>`;
     } else {
-      inner += `<div class="stk-f stk-t${sel}" data-key="${def.key}" style="${pos}width:${num(cfg.w, 30)}mm;font-size:${num(cfg.size, 8)}pt;font-weight:${cfg.bold ? 700 : 400};text-align:${cfg.align || 'left'}">${esc(valueOf(def.key, cfg))}</div>`;
+      inner += `<div class="stk-f stk-t${sel}" data-key="${key}" style="${pos}width:${num(cfg.w, 30)}mm;font-size:${num(cfg.size, 8)}pt;font-weight:${cfg.bold ? 700 : 400};text-align:${cfg.align || 'left'}">${esc(valueOf(key, cfg))}</div>`;
     }
   });
   const sz = sizeOf(L);
@@ -2428,17 +2455,21 @@ function openPrintWindow() {   // call it synchronously inside the click handler
 }
 function printLabels(layout, dataList, win) {
   const sz = sizeOf(layout);
-  // one page per label: page = tape width × label height, the label sits in the middle of the tape (equal margins left / right)
-  const labels = (dataList || []).map(d => `<div class="pg">${labelHtml(layout, d)}</div>`).join('');
+  // one page per label: page = tape width × label length along the tape, the label sits in the middle of the tape (equal margins
+  // left / right). rot 90: the label is drawn in its own w × h box and turned clockwise inside an h × w slot (v13.83.1).
+  const wrap = html => sz.rot ? `<div class="rot">${html}</div>` : html;
+  const labels = (dataList || []).map(d => `<div class="pg">${wrap(labelHtml(layout, d))}</div>`).join('');
   const w = win || window.open('', '_blank', 'width=420,height=520');
   if (!w) { if (typeof toast === 'function') toast('Pop-up blocked — allow pop-ups for this site to print', true); return null; }
   w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels ${sz.tape}x${sz.h}</title><style>
-    @page{size:${sz.tape}mm ${sz.h}mm;margin:0}
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Labels ${sz.pw}x${sz.ph}</title><style>
+    @page{size:${sz.pw}mm ${sz.ph}mm;margin:0}
     html,body{margin:0;padding:0;background:#fff}
     ${LABEL_CSS}
-    .pg{width:${sz.tape}mm;height:${sz.h}mm;box-sizing:border-box;padding-left:${sz.margin}mm;overflow:hidden;page-break-after:always;break-after:page}
+    .pg{width:${sz.pw}mm;height:${sz.ph}mm;box-sizing:border-box;padding-left:${sz.margin}mm;overflow:hidden;page-break-after:always;break-after:page}
     .pg:last-child{page-break-after:auto;break-after:auto}
+    .rot{width:${sz.h}mm;height:${sz.w}mm;position:relative;overflow:hidden}
+    .rot .stk{transform:rotate(90deg) translateY(-100%);transform-origin:0 0}
   </style></head><body>${labels}<script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`);
   w.document.close();
   return w;
@@ -2478,6 +2509,10 @@ function upgradeLayout(layout) {
   if (!layout || !layout.fields) return layout;
   const f = layout.fields;
   if (f.made && (f.made.prefix === undefined || /^made\b/i.test(String(f.made.prefix)))) f.made.prefix = 'MFG:';
+  if (!f.ssub && f.sname) {   // v13.84: SubSticker name — right under the sticker name, same width / alignment, a bit smaller
+    const n = f.sname; const sz = sizeOf(layout);
+    f.ssub = { on: n.on !== false, x: num(n.x, 2), y: Math.min(sz.h - 4, num(n.y, 12) + Math.round(num(n.size, 12) * 0.37 * 2) / 2), w: num(n.w, 49), size: Math.max(6, num(n.size, 12) - 2), bold: !!n.bold, align: n.align || 'left' };
+  }
   if (!f.exp) {
     const m = f.made || defaultLayout().fields.made; const sz = sizeOf(layout);
     const w = Math.min(15.5, Math.max(8, num(m.w, 31) / 2)), x = Math.min(sz.w - w, num(m.x, 2) + w);
@@ -2569,7 +2604,7 @@ async function printFor(ctx, data, count, win) {
   if (!w) throw new Error('Pop-up blocked — allow pop-ups for this site to print');
   const sz = sizeOf(t.layout);
   const name = t.missing ? 'Default' : tplName(t);
-  return { count: n, template: t.key || 'default', name, level: t.level, inherited: !!(t.missing || (t.level === 8 && (c.sellerId || c.productId || c.customId))), size: sz.w + 'x' + sz.h, tape: sz.tape, exp: d.exp || null };
+  return { count: n, template: t.key || 'default', name, level: t.level, inherited: !!(t.missing || (t.level === 8 && (c.sellerId || c.productId || c.customId))), size: sz.w + 'x' + sz.h, tape: sz.tape, rot: sz.rot, page: sz.pw + 'x' + sz.ph, exp: d.exp || null };
 }
 // Station dialog: how many labels + which seller. Resolves { count, sellerId, sellerName, win } (win = print window opened on the click) or null.
 // o = { sub, count, sellerFixed: {id, name} | null, sellers: [{id, name}], sellerPreset, hint }
@@ -2636,12 +2671,12 @@ const LEAVE_MSG = () => 'Unsaved changes to the "' + edName() + '" label templat
 const SAMPLE = () => {
   const p = edProduct();
   const made = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
-  return { seller: ED.sellerName || 'Seller name', product: p ? p.name : 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: (p && p.sticker_name) || (p ? p.name : 'RETAKLIK'), sqty: p ? (p.sticker_qty || '') : '30 mg / 2.4 ml', batch: '261013-38',
+  return { seller: ED.sellerName || 'Seller name', product: p ? p.name : 'RETAKLIK (RETA-GLP3) INJECTION 30mg/2.4ml', sname: (p && p.sticker_name) || (p ? p.name : 'RETAKLIK'), ssub: p ? (p.sub_sticker_name || '') : '(RETA-GLP3) INJECTION', sqty: p ? (p.sticker_qty || '') : '30 mg / 2.4 ml', batch: '261013-38',
     made, exp: expiryDate(made, p ? p.good_months : null), packed: new Date().toISOString(), qr: '261013-38', logo: ED.logo, bg: ED.bg };
 };
 function edProduct() {   // the product card behind the editor's product pick (regular: products / _allProducts; custom: customProducts)
   if (ED.productId) return allProducts().find(p => String(p.id) === String(ED.productId)) || null;
-  if (ED.customId) { const c = customList().find(x => String(x.id) === String(ED.customId)); return c ? { ...c, sticker_name: c.name, sticker_qty: '' } : null; }
+  if (ED.customId) { const c = customList().find(x => String(x.id) === String(ED.customId)); return c ? { ...c, sticker_name: c.sticker_name || c.name, sticker_qty: c.sticker_qty || '' } : null; }
   return null;
 }
 const allProducts = () => (typeof window !== 'undefined' && window._allProducts) || (typeof products !== 'undefined' ? products : []) || [];
@@ -2653,6 +2688,10 @@ const EDITOR_CSS = `
 #stk-editor .stk-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px}
 #stk-editor .stk-row.sel{border-color:var(--accent);background:rgba(245,166,35,.08)}
 #stk-editor .stk-row input[type=checkbox]{width:15px;height:15px}
+#stk-editor .stk-row span{flex:1}
+#stk-editor .stk-row.copy{margin-left:18px;border-style:dashed}
+#stk-editor .stk-mini{width:22px;height:22px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;line-height:1;cursor:pointer;flex:none}
+#stk-editor .stk-mini:hover{border-color:var(--accent)}
 #stk-editor .stk-props{margin-top:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:11px;font-family:var(--mono);color:var(--muted)}
 #stk-editor .stk-props input[type=number],#stk-editor .stk-props select,#stk-editor .stk-props input[type=text]{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none}
 #stk-editor .stk-stage{display:flex;flex-direction:column;align-items:center;gap:8px}
@@ -2710,8 +2749,9 @@ function ensureEditorDom() {
             <label>width</label><input type="number" id="stk-w" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
             <label>height</label><input type="number" id="stk-h" step="0.5" min="${SIZE_MIN}" max="${SIZE_MAX}">
             <label>tape width</label><input type="number" id="stk-tape" step="0.5" min="${SIZE_MIN}" max="${TAPE_MAX}" title="Width of the continuous tape in the printer — the label is centred on it">
-            <div class="stk-hint" id="stk-tape-hint" style="grid-column:3/-1"></div>
-            <div class="stk-hint" style="grid-column:1/-1">Printer dialog: paper = tape width × label height, margins none, scale 100 %. Media type in the Epson driver: continuous paper (no gap / black-mark detection).</div>
+            <label title="Print the label turned 90° on the tape: the label HEIGHT lies across the tape, the page becomes tape × label width">rotate 90°</label><input type="checkbox" id="stk-rot" style="width:15px;height:15px;justify-self:start" title="Print the label turned 90° on the tape">
+            <div class="stk-hint" id="stk-tape-hint" style="grid-column:1/-1"></div>
+            <div class="stk-hint" style="grid-column:1/-1">Printer dialog: paper = the page size above, margins none, scale 100 %. Media type in the Epson driver: continuous paper (no gap / black-mark detection).</div>
           </div>
         </div>
         <div class="stk-actions">
@@ -2747,6 +2787,7 @@ function ensureEditorDom() {
     const v = Math.min(max, Math.max(SIZE_MIN, num(e.target.value, LABEL.w))); e.target.value = v;
     ED.layout[id === 'stk-w' ? 'w' : id === 'stk-h' ? 'h' : 'tape'] = v; ED.dirty = true; fitFields(ED.layout); renderEditor();
   }; });
+  document.getElementById('stk-rot').onchange = e => { ED.layout.rot = e.target.checked ? 90 : 0; ED.dirty = true; renderEditor(); };   // v13.83.1
   document.getElementById('stk-delete').onclick = async () => {
     const key = keyOf(edTarget());
     if (key === 'default') { toast('The Default template cannot be deleted', true); return; }
@@ -2801,7 +2842,7 @@ function addMissingFields(layout) {   // fields added after the template was sav
 function fitFields(layout) {   // after the label got smaller: keep every field inside
   const sz = sizeOf(layout);
   Object.entries(layout.fields || {}).forEach(([k, c]) => {
-    const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (k === 'qr' ? num(c.size, 16) : 4);
+    const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (baseKey(k) === 'qr' ? num(c.size, 16) : 4);
     c.x = Math.max(0, Math.min(num(c.x, 0), sz.w - Math.min(wmm, sz.w))); c.y = Math.max(0, Math.min(num(c.y, 0), sz.h - Math.min(hmm, sz.h)));
   });
 }
@@ -2846,23 +2887,27 @@ function renderEditor() {
   const key = keyOf(edTarget());
   document.getElementById('stk-sub').textContent = (key === 'default' ? 'Default — used when nothing more specific exists' : edName()) + (ED.inherited ? ' · no template yet: showing ' + (ED.inheritedFrom || 'Default') : '');
   document.getElementById('stk-meta').textContent = ED.meta && ED.meta.updated_at ? 'saved ' + fmtDT(ED.meta.updated_at) + (ED.meta.updated_by ? ' by ' + ED.meta.updated_by : '') : (ED.inherited ? '' : 'not saved yet');
-  document.getElementById('stk-fields').innerHTML = FIELD_DEFS.map(d => `<div class="stk-row${ED.selected === d.key ? ' sel' : ''}" data-key="${d.key}"><input type="checkbox" ${f[d.key] && f[d.key].on ? 'checked' : ''} data-toggle="${d.key}"><span>${esc(d.label)}</span></div>`).join('');
+  // v13.83.1: each base field has "+" (duplicate — same data, own place / style); copies are listed under it with "✕"; no copies of the QR
+  document.getElementById('stk-fields').innerHTML = fieldKeys(ED.layout).map(k => { const d = defOf(k), copy = k !== d.key; return `<div class="stk-row${ED.selected === k ? ' sel' : ''}${copy ? ' copy' : ''}" data-key="${k}"><input type="checkbox" ${f[k] && f[k].on ? 'checked' : ''} data-toggle="${k}"><span>${esc(d.label)}${copy ? ' <b>#' + k.split('_').pop() + '</b>' : ''}</span>${copy ? `<button type="button" class="stk-mini" data-del="${k}" title="Remove this copy">✕</button>` : (d.key !== 'qr' ? `<button type="button" class="stk-mini" data-add="${k}" title="Add a copy of this field (second ${esc(d.label.toLowerCase())}) — same data, its own place and size">+</button>` : '')}</div>`; }).join('');
   document.querySelectorAll('#stk-fields .stk-row').forEach(row => {
-    row.onclick = e => { if (e.target.tagName === 'INPUT') return; ED.selected = row.dataset.key; renderEditor(); };
+    row.onclick = e => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return; ED.selected = row.dataset.key; renderEditor(); };
     row.querySelector('input').onchange = e => { f[row.dataset.key].on = e.target.checked; ED.dirty = true; renderEditor(); };
+    const add = row.querySelector('[data-add]'); if (add) add.onclick = () => { const k = addFieldCopy(ED.layout, add.dataset.add); if (k) { ED.selected = k; ED.dirty = true; renderEditor(); } };
+    const del = row.querySelector('[data-del]'); if (del) del.onclick = () => { delete f[del.dataset.del]; if (ED.selected === del.dataset.del) ED.selected = null; ED.dirty = true; renderEditor(); };
   });
-  const sz = sizeOf(ED.layout); const wi = document.getElementById('stk-w'), hi = document.getElementById('stk-h'), ti = document.getElementById('stk-tape');
-  if (wi) wi.value = sz.w; if (hi) hi.value = sz.h; if (ti) ti.value = sz.tape;
-  const sh = document.getElementById('stk-size-hint'); if (sh) sh.textContent = sz.w + ' × ' + sz.h + ' mm on ' + sz.tape + ' mm tape · drag fields · grid 5 mm · ' + PX_PER_MM + ' px = 1 mm';
-  const th = document.getElementById('stk-tape-hint'); if (th) th.textContent = sz.margin > 0 ? 'page ' + sz.tape + ' × ' + sz.h + ' mm, label centred, ' + sz.margin + ' mm margin each side' : 'page = label, no side margins';
+  const sz = sizeOf(ED.layout); const wi = document.getElementById('stk-w'), hi = document.getElementById('stk-h'), ti = document.getElementById('stk-tape'), ri = document.getElementById('stk-rot');
+  if (wi) wi.value = sz.w; if (hi) hi.value = sz.h; if (ti) ti.value = sz.tape; if (ri) ri.checked = !!sz.rot;
+  const sh = document.getElementById('stk-size-hint'); if (sh) sh.textContent = sz.w + ' × ' + sz.h + ' mm on ' + sz.tape + ' mm tape' + (sz.rot ? ' · printed turned 90°' : '') + ' · drag fields · grid 5 mm · ' + PX_PER_MM + ' px = 1 mm';
+  const th = document.getElementById('stk-tape-hint'); if (th) th.textContent = (sz.rot ? 'rotated 90°: page ' + sz.pw + ' × ' + sz.ph + ' mm (label height ' + sz.h + ' across the tape)' : 'page ' + sz.pw + ' × ' + sz.ph + ' mm') + (sz.margin > 0 ? ', label centred, ' + sz.margin + ' mm margin each side' : ', no side margins');
   renderProps(); renderBoard(); renderLogoBox(); renderBgBox();
 }
 function renderProps() {
   const el = document.getElementById('stk-props'); const k = ED.selected; const f = ED.layout.fields;
   if (!k || !f[k]) { el.innerHTML = '<div style="grid-column:1/-1">Click a field to edit its size and position, or drag it on the label.</div>'; return; }
-  const def = FIELD_DEFS.find(d => d.key === k), c = f[k]; const sz = sizeOf(ED.layout);
+  const def = defOf(k), c = f[k]; const sz = sizeOf(ED.layout); const b = baseKey(k);
+  if (!def) { el.innerHTML = ''; return; }
   const numIn = (p, step, min, max) => `<input type="number" step="${step}" min="${min}" max="${max}" value="${c[p] ?? ''}" data-prop="${p}">`;
-  let h = `<div style="grid-column:1/-1;color:var(--text);font-weight:700">${esc(def.label)}</div>
+  let h = `<div style="grid-column:1/-1;color:var(--text);font-weight:700">${esc(def.label)}${k !== b ? ' #' + k.split('_').pop() + ' <span style="font-weight:400;color:var(--muted)">(copy — same data)</span>' : ''}</div>
     <label>x mm</label>${numIn('x', 0.5, 0, sz.w)}<label>y mm</label>${numIn('y', 0.5, 0, sz.h)}`;
   if (def.kind === 'image') h += `<label>width mm</label>${numIn('w', 0.5, 2, sz.w)}<label>height mm</label>${numIn('h', 0.5, 2, sz.h)}`;
   else if (def.kind === 'qr') h += `<label>size mm</label>${numIn('size', 0.5, 8, 40)}`;
@@ -2870,8 +2915,8 @@ function renderProps() {
     <label>bold</label><input type="checkbox" ${c.bold ? 'checked' : ''} data-prop="bold" style="width:15px;height:15px;justify-self:start">
     <label>align</label><select data-prop="align"><option value="left" ${c.align === 'left' ? 'selected' : ''}>left</option><option value="center" ${c.align === 'center' ? 'selected' : ''}>center</option><option value="right" ${c.align === 'right' ? 'selected' : ''}>right</option></select>
     ${def.prefix !== undefined ? `<label>prefix</label><input type="text" value="${esc(c.prefix ?? def.prefix)}" data-prop="prefix">` : ''}
-    ${k === 'exp' ? `<div class="stk-hint" style="grid-column:1/-1">EXP = MFG + Good (months) from the product card (empty = ${GOOD_DEFAULT}); written to the batch on the first print</div>` : ''}
-    ${k === 'note' || k === 'note2' ? `<label style="align-self:start">text</label><textarea data-prop="text" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;resize:vertical">${esc(c.text ?? '')}</textarea>` : ''}`;
+    ${b === 'exp' ? `<div class="stk-hint" style="grid-column:1/-1">EXP = MFG + Good (months) from the product card (empty = ${GOOD_DEFAULT}); written to the batch on the first print</div>` : ''}
+    ${b === 'note' || b === 'note2' ? `<label style="align-self:start">text</label><textarea data-prop="text" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;resize:vertical">${esc(c.text ?? '')}</textarea>` : ''}`;
   el.innerHTML = h;
   el.querySelectorAll('[data-prop]').forEach(inp => {
     inp.oninput = () => { const p = inp.dataset.prop; c[p] = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? num(inp.value, c[p]) : inp.value); ED.dirty = true; renderBoard(); };
@@ -2893,7 +2938,7 @@ function renderBoard() {
       const key = el.dataset.key, c = ED.layout.fields[key]; if (!c) return;
       e.preventDefault(); el.setPointerCapture(e.pointerId);
       const sx = e.clientX, sy = e.clientY, ox = num(c.x, 0), oy = num(c.y, 0);
-      const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (c.size && key === 'qr' ? num(c.size, 16) : 4);
+      const wmm = c.w != null ? num(c.w, 10) : num(c.size, 16), hmm = c.h != null ? num(c.h, 8) : (c.size && baseKey(key) === 'qr' ? num(c.size, 16) : 4);
       if (ED.selected !== key) selectField(key);                                   // keep the board DOM — this node has the pointer capture
       const move = ev => {
         const nx = Math.round(Math.min(sz.w - wmm, Math.max(0, ox + (ev.clientX - sx) / PX_PER_MM)) * 2) / 2;
@@ -2967,5 +3012,5 @@ async function saveFromEditor() {
 }
 
 window.Stickers = { version: STICKERS_VERSION, openEditor, closeEditor, labelHtml, printLabels, printFor, printDialog, openPrintWindow, loadTemplate, resolveTemplate, candidateKeys, listTemplates, saveTemplate, deleteTemplate,
-                    defaultLayout, upgradeLayout, sizeOf, keyOf, parseKey, tplName, expiryDate, fmtMY, FIELD_DEFS, LABEL, KINDS, GOOD_DEFAULT, _ED: ED, _cache };
+                    defaultLayout, upgradeLayout, sizeOf, keyOf, parseKey, tplName, expiryDate, fmtMY, fieldKeys, baseKey, addFieldCopy, FIELD_DEFS, LABEL, KINDS, GOOD_DEFAULT, _ED: ED, _cache };
 })();
