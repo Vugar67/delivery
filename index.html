@@ -1306,6 +1306,11 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="form-group"><label>Full Name</label><input id="d-name" placeholder="e.g. Ahmed Al Rashid"></div>
       <div class="form-group"><label>Phone Number</label><input id="d-phone" placeholder="+971 5x xxx xxxx" type="tel"></div>
+      <!-- v13.85: which MyCRM account signs in to the Driver app (Android) as this driver -->
+      <div class="form-group" id="d-app-user-group" style="display:none"><label>Driver app account</label>
+        <select id="d-app-user"><option value="">— none (WhatsApp only) —</option></select>
+        <div id="d-app-user-hint" style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4">Accounts with role <b>driver</b> (admin app → Users). The driver signs in to the MyCRM Driver app with it and sees his En Route orders.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('driver-modal')">Cancel</button>
@@ -1835,7 +1840,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.84.1';
+const APP_VERSION = 'v13.85';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2363,6 +2368,14 @@ function _allProductCategories(src) {
   return [...new Set(fromProducts.concat(fromRegistry).filter(Boolean))].sort();
 }
 
+// v13.85: a persistent line under the login form (a toast disappears before people read it)
+function _showLoginNotice(html){
+  const box=document.querySelector('.login-card')||document.querySelector('.login-box'); if(!box) return;
+  let el=document.getElementById('login-notice');
+  if(!el){ el=document.createElement('div'); el.id='login-notice'; el.style.cssText='margin-top:14px;padding:10px 12px;border:1px solid var(--accent);border-radius:8px;font-size:13px;line-height:1.45;color:var(--text);background:rgba(245,166,35,.08)'; box.appendChild(el); }
+  el.innerHTML=html;
+}
+
 async function loadProfile(){
   const{data}=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
   // Block deleted or deactivated users before granting any access
@@ -2373,6 +2386,14 @@ async function loadProfile(){
   }
   if(data?.active===false){
     toast('❌ Your account has been deactivated',true);
+    await sb.auth.signOut();
+    return false;
+  }
+  if(data?.role==='driver'){
+    // v13.85: driver accounts work only in the MyCRM Driver app (Android) — the core has no screen for them
+    logEvent('LOGIN','session',currentUser?.id||'',{email:currentUser?.email,role:'driver',refused:'driver_app_only'});
+    toast('🚚 Driver accounts sign in to the MyCRM Driver app on Android',true);
+    _showLoginNotice('🚚 This is a driver account. Use the <b>MyCRM Driver</b> app on your Android phone — download: <a href="./driver/" style="color:var(--accent)">mycrm.center/driver</a>');
     await sb.auth.signOut();
     return false;
   }
@@ -3019,7 +3040,7 @@ function renderDriversGrid() {
           ${d.name.slice(0,1).toUpperCase()}
         </div>
         <div>
-          <div style="font-size:13px;font-weight:600">${d.name}</div>
+          <div style="font-size:13px;font-weight:600">${d.name}${d.profile_id ? ' <span title="Works in the MyCRM Driver app" style="font-size:10px;font-family:var(--mono);color:var(--green);border:1px solid var(--green);border-radius:4px;padding:0 4px;margin-left:4px">📱 app</span>' : ''}</div>
           ${d.phone ? `<div style="font-size:12px;color:var(--blue);font-family:var(--mono)">${d.phone}</div>` : '<div style="font-size:11px;color:var(--muted)">No phone</div>'}
         </div>
       </div>
@@ -3036,6 +3057,7 @@ function openNewDriver() {
   document.getElementById('driver-modal-title').textContent = 'Add Driver';
   document.getElementById('d-name').value = '';
   document.getElementById('d-phone').value = '';
+  _fillDriverAppUser(null);   // v13.85
   document.getElementById('driver-modal').classList.add('open');
   setTimeout(() => document.getElementById('d-name').focus(), 100);
 }
@@ -3047,6 +3069,7 @@ function openEditDriver(id) {
   document.getElementById('driver-modal-title').textContent = 'Edit Driver';
   document.getElementById('d-name').value = d.name;
   document.getElementById('d-phone').value = d.phone || '';
+  _fillDriverAppUser(d);   // v13.85
   document.getElementById('driver-modal').classList.add('open');
 }
 
@@ -3057,6 +3080,23 @@ async function saveDriver() {
   const btn = document.getElementById('save-driver-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   const payload = {name, phone: phone || null};
+  // v13.85: Driver app account (drivers.profile_id) — only when the migration is in
+  const before = editDriverId ? drivers.find(x => x.id === editDriverId) : null;
+  let appUserChanged = false, appUserEmail = null;
+  if (_driverAppReady && document.getElementById('d-app-user-group').style.display !== 'none') {
+    const pid = document.getElementById('d-app-user').value || null;
+    payload.profile_id = pid;
+    appUserChanged = (before ? (before.profile_id || null) : null) !== pid;
+    const pr = _driverProfiles.find(p => p.id === pid);
+    appUserEmail = pr ? pr.email : (pid ? pid : null);
+    // the Driver app matches orders by NAME — renaming a driver with orders En Route would hide them from the app
+    if (before && before.name !== name && before.profile_id) {
+      const enRoute = orders.filter(o => o.driver === before.name && o.delivery_status === 'En Route').length;
+      if (enRoute && !confirm(before.name + ' has ' + enRoute + ' order(s) En Route. After renaming they will disappear from his Driver app until reassigned. Rename anyway?')) {
+        btn.disabled = false; btn.textContent = 'Save'; return;
+      }
+    }
+  }
   let error;
   if (editDriverId) {
     ({error} = await sb.from('drivers').update(payload).eq('id', editDriverId));
@@ -3064,8 +3104,14 @@ async function saveDriver() {
     ({error} = await sb.from('drivers').insert(payload));
   }
   btn.disabled = false; btn.textContent = 'Save';
-  if (error) { (console.log('DB error:', error), toast('Something went wrong. Please try again.', true)); return; }
-  logEvent(editDriverId ? 'UPDATE' : 'CREATE', 'driver', editDriverId || '', { name, phone: phone || null });
+  if (error) {
+    console.log('DB error:', error);
+    const m = String(error.message || error.details || '');
+    toast(/drivers_profile_id_uq|duplicate key/i.test(m) ? 'This app account is already linked to another driver' : 'Something went wrong. Please try again.', true);
+    return;
+  }
+  logEvent(editDriverId ? 'UPDATE' : 'CREATE', 'driver', editDriverId || '', Object.assign({ name, phone: phone || null },
+    appUserChanged ? { action: 'driver_app_link', app_account: appUserEmail, field_changes: { app_account: { before: (before && before.profile_id) ? (_driverProfiles.find(p => p.id === before.profile_id)?.email || before.profile_id) : null, after: appUserEmail } } } : {}));
   toast(editDriverId ? 'Driver updated' : 'Driver added');
   closeModal('driver-modal');
   await loadDrivers();
@@ -3091,6 +3137,8 @@ async function deleteDriver(id) {
 let locations = [];
 
 let drivers = [];
+let _driverAppReady = false;       // v13.85: drivers.profile_id exists (migration add_driver_app.sql)
+let _driverProfiles = [];          // v13.85: profiles with role 'driver' (for the Driver app account select)
 let deliveryRates = [];
 
 async function loadDeliveryRates() {
@@ -3180,6 +3228,46 @@ function resetDeliveryPresets(value) {
 async function loadDrivers() {
   const {data} = await sb.from('drivers').select('*').eq('active', true).order('name');
   drivers = data || [];
+  _driverAppReady = drivers.some(d => Object.prototype.hasOwnProperty.call(d, 'profile_id'));   // v13.85
+}
+
+// v13.85: does this driver work in the Driver app? (account linked)
+function _driverHasApp(name) {
+  const d = drivers.find(x => x.name === name);
+  return !!(d && d.profile_id);
+}
+
+async function _loadDriverProfiles() {
+  const { data } = await sb.from('profiles').select('id,email,name,role,active,deleted_at').eq('role', 'driver');
+  _driverProfiles = (data || []).filter(p => !p.deleted_at);
+  return _driverProfiles;
+}
+
+async function _fillDriverAppUser(driver) {
+  const grp = document.getElementById('d-app-user-group');
+  const sel = document.getElementById('d-app-user');
+  if (!grp || !sel) return;
+  if (!_driverAppReady) { grp.style.display = 'none'; return; }
+  grp.style.display = '';
+  sel.innerHTML = '<option value="">— none (WhatsApp only) —</option>';
+  try { await _loadDriverProfiles(); } catch (e) { _driverProfiles = []; }
+  const takenBy = {};
+  drivers.forEach(d => { if (d.profile_id && (!driver || d.id !== driver.id)) takenBy[d.profile_id] = d.name; });
+  _driverProfiles
+    .slice().sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')))
+    .forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = (p.name ? p.name + ' · ' : '') + (p.email || p.id) + (p.active === false ? ' (inactive)' : '') + (takenBy[p.id] ? ' — linked to ' + takenBy[p.id] : '');
+      if (takenBy[p.id]) o.disabled = true;
+      sel.appendChild(o);
+    });
+  sel.value = (driver && driver.profile_id) || '';
+  if (driver && driver.profile_id && sel.value !== driver.profile_id) {
+    // linked account is not a driver profile any more — keep it visible so Save does not unlink silently
+    const o = document.createElement('option'); o.value = driver.profile_id; o.textContent = 'current account (role is no longer driver)';
+    sel.appendChild(o); sel.value = driver.profile_id;
+  }
 }
 
 async function loadLocations() {
@@ -8856,6 +8944,7 @@ async function sendToDriver(orderId) {
   lines.push(`💰 *Payment:* ${o.payment_status||'—'}`);
   if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*`);
   if (o.driver_note) lines.push(`📝 *Note:* ${o.driver_note}`);
+  if (driver.profile_id) lines.push(`📱 *Open in app:* https://mycrm.center/driver/o/${o.order_num}`);   // v13.85: Driver app
   const msg = lines.join('\n');
   const phone = driver.phone.replace(/[^0-9]/g, '');
   // Try desktop app first, fallback to web
@@ -9967,9 +10056,20 @@ function renderDispatchQueue() {
       <div style="font-size:12px;color:var(--text)">${o.client_name||'—'}</div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[o.emirate, o.city].filter(Boolean).join(' · ')} ${o.client_number ? '· ' + o.client_number : ''}</div>
       ${itemCount ? `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:3px">${itemCount} item${itemCount!==1?'s':''}</div>` : ''}
+      ${_failBadgeHtml(o)}
       ${o.driver_note && o.driver_note.trim() ? `<div style="font-size:11px;color:var(--accent);margin-top:4px;white-space:pre-wrap;line-height:1.4">📝 ${escHtml(o.driver_note.trim())}</div>` : ''}
     </div>`;
   }).join('');
+}
+
+// v13.85: last failed delivery attempt (driver app or ↩ Failed), shown in the queue for 24 h
+function _failBadgeHtml(o) {
+  if (!o || !o.last_fail_at) return '';
+  const t = new Date(o.last_fail_at);
+  if (isNaN(t) || Date.now() - t.getTime() > 24 * 3600 * 1000) return '';
+  const hhmm = t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' });
+  const n = parseInt(o.fail_count, 10) || 0;
+  return `<div style="font-size:11px;color:var(--red);margin-top:4px;font-family:var(--mono);line-height:1.4">↩ failed ${hhmm}${o.last_fail_by ? ' · ' + escHtml(o.last_fail_by) : ''}${o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''}${n > 1 ? ' · ×' + n : ''}</div>`;
 }
 
 function toggleDispatchOrder(id) {
@@ -10109,8 +10209,15 @@ async function dispatchMarkFailed(orderId) {
   const failedDriver = o.driver;
   // Same reset as Unassign, but the failed ATTEMPT is recorded with its reason —
   // Unassign means "we cancelled the dispatch", Failed means "driver went and could not".
-  await sb.from('orders').update({ driver: null, wa_sent: false, wa_sent_at: null, wa_sent_by: null, delivery_status: 'Ready for Pick-up', updated_by: currentUser.email }).eq('id', orderId);
+  const _failPatch = { driver: null, wa_sent: false, wa_sent_at: null, wa_sent_by: null, delivery_status: 'Ready for Pick-up', updated_by: currentUser.email };
+  const _failAt = new Date().toISOString();
+  // v13.85: the attempt itself (same fields the Driver app writes) — only when the columns exist
+  const _hasFailCols = Object.prototype.hasOwnProperty.call(o, 'fail_count');
+  if (_hasFailCols) Object.assign(_failPatch, { last_fail_at: _failAt, last_fail_by: failedDriver, last_fail_reason: reason, fail_count: (parseInt(o.fail_count, 10) || 0) + 1 });
+  const { error: _failErr } = await sb.from('orders').update(_failPatch).eq('id', orderId);
+  if (_failErr) { console.log('DB error:', _failErr); toast('Could not save — please try again', true); return; }
   o.driver = null; o.wa_sent = false; o.wa_sent_at = null; o.delivery_status = 'Ready for Pick-up';
+  if (_hasFailCols) Object.assign(o, { last_fail_at: _failAt, last_fail_by: failedDriver, last_fail_reason: reason, fail_count: _failPatch.fail_count });
   logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_delivery_failed', driver_failed: failedDriver, reason: reason, delivery_status: 'Ready for Pick-up' });
   renderDispatchSent();
   renderDispatchQueue();
@@ -10319,7 +10426,7 @@ function renderDispatchSent() {
   });
   el.innerHTML = Object.entries(byDriver).map(([driver, dOrders]) => `
     <div style="margin-bottom:10px">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;padding:4px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)">🚗 ${driver} (${dOrders.length})</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;padding:4px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)">🚗 ${driver} (${dOrders.length})${_driverHasApp(driver) ? ' <span title="Closes orders himself in the MyCRM Driver app" style="color:var(--green);font-weight:400">📱 app</span>' : ''}</div>
       ${dOrders.map(o => {
         const sentAgo = o.wa_sent_at ? (() => {
           const diff = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000);
