@@ -1835,7 +1835,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.84';
+const APP_VERSION = 'v13.84.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6252,7 +6252,7 @@ async function _labSellers() {
 // seller+kind → seller → product+kind → product → kind → Default). Regular product: kind = product card (products.type).
 // Custom line: the Custom Products entry + the KIND chip saved on the line (order_items.custom_product_id / label_kind, read
 // through lab_label_lines_v); a custom line renamed with ✎ (name_edited) gets NO label; old lines (no link) → seller → Default.
-// Stock batch (no order): seller from the dialog → Default only (decided 14.10). MFG = batch closed by the Mixer (MM/YYYY),
+// Stock batch (no order): seller from the dialog + the batch's product + kind from the card → the same chain (v13.84.1; was seller → Default only). MFG = batch closed by the Mixer (MM/YYYY),
 // EXP = MFG + Good (months, product card, empty = 24) — written to lab_batches.expiry_date on the FIRST print (lab_set_expiry),
 // later prints reuse the stored date.
 async function _labLabelCtx(b, c) {   // → { productId, customId, kind, goodMonths, blocked, sname, ssub, sqty } (v13.84: sticker fields of the line's product card)
@@ -6272,7 +6272,7 @@ async function _labLabelCtx(b, c) {   // → { productId, customId, kind, goodMo
     try { const { data } = await sb.from('products').select('*').eq('id', b.product_id).single(); if (data) p = { ...(p || {}), ...data }; } catch (e) {}
     ctx.goodMonths = p && p.good_months || null;
     ctx.sname = (p && p.sticker_name) || null; ctx.ssub = (p && p.sub_sticker_name) || null; ctx.sqty = (p && p.sticker_qty) || null;   // v13.84
-    if (c) { ctx.productId = String(b.product_id); ctx.kind = (p && p.type) || null; }   // stock batch → no product templates
+    ctx.productId = String(b.product_id); ctx.kind = (p && p.type) || null;   // v13.84.1: stock batches too — full chain with the seller picked in the dialog (was: seller → Default only; AM Lab with product/kind templates only fell to Default, 16.10)
   }
   return ctx;
 }
