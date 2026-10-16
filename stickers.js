@@ -8,7 +8,7 @@
    ============================================================================ */
 (function () {
 'use strict';
-const STICKERS_VERSION = '1.7';
+const STICKERS_VERSION = '1.7.1';
 //---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
@@ -2311,8 +2311,8 @@ var qrcode = function() {
 // Engine
 // ───────────────────────────────────────────────────────────────────────────
 const LABEL = { w: 55, h: 50 };                                 // mm — built-in default; every template carries its own w/h (v13.81)
-const SIZE_MIN = 20, SIZE_MAX = 120;                            // mm — editor limits for the label size
-const TAPE_DEFAULT = 80, TAPE_MAX = 120;                        // mm — media (tape) width: the printed page is tape × label height, label centred
+const SIZE_MIN = 20, SIZE_MAX = 200;                            // mm — editor limits for the label size (v13.84.2: 120 → 200, long labels along the tape)
+const TAPE_DEFAULT = 80, TAPE_MAX = 200;                        // mm — media (tape) width: the printed page is tape × label height, label centred (v13.84.2: 120 → 200, never narrower than the label)
 const GOOD_DEFAULT = 24;                                        // months — shelf life when the product card has no Good (v13.83)
 const KINDS = ['PEN', 'VIAL', 'PREMIX', 'SERUM', 'SPRAY'];      // v13.83: the kinds a template can be made for (other kinds → no kind level)
 // v13.83.1: layout.rot = 90 → the label is printed turned 90° (clockwise) on the tape: page = tape × label WIDTH, the label's
