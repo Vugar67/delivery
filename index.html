@@ -1633,7 +1633,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <div id="custom-item-other-hint" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(248,113,113,.45);background:rgba(248,113,113,.10);color:var(--red);font-size:12px;line-height:1.45"></div>
           <!-- v13.86: Complicated Custom Product — one dose (mg) per ingredient of the directory card; replaces DOSAGE / UNIT / KIND -->
           <div id="custom-item-ingr" style="display:none;margin-top:10px">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">INGREDIENTS · DOSE, mg</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">INGREDIENTS · DOSE, mg <span style="opacity:.7">(name: ingredients · KIND · sum · solvent)</span></div>
             <div id="custom-item-ingr-rows" style="display:flex;flex-direction:column;gap:6px"></div>
             <div id="custom-item-ingr-preview" style="margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--accent);word-break:break-word"></div>
           </div>
@@ -1851,7 +1851,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.86';
+const APP_VERSION = 'v13.86.1';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3892,6 +3892,7 @@ function renderCustomTypeChips() {
 function setCustomItemType(t) {
   customItemType = (customItemType === t) ? '' : t;
   renderCustomTypeChips();
+  if (typeof updateCustomIngrPreview === 'function') updateCustomIngrPreview();   // v13.86.1: KIND is part of the complicated name
 }
 
 // "Other…" mode (v13.28+): the dropdown is REPLACED by a free-text input (no
@@ -3953,10 +3954,15 @@ function _parseDose(raw) {
   const n = parseFloat(v);
   return n > 0 ? Math.round(n * 10000) / 10000 : null;
 }
-function composeComplexName(base, ingr, suffix) {
+// v13.86.1 (Vugar 16.10): ingredient NAMES only in the brackets, then the KIND chip, then the sum of the doses and the
+// SOLVENT ML suffix: GLOW (BPC157+TB500+GHKCU) PEN 40mg · GLOW (BPC157+TB500+GHKCU) VIAL 40mg/2ml.
+// The doses themselves live in the snapshot (order_items.ingredients) — for the sticker.
+function composeComplexName(base, ingr, kind, suffix) {
   const sum = (ingr || []).reduce((s, i) => s + (Number(i.dose) || 0), 0);
-  return String(base || '').trim() + ' (' + (ingr || []).map(i => i.name + ' ' + _fmtDose(i.dose) + 'mg').join('+') + ') ' + _fmtDose(sum) + 'mg' + String(suffix || '').trim();
+  const k = String(kind || '').trim().toUpperCase();
+  return String(base || '').trim() + ' (' + (ingr || []).map(i => i.name).join('+') + ')' + (k ? ' ' + k : '') + ' ' + _fmtDose(sum) + 'mg' + String(suffix || '').trim();
 }
+const _sameIngr = (a, b) => JSON.stringify((a || []).map(i => [i.name, Number(i.dose)])) === JSON.stringify((b || []).map(i => [i.name, Number(i.dose)]));
 function _customSuffixValue() {
   const d2Sel = document.getElementById('custom-item-dosage2-sel');
   return (d2Sel && d2Sel.value && d2Sel.value !== '__custom__') ? d2Sel.value : (document.getElementById('custom-item-dosage2')?.value || '').trim();
@@ -3964,8 +3970,7 @@ function _customSuffixValue() {
 function _setCustomComplex(entry) {
   customComplex = entry || null;
   const on = !!customComplex;
-  ['custom-item-dosage-cell', 'custom-item-unit-cell'].forEach(id => { const el = document.getElementById(id); if (el) el.style.visibility = on ? 'hidden' : ''; });
-  const kw = document.getElementById('custom-item-kind-wrap'); if (kw) kw.style.display = on ? 'none' : '';
+  ['custom-item-dosage-cell', 'custom-item-unit-cell'].forEach(id => { const el = document.getElementById(id); if (el) { el.style.opacity = on ? '0' : ''; el.style.pointerEvents = on ? 'none' : ''; el.querySelectorAll('select,input').forEach(x => { x.tabIndex = on ? -1 : 0; }); } });   // opacity: a select keeps its own visibility
   const box = document.getElementById('custom-item-ingr'); if (box) box.style.display = on ? '' : 'none';
   const rows = document.getElementById('custom-item-ingr-rows');
   if (rows) rows.innerHTML = on ? _cpIngrNames(customComplex).map((n, k) => `
@@ -3974,7 +3979,6 @@ function _setCustomComplex(entry) {
       <input class="custom-ingr-dose" data-k="${k}" type="text" inputmode="decimal" placeholder="0" oninput="updateCustomIngrPreview()" style="width:90px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
       <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">mg</span>
     </div>`).join('') : '';
-  if (on) { customItemType = ''; renderCustomTypeChips(); }
   updateCustomIngrPreview();
 }
 // the doses typed in the form → [{name, dose, unit}] or { bad: index } for the first empty / invalid one
@@ -3997,8 +4001,7 @@ function updateCustomIngrPreview() {
   const inputs = [...document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')];
   const ingr = names.map((n, k) => ({ name: n, dose: _parseDose(inputs[k] ? inputs[k].value : '') }));
   inputs.forEach((inp, k) => { inp.style.borderColor = (inp.value.trim() && ingr[k] && ingr[k].dose == null) ? 'var(--red)' : ''; });
-  pv.textContent = '→ ' + composeComplexName(customComplex.name, ingr.map(i => ({ name: i.name, dose: i.dose == null ? 0 : i.dose })), _customSuffixValue())
-    .replace(/ 0mg(?=[+)])/g, ' …mg');
+  pv.textContent = '→ ' + composeComplexName(customComplex.name, ingr.map(i => ({ name: i.name, dose: i.dose == null ? 0 : i.dose })), customItemType || '…', _customSuffixValue());
 }
 
 // v13.73: the Custom Products directory entry a composed line name belongs to — the LONGEST
@@ -4189,7 +4192,7 @@ function renderCart() {
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
       <div class="shop-cart-item-name" id="cart-name-${i}">
-        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
+        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span><br><span style="font-size:10px;color:var(--accent2);font-family:var(--mono)">' + item.ingredients.map(g => escAttr(g.name) + ' ' + _fmtDose(g.dose) + 'mg').join(' · ') + '</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
         ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
       </div>
@@ -4321,8 +4324,11 @@ function _complexParts(item) {
   const open = name.indexOf(' (');
   const base = dir && name.startsWith(String(dir.name).trim() + ' (') ? String(dir.name).trim() : (open > 0 ? name.slice(0, open) : name);
   const close = name.lastIndexOf(')');
-  const suffix = close >= 0 ? name.slice(close + 1).trim().replace(/^\d+(\.\d+)?mg/, '') : '';
-  return { base, suffix };
+  const rest = close >= 0 ? name.slice(close + 1).trim() : '';          // "PEN 40mg" · "VIAL 40mg/2ml" · (v13.86) "40mg/2ml"
+  const m = rest.match(/^(?:(.*?) )?\d+(?:\.\d+)?mg(.*)$/);
+  const kind = m ? (m[1] || '') : (item.label_kind || '');
+  const suffix = m ? m[2] : '';
+  return { base, kind, suffix };
 }
 function startCartDoseEdit(i) {
   const item = cart[i]; if (!item) return;
@@ -4361,9 +4367,9 @@ function commitCartDoseEdit(i, values) {
     if (d == null) { toast('Enter the dose of ' + item.ingredients[k].name + ' in mg (decimals with a point: 2.5)', true); return; }
     next.push({ name: item.ingredients[k].name, dose: d, unit: 'mg' });
   }
-  const { base, suffix } = _complexParts(item);
+  const { base, kind, suffix } = _complexParts(item);
   item.ingredients = next;                 // a new array — a split twin keeps its own doses
-  item.product_name = composeComplexName(base, next, suffix);
+  item.product_name = composeComplexName(base, next, kind || item.label_kind, suffix);
   item.name_edited = false;
   renderCart();
 }
@@ -4433,9 +4439,10 @@ function addCustomItem() {
      toast('🧾 "' + baseName + '" has no Invoice Nickname — ' + (currentRole === 'admin' ? 'add it in Directories → Custom Products' : 'ask the admin'), true);
      return;
    }}
-  // v13.86: Complicated Custom Product — doses per ingredient, no KIND
+  // v13.86: Complicated Custom Product — doses per ingredient · v13.86.1: KIND required again (name + label template)
   const _cx = customComplex && customComplex.name === baseName ? customComplex : null;
   if (_cx) {
+    if (!customItemType) { toast('Select product type (Pen, Vial…)', true); return; }
     const r = _readCustomIngr();
     if (r.bad != null) {
       const inp = document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')[r.bad];
@@ -4443,10 +4450,11 @@ function addCustomItem() {
       toast('Enter the dose of ' + _cpIngrNames(_cx)[r.bad] + ' in mg (decimals with a point: 2.5)', true);
       return;
     }
-    const cxName = composeComplexName(baseName, r.list, dosage2);
-    const ex = cart.find(c => c.product_id === null && c.product_name === cxName);
+    const cxName = composeComplexName(baseName, r.list, customItemType, dosage2);
+    // the name no longer shows the doses → merge only a line with the same doses
+    const ex = cart.find(c => c.product_id === null && c.product_name === cxName && _sameIngr(c.ingredients, r.list));
     if (ex) ex.quantity += qty;
-    else cart.push({ product_id: null, product_name: cxName, price, quantity: qty, unit: 'mg', is_custom: true, custom_product_id: _cx.id, label_kind: null, name_edited: false, ingredients: r.list });
+    else cart.push({ product_id: null, product_name: cxName, price, quantity: qty, unit: 'mg', is_custom: true, custom_product_id: _cx.id, label_kind: customItemType.toUpperCase(), name_edited: false, ingredients: r.list });
     resetCustomItemForm();
     renderCart();
     toast('✅ ' + cxName + ' added');
