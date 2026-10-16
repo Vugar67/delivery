@@ -1851,7 +1851,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.86.1';
+const APP_VERSION = 'v13.86.2';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3954,13 +3954,13 @@ function _parseDose(raw) {
   const n = parseFloat(v);
   return n > 0 ? Math.round(n * 10000) / 10000 : null;
 }
-// v13.86.1 (Vugar 16.10): ingredient NAMES only in the brackets, then the KIND chip, then the sum of the doses and the
-// SOLVENT ML suffix: GLOW (BPC157+TB500+GHKCU) PEN 40mg · GLOW (BPC157+TB500+GHKCU) VIAL 40mg/2ml.
-// The doses themselves live in the snapshot (order_items.ingredients) — for the sticker.
+// v13.86.2 (Vugar 16.10): ingredients WITH doses in the brackets, then the KIND chip, the sum of the doses and the
+// SOLVENT ML suffix: GLOW (BPC157 10mg+TB500 10mg+GHKCU 50mg) PEN 70mg/1.5ml. The doses are also kept in the
+// snapshot (order_items.ingredients) — for the sticker.
 function composeComplexName(base, ingr, kind, suffix) {
   const sum = (ingr || []).reduce((s, i) => s + (Number(i.dose) || 0), 0);
   const k = String(kind || '').trim().toUpperCase();
-  return String(base || '').trim() + ' (' + (ingr || []).map(i => i.name).join('+') + ')' + (k ? ' ' + k : '') + ' ' + _fmtDose(sum) + 'mg' + String(suffix || '').trim();
+  return String(base || '').trim() + ' (' + (ingr || []).map(i => i.name + ' ' + _fmtDose(i.dose) + 'mg').join('+') + ')' + (k ? ' ' + k : '') + ' ' + _fmtDose(sum) + 'mg' + String(suffix || '').trim();
 }
 const _sameIngr = (a, b) => JSON.stringify((a || []).map(i => [i.name, Number(i.dose)])) === JSON.stringify((b || []).map(i => [i.name, Number(i.dose)]));
 function _customSuffixValue() {
@@ -4001,7 +4001,8 @@ function updateCustomIngrPreview() {
   const inputs = [...document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')];
   const ingr = names.map((n, k) => ({ name: n, dose: _parseDose(inputs[k] ? inputs[k].value : '') }));
   inputs.forEach((inp, k) => { inp.style.borderColor = (inp.value.trim() && ingr[k] && ingr[k].dose == null) ? 'var(--red)' : ''; });
-  pv.textContent = '→ ' + composeComplexName(customComplex.name, ingr.map(i => ({ name: i.name, dose: i.dose == null ? 0 : i.dose })), customItemType || '…', _customSuffixValue());
+  pv.textContent = '→ ' + composeComplexName(customComplex.name, ingr.map(i => ({ name: i.name, dose: i.dose == null ? 0 : i.dose })), customItemType || '…', _customSuffixValue())
+    .replace(/ 0mg(?=[+)])/g, ' …mg');
 }
 
 // v13.73: the Custom Products directory entry a composed line name belongs to — the LONGEST
@@ -4192,7 +4193,7 @@ function renderCart() {
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
       <div class="shop-cart-item-name" id="cart-name-${i}">
-        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span><br><span style="font-size:10px;color:var(--accent2);font-family:var(--mono)">' + item.ingredients.map(g => escAttr(g.name) + ' ' + _fmtDose(g.dose) + 'mg').join(' · ') + '</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
+        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
         ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
       </div>
