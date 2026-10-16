@@ -1288,6 +1288,11 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="form-group"><label>Sticker Qty <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label)</span></label><input id="cp-sticker-qty" maxlength="40" placeholder="e.g. 10 mg / 2 ml"></div>
       <div class="form-group"><label>SubSticker Name <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(label · 2nd line)</span></label><input id="cp-sub-sticker-name" maxlength="80" placeholder="2nd line of the name — empty = none"></div>
       <div class="form-group"><label>Good <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(months → label EXP)</span></label><input id="cp-good-months" type="number" min="1" max="240" step="1" placeholder="24"></div>
+      <!-- v13.86: Complicated Custom Product — the ingredient list (unit always mg). On the order the operator enters each dose. -->
+      <div class="form-group form-full"><label>Ingredients <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(complicated product · always mg · empty = ordinary)</span></label>
+        <div id="cp-ingredients" style="display:flex;flex-direction:column;gap:6px"></div>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;align-self:flex-start" onclick="cpAddIngredient()">+ Ingredient</button>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('custom-product-modal')">Cancel</button>
@@ -1584,7 +1589,7 @@ select option{background:#1a1d27;color:#f0f2ff}
                 <input id="custom-item-name" type="text" placeholder="Name…" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;color:var(--text);box-sizing:border-box">
               </div>
             </div>
-            <div>
+            <div id="custom-item-dosage-cell">
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">DOSAGE</div>
               <select id="custom-item-dosage-sel" onchange="onCustomDosageSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">—</option>
@@ -1593,7 +1598,7 @@ select option{background:#1a1d27;color:#f0f2ff}
                 <input id="custom-item-dosage" type="text" placeholder="25+25" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
               </div>
             </div>
-            <div>
+            <div id="custom-item-unit-cell">
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">UNIT</div>
               <select id="custom-item-unit-sel" onchange="onCustomUnitSel()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
                 <option value="">—</option>
@@ -1608,7 +1613,7 @@ select option{background:#1a1d27;color:#f0f2ff}
                 <option value="">—</option>
               </select>
               <div id="custom-item-dosage2-wrap" style="display:none;gap:4px">
-                <input id="custom-item-dosage2" type="text" placeholder="/2ml" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+                <input id="custom-item-dosage2" type="text" placeholder="/2ml" oninput="updateCustomIngrPreview()" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 6px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
               </div>
             </div>
             <div>
@@ -1626,7 +1631,13 @@ select option{background:#1a1d27;color:#f0f2ff}
           </div>
           <!-- v13.73: shown when "Other…" is picked for the NAME — free-typed names are blocked -->
           <div id="custom-item-other-hint" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(248,113,113,.45);background:rgba(248,113,113,.10);color:var(--red);font-size:12px;line-height:1.45"></div>
-          <div style="margin-top:8px">
+          <!-- v13.86: Complicated Custom Product — one dose (mg) per ingredient of the directory card; replaces DOSAGE / UNIT / KIND -->
+          <div id="custom-item-ingr" style="display:none;margin-top:10px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">INGREDIENTS · DOSE, mg</div>
+            <div id="custom-item-ingr-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div id="custom-item-ingr-preview" style="margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--accent);word-break:break-word"></div>
+          </div>
+          <div id="custom-item-kind-wrap" style="margin-top:8px">
             <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">KIND</div>
             <div id="custom-item-types" class="shop-cats"></div>
           </div>
@@ -1840,7 +1851,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.85';
+const APP_VERSION = 'v13.86';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -3926,6 +3937,68 @@ function onCustomNameSel() {
   _otherModeToggle('custom-item-name-sel', 'custom-item-name-wrap', 'custom-item-name', false);
   const match = (customProducts || []).find(c => c.name === sel.value);
   if (match) setCustomUnit(match.unit || '');
+  _setCustomComplex(match && _cpIngrNames(match).length ? match : null);   // v13.86
+}
+
+// ── v13.86: Complicated Custom Products ────────────────────────────────────────────────────────────────────────
+// A directory entry with ingredients → the order form shows one dose field (mg) per ingredient instead of
+// DOSAGE / UNIT / KIND. Line name: GLOW (BPC157 10mg+TB500 5mg+GHKCU 10mg) 25mg/2ml — sum of the doses, then
+// the SOLVENT ML suffix as before. Decimals with a point (a comma is turned into a point). No KIND (decided 16.10).
+// The line keeps a snapshot of the doses: order_items.ingredients = [{name, dose, unit:'mg'}] (migration add_lab_16).
+let customComplex = null;          // the directory entry in complicated mode, else null
+function _fmtDose(n) { return String(Math.round(Number(n) * 10000) / 10000); }   // 10 · 2.5 · 0.25 — no trailing zeros
+function _parseDose(raw) {
+  const v = String(raw ?? '').trim().replace(',', '.');
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(v)) return null;
+  const n = parseFloat(v);
+  return n > 0 ? Math.round(n * 10000) / 10000 : null;
+}
+function composeComplexName(base, ingr, suffix) {
+  const sum = (ingr || []).reduce((s, i) => s + (Number(i.dose) || 0), 0);
+  return String(base || '').trim() + ' (' + (ingr || []).map(i => i.name + ' ' + _fmtDose(i.dose) + 'mg').join('+') + ') ' + _fmtDose(sum) + 'mg' + String(suffix || '').trim();
+}
+function _customSuffixValue() {
+  const d2Sel = document.getElementById('custom-item-dosage2-sel');
+  return (d2Sel && d2Sel.value && d2Sel.value !== '__custom__') ? d2Sel.value : (document.getElementById('custom-item-dosage2')?.value || '').trim();
+}
+function _setCustomComplex(entry) {
+  customComplex = entry || null;
+  const on = !!customComplex;
+  ['custom-item-dosage-cell', 'custom-item-unit-cell'].forEach(id => { const el = document.getElementById(id); if (el) el.style.visibility = on ? 'hidden' : ''; });
+  const kw = document.getElementById('custom-item-kind-wrap'); if (kw) kw.style.display = on ? 'none' : '';
+  const box = document.getElementById('custom-item-ingr'); if (box) box.style.display = on ? '' : 'none';
+  const rows = document.getElementById('custom-item-ingr-rows');
+  if (rows) rows.innerHTML = on ? _cpIngrNames(customComplex).map((n, k) => `
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="flex:0 1 220px;min-width:0;font-family:var(--mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(n)}">${escAttr(n)}</span>
+      <input class="custom-ingr-dose" data-k="${k}" type="text" inputmode="decimal" placeholder="0" oninput="updateCustomIngrPreview()" style="width:90px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">mg</span>
+    </div>`).join('') : '';
+  if (on) { customItemType = ''; renderCustomTypeChips(); }
+  updateCustomIngrPreview();
+}
+// the doses typed in the form → [{name, dose, unit}] or { bad: index } for the first empty / invalid one
+function _readCustomIngr() {
+  const names = _cpIngrNames(customComplex);
+  const inputs = [...document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')];
+  const out = [];
+  for (let k = 0; k < names.length; k++) {
+    const d = _parseDose(inputs[k] ? inputs[k].value : '');
+    if (d == null) return { bad: k, list: out };
+    out.push({ name: names[k], dose: d, unit: 'mg' });
+  }
+  return { list: out };
+}
+function updateCustomIngrPreview() {
+  const pv = document.getElementById('custom-item-ingr-preview');
+  if (!pv) return;
+  if (!customComplex) { pv.textContent = ''; return; }
+  const names = _cpIngrNames(customComplex);
+  const inputs = [...document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')];
+  const ingr = names.map((n, k) => ({ name: n, dose: _parseDose(inputs[k] ? inputs[k].value : '') }));
+  inputs.forEach((inp, k) => { inp.style.borderColor = (inp.value.trim() && ingr[k] && ingr[k].dose == null) ? 'var(--red)' : ''; });
+  pv.textContent = '→ ' + composeComplexName(customComplex.name, ingr.map(i => ({ name: i.name, dose: i.dose == null ? 0 : i.dose })), _customSuffixValue())
+    .replace(/ 0mg(?=[+)])/g, ' …mg');
 }
 
 // v13.73: the Custom Products directory entry a composed line name belongs to — the LONGEST
@@ -3972,6 +4045,7 @@ function onCustomDosage2Sel() {
   const sel = document.getElementById('custom-item-dosage2-sel');
   if (!sel) return;
   _otherModeToggle('custom-item-dosage2-sel', 'custom-item-dosage2-wrap', 'custom-item-dosage2', sel.value === '__custom__');
+  updateCustomIngrPreview();   // v13.86
 }
 
 // Live line total = QTY × price per unit.
@@ -3998,6 +4072,7 @@ function resetCustomItemForm() {
   const pr = document.getElementById('custom-item-price'); if (pr) pr.value = '';
   const q = document.getElementById('custom-item-qty'); if (q) q.value = '1';
   customItemType = '';
+  _setCustomComplex(null);   // v13.86
   renderCustomTypeChips();
   updateCustomItemTotal();
   const f = document.getElementById('custom-item-form'); if (f) f.style.display = 'none';
@@ -4114,7 +4189,7 @@ function renderCart() {
   if (itemsEl) itemsEl.innerHTML = cart.map((item, i) => `
     <div class="shop-cart-item">
       <div class="shop-cart-item-name" id="cart-name-${i}">
-        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
+        ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
         ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
       </div>
@@ -4189,6 +4264,7 @@ function _cartLineCatalogName(item) {
 }
 function startCartNameEdit(i) {
   const item = cart[i]; if (!item) return;
+  if (item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length) return startCartDoseEdit(i);   // v13.86
   const cell = document.getElementById('cart-name-' + i); if (!cell) return;
   if (cell.querySelector('.cart-name-edit')) return;            // already editing
   const curName = item.is_custom ? (item.product_name || '') : (item.nameOverride || _cartLineCatalogName(item));
@@ -4237,12 +4313,68 @@ function commitCartNameEdit(i, name, unit) {
   renderCart();
 }
 
+// v13.86: ✎ on a Complicated Custom Product line edits ONLY the doses — the name is composed again (base name and the
+// SOLVENT ML suffix kept), name_edited stays false, so the Packer still prints the label.
+function _complexParts(item) {
+  const name = String(item.product_name || '');
+  const dir = (customProducts || []).find(c => c.id === item.custom_product_id);
+  const open = name.indexOf(' (');
+  const base = dir && name.startsWith(String(dir.name).trim() + ' (') ? String(dir.name).trim() : (open > 0 ? name.slice(0, open) : name);
+  const close = name.lastIndexOf(')');
+  const suffix = close >= 0 ? name.slice(close + 1).trim().replace(/^\d+(\.\d+)?mg/, '') : '';
+  return { base, suffix };
+}
+function startCartDoseEdit(i) {
+  const item = cart[i]; if (!item) return;
+  const cell = document.getElementById('cart-name-' + i); if (!cell) return;
+  if (cell.querySelector('.cart-dose-edit')) return;
+  cell.innerHTML = `
+    <div class="cart-name-edit cart-dose-edit">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">${escAttr(_complexParts(item).base)} · dose, mg</div>
+      ${item.ingredients.map((g, k) => `
+        <div class="cne-row" style="align-items:center">
+          <span style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(g.name)}">${escAttr(g.name)}</span>
+          <input class="cne-dose" data-k="${k}" inputmode="decimal" value="${escAttr(_fmtDose(g.dose))}" style="width:70px">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">mg</span>
+        </div>`).join('')}
+      <div class="cne-row">
+        <button type="button" class="cne-ok" title="Save (Enter)">&#10003;</button>
+        <button type="button" class="cne-cancel" title="Cancel (Esc)">&#10005;</button>
+      </div>
+    </div>`;
+  const inputs = [...cell.querySelectorAll('.cne-dose')];
+  const commit = () => commitCartDoseEdit(i, inputs.map(x => x.value));
+  const cancel = () => renderCart();
+  cell.querySelector('.cne-ok').onclick = commit;
+  cell.querySelector('.cne-cancel').onclick = cancel;
+  inputs.forEach(inp => inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  }));
+  if (inputs[0]) { inputs[0].focus(); inputs[0].select(); }
+}
+function commitCartDoseEdit(i, values) {
+  const item = cart[i]; if (!item) return;
+  const next = [];
+  for (let k = 0; k < item.ingredients.length; k++) {
+    const d = _parseDose(values[k]);
+    if (d == null) { toast('Enter the dose of ' + item.ingredients[k].name + ' in mg (decimals with a point: 2.5)', true); return; }
+    next.push({ name: item.ingredients[k].name, dose: d, unit: 'mg' });
+  }
+  const { base, suffix } = _complexParts(item);
+  item.ingredients = next;                 // a new array — a split twin keeps its own doses
+  item.product_name = composeComplexName(base, next, suffix);
+  item.name_edited = false;
+  renderCart();
+}
+
 function splitCartLine(i) {
   const src = cart[i]; if (!src) return;
   const qty = parseFloat(src.is_custom ? src.quantity : src.qty) || 0;
   let clone;
   if (src.is_custom) {
     clone = Object.assign({}, src, { quantity: 1 });
+    if (Array.isArray(src.ingredients)) clone.ingredients = src.ingredients.map(g => Object.assign({}, g));   // v13.86
   } else {
     clone = { product: src.product, qty: 1 };
     if (src.customPrice !== undefined) clone.customPrice = src.customPrice;
@@ -4301,6 +4433,25 @@ function addCustomItem() {
      toast('🧾 "' + baseName + '" has no Invoice Nickname — ' + (currentRole === 'admin' ? 'add it in Directories → Custom Products' : 'ask the admin'), true);
      return;
    }}
+  // v13.86: Complicated Custom Product — doses per ingredient, no KIND
+  const _cx = customComplex && customComplex.name === baseName ? customComplex : null;
+  if (_cx) {
+    const r = _readCustomIngr();
+    if (r.bad != null) {
+      const inp = document.querySelectorAll('#custom-item-ingr-rows .custom-ingr-dose')[r.bad];
+      if (inp) { inp.style.borderColor = 'var(--red)'; inp.focus(); }
+      toast('Enter the dose of ' + _cpIngrNames(_cx)[r.bad] + ' in mg (decimals with a point: 2.5)', true);
+      return;
+    }
+    const cxName = composeComplexName(baseName, r.list, dosage2);
+    const ex = cart.find(c => c.product_id === null && c.product_name === cxName);
+    if (ex) ex.quantity += qty;
+    else cart.push({ product_id: null, product_name: cxName, price, quantity: qty, unit: 'mg', is_custom: true, custom_product_id: _cx.id, label_kind: null, name_edited: false, ingredients: r.list });
+    resetCustomItemForm();
+    renderCart();
+    toast('✅ ' + cxName + ' added');
+    return;
+  }
   if (!customItemType) { toast('Select product type (Pen, Vial…)', true); return; }
 
   // Add to cart as a custom item (no product_id)
@@ -4969,7 +5120,8 @@ async function editOrder(id){
     // Custom item — no product_id or product not found
     if (!item.product_id) {
       return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true,
-               custom_product_id: item.custom_product_id || null, label_kind: item.label_kind || null, name_edited: item.name_edited === true };   // v13.83: label facts round-trip
+               custom_product_id: item.custom_product_id || null, label_kind: item.label_kind || null, name_edited: item.name_edited === true,   // v13.83: label facts round-trip
+               ingredients: Array.isArray(item.ingredients) && item.ingredients.length ? item.ingredients : null };   // v13.86
     }
     const p=products.find(x=>x.id===item.product_id)||{id:item.product_id,name:item.product_name,price:item.price,unit:item.unit};
     const savedPrice = parseFloat(item.price);
@@ -5510,7 +5662,8 @@ async function saveOrder(){
     return qty > 0;
   }).map(item=> {
     if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null,
-                                custom_product_id:item.custom_product_id||null, label_kind:item.label_kind||null, name_edited:item.name_edited===true};   // v13.83 (migration add_lab_14)
+                                custom_product_id:item.custom_product_id||null, label_kind:item.label_kind||null, name_edited:item.name_edited===true,   // v13.83 (migration add_lab_14)
+                                ingredients:Array.isArray(item.ingredients)&&item.ingredients.length?item.ingredients:null};   // v13.86 (migration add_lab_16)
     const alias = _sId ? getAlias(_sId, item.product.id) : null;
     const hasCustomComp = item.customComponents && item.customComponents.length > 0;
     // Check if custom components differ from standard
@@ -7929,6 +8082,7 @@ function renderCustomProductsGrid() {
           <div style="${mono}margin-top:6px;color:${c.invoice_nickname ? 'var(--accent)' : 'var(--red)'}" title="Invoice Nickname (required)">🧾 ${c.invoice_nickname ? escAttr(c.invoice_nickname) : '<i>no invoice nickname</i>'}</div>
           <div style="${mono}margin-top:3px;color:${c.sticker_name || c.sub_sticker_name || c.sticker_qty ? 'var(--text)' : 'var(--muted)'}" title="Sticker Name · SubSticker Name · Sticker Qty (label)">🏷 ${[c.sticker_name, c.sub_sticker_name, c.sticker_qty].filter(Boolean).map(escAttr).join(' · ') || '<i>label: line name</i>'}</div>
           <div style="${mono}margin-top:3px;color:var(--muted)" title="Good — shelf life in months: label EXP = MFG + Good">⏳ ${c.good_months ? escAttr(String(c.good_months)) + ' months' : '24 months (default)'}</div>
+          ${_cpIngrNames(c).length ? `<div style="${mono}margin-top:3px;color:var(--accent2)" title="Complicated product (v13.86): the operator enters the dose of each ingredient, mg">🧪 ${_cpIngrNames(c).map(escAttr).join(' + ')} <span style="color:var(--muted)">(mg)</span></div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
           <button class="act-btn" onclick="editCustomProduct(${c.id})" title="Edit every field of this custom product">Edit</button>
@@ -7947,6 +8101,33 @@ function _fillCustomProductForm(c) {
   set('cp-sticker-name', c ? (c.sticker_name || '') : ''); set('cp-sticker-qty', c ? (c.sticker_qty || '') : ''); set('cp-sub-sticker-name', c ? (c.sub_sticker_name || '') : '');
   set('cp-good-months', c && c.good_months ? c.good_months : '');
   const nk = document.getElementById('cp-nick'); if (nk) nk.style.borderColor = '';
+  _cpRenderIngredients(_cpIngrNames(c));   // v13.86
+}
+// v13.86: Complicated Custom Products — ingredient names of a directory entry (custom_products.ingredients =
+// [{"name":"BPC157"},…], unit always mg). Empty list = an ordinary custom product.
+function _cpIngrNames(c) {
+  const a = c && Array.isArray(c.ingredients) ? c.ingredients : [];
+  return a.map(x => String((x && typeof x === 'object') ? (x.name || '') : (x || '')).trim()).filter(Boolean);
+}
+function _cpRenderIngredients(names) {
+  const box = document.getElementById('cp-ingredients'); if (!box) return;
+  box.innerHTML = '';
+  (names || []).forEach(n => cpAddIngredient(n, true));
+}
+function cpAddIngredient(name, noFocus) {
+  const box = document.getElementById('cp-ingredients'); if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'cp-ingr-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center';
+  row.innerHTML = `<input class="cp-ingr-name" maxlength="60" placeholder="Ingredient name, e.g. BPC157" style="flex:1;min-width:0" value="${escAttr(name || '')}">
+    <span style="font-family:var(--mono);font-size:12px;color:var(--muted);width:24px">mg</span>
+    <button type="button" class="act-btn del" title="Remove this ingredient">✕</button>`;
+  row.querySelector('button').onclick = () => row.remove();
+  box.appendChild(row);
+  if (!noFocus) row.querySelector('input').focus();
+}
+function _cpReadIngredients() {
+  return [...document.querySelectorAll('#cp-ingredients .cp-ingr-name')].map(i => i.value.trim().replace(/\s+/g, ' ')).filter(Boolean);
 }
 function openNewCustomProduct() {
   if (currentRole !== 'admin') { toast('🔒 Admin only', true); return; }
@@ -7976,18 +8157,24 @@ async function saveCustomProduct() {
   if (get('cp-good-months') && !(g >= 1 && g <= 240)) { toast('Good: enter months from 1 to 240 (empty = 24)', true); return; }
   const dup = (customProducts || []).find(c => c.id !== editCustomProductId && String(c.name || '').trim().toLowerCase() === name.toLowerCase());
   if (dup) { toast('"' + dup.name + '" already exists in Custom Products', true); return; }
+  // v13.86: ingredients — + ( ) would break the composed line name "GLOW (BPC157 10mg+TB500 5mg) 15mg/2ml"
+  const ingr = _cpReadIngredients();
+  if (ingr.some(n => /[+()]/.test(n))) { toast('Ingredient names cannot contain + ( ) — they are used in the line name', true); return; }
+  if (new Set(ingr.map(n => n.toLowerCase())).size !== ingr.length) { toast('The same ingredient is listed twice', true); return; }
   const payload = { name, unit: get('cp-unit') || 'pcs', invoice_nickname: nick,
     sticker_name: get('cp-sticker-name') || null, sticker_qty: get('cp-sticker-qty') || null, sub_sticker_name: get('cp-sub-sticker-name') || null,   // v13.84 (migration add_lab_15)
-    good_months: g >= 1 && g <= 240 ? g : null };
+    good_months: g >= 1 && g <= 240 ? g : null,
+    ingredients: ingr.length ? ingr.map(n => ({ name: n })) : null };   // v13.86 (migration add_lab_16)
   const btn = document.getElementById('save-custom-product-btn'); btn.disabled = true;
   try {
     const before = editCustomProductId ? (customProducts || []).find(x => x.id === editCustomProductId) : null;
     const { error } = editCustomProductId
       ? await sb.from('custom_products').update(payload).eq('id', editCustomProductId)
       : await sb.from('custom_products').insert(payload);
-    if (error) { console.log('DB error:', error); toast('Could not save — run the add_lab_15 migration? (' + String(error.message || '').slice(0, 120) + ')', true); return; }
+    if (error) { console.log('DB error:', error); toast('Could not save — run the add_lab_16 migration? (' + String(error.message || '').slice(0, 120) + ')', true); return; }
     const changes = {};
-    if (before) Object.keys(payload).forEach(k => { if (String(before[k] ?? '') !== String(payload[k] ?? '')) changes[k] = { before: before[k] ?? null, after: payload[k] }; });
+    const _cv = v => (v && typeof v === 'object') ? JSON.stringify(v) : String(v ?? '');   // v13.86: ingredients is an array
+    if (before) Object.keys(payload).forEach(k => { if (_cv(before[k]) !== _cv(payload[k])) changes[k] = { before: before[k] ?? null, after: payload[k] }; });
     logEvent(editCustomProductId ? 'UPDATE' : 'CREATE', 'custom_product', editCustomProductId || name, { action: editCustomProductId ? 'custom_product_edit' : 'custom_product_add', name, ...(before ? { field_changes: changes } : payload) });
     await loadCustomProducts();
     renderCustomProductsGrid();
