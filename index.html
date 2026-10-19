@@ -783,6 +783,13 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-primary btn-sm" id="partner-add-btn" onclick="openNewPartner()">+ Add Partner</button>
       </div>
       <div id="partners-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px"></div>
+      <!-- v13.88: WhatsApp messages the driver sends to the customer from the Driver app -->
+      <div class="section-head" style="margin-bottom:6px">
+        <div class="section-title">&#128172; Driver messages</div>
+        <button class="btn btn-primary btn-sm" id="dmsg-add-btn" onclick="openNewDriverMessage()">+ Add message</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:12px;line-height:1.5">Texts the driver picks under the WhatsApp button in the Driver app. A seller's message replaces the general message with the same title on that seller's orders.</div>
+      <div id="dmsg-grid" style="display:flex;flex-direction:column;gap:14px;margin-bottom:24px"></div>
       <div class="section-head" style="margin-bottom:14px">
         <div class="section-title">&#128666; Delivery Rates</div>
       </div>
@@ -1268,6 +1275,33 @@ select option{background:#1a1d27;color:#f0f2ff}
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('partner-modal')">Cancel</button>
       <button class="btn btn-primary" id="save-partner-btn" onclick="savePartner()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- DRIVER MESSAGE MODAL (v13.88) -->
+<div class="overlay" id="dmsg-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div class="modal-title" id="dmsg-modal-title">Add driver message</div>
+      <button class="close-btn" onclick="closeModal('dmsg-modal')">&#10005;</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Title (what the driver taps)</label><input id="dmsg-title" maxlength="40" placeholder="e.g. On my way"></div>
+      <div class="form-group"><label>Seller</label><select id="dmsg-seller" onchange="renderDriverMessagePreview()"></select></div>
+      <div class="form-group form-full"><label>Message</label>
+        <textarea id="dmsg-body" rows="4" maxlength="1000" oninput="renderDriverMessagePreview()" placeholder="Hello {client}, this is {driver} from {seller}. I'm on my way with your order {order}." style="width:100%;resize:vertical;font-family:inherit"></textarea>
+        <div id="dmsg-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+      </div>
+      <div class="form-group"><label>Order in the list</label><input id="dmsg-sort" type="number" step="1" min="0" max="9999" placeholder="100"></div>
+      <div class="form-group" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="dmsg-active" checked> Shown to drivers</label></div>
+      <div class="form-group form-full"><label>Preview (sample order)</label>
+        <div id="dmsg-preview" style="white-space:pre-wrap;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;min-height:40px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('dmsg-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-dmsg-btn" onclick="saveDriverMessage()">Save</button>
     </div>
   </div>
 </div>
@@ -1853,7 +1887,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.87';
+const APP_VERSION = 'v13.88';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2501,7 +2535,7 @@ async function initApp(){
     nav.innerHTML+=`<a class="tab-btn" href="#logs" onclick="showView('logs');return false;">📋 Logs</a>`;
   }
 
-  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadPartners(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
+  await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadPartners(),loadDriverMessages(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
@@ -2587,7 +2621,7 @@ function showView(v){
   if(v==='lab') initLabView(); else stopLabPolling();                                       // v13.74
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
   history.replaceState(null,'','#'+v);
-  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderPartnersGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
+  if(v==='directory'){renderDirectory();renderLocations();renderDriversGrid();renderPartnersGrid();renderDriverMessagesGrid();renderDeliveryRates();renderUnitsGrid();renderComponentsGrid();renderCustomProductsGrid();renderDefaultQuantitiesGrid();renderDosageSuffixesGrid();refreshRefDirectories();}
   if(v==='logs'){loadLogs();}
   if(v==='users')renderUsers();
   if(v==='products'){
@@ -9410,6 +9444,220 @@ async function loadPartners() {
     return;
   }
   partners = data || []; _partnersReady = true;
+}
+
+// ── v13.88: Driver messages (WhatsApp texts for the Driver app, table driver_messages) ─────────────
+let driverMessages = [], _driverMsgReady = false, editDriverMsgId = null;
+const DMSG_PLACEHOLDERS = [
+  ['client', 'customer name'], ['order', 'order number'], ['driver', 'driver name'], ['seller', 'seller (or Pure Peptides)'],
+  ['amount', 'amount, e.g. 880 AED'], ['window', 'delivery day / time'], ['address', 'villa, area, emirate']
+];
+const DMSG_SAMPLE = { client: 'Ahmed', order: 'ORD-123456', driver: 'Rufat', amount: '880 AED', window: 'Today 14:00–16:00', address: 'Villa 12, JVC, DUBAI' };
+
+async function loadDriverMessages() {
+  const { data, error } = await sb.from('driver_messages').select('*').order('sort_order').order('title');
+  if (error) {
+    driverMessages = []; _driverMsgReady = false;
+    console.warn('Driver messages not available (run add_driver_messages.sql):', error.message);
+    return;
+  }
+  driverMessages = data || []; _driverMsgReady = true;
+}
+
+// same rules as the Driver app (Rules.fillMessage): {key} case-insensitive, unknown kept, no stray spaces
+function fillDriverMessage(body, vars) {
+  const v = {}; Object.keys(vars || {}).forEach(k => { v[k.toLowerCase()] = vars[k]; });
+  return String(body || '')
+    .replace(/\{([A-Za-z_]+)\}/g, (m, k) => (v[k.toLowerCase()] != null ? String(v[k.toLowerCase()]) : m))
+    .replace(/[ \t]+/g, ' ').replace(/ +([,.!?;:])/g, '$1').replace(/\( +/g, '(').replace(/ +\)/g, ')')
+    .split('\n').map(l => l.trim()).join('\n').trim();
+}
+
+function _dmsgSellers() {
+  return clients.filter(c => c.is_seller).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+}
+
+function renderDriverMessagesGrid() {
+  const grid = document.getElementById('dmsg-grid');
+  const addBtn = document.getElementById('dmsg-add-btn');
+  if (!grid) return;
+  if (addBtn) addBtn.style.display = (_driverMsgReady && currentRole === 'admin') ? '' : 'none';
+  if (!_driverMsgReady) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">Driver messages are not available yet — the database migration has not been run. The Driver app uses its built-in text.</div>';
+    return;
+  }
+  if (!driverMessages.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">No messages — the Driver app uses its built-in text.</div>';
+    return;
+  }
+  const groups = {};
+  driverMessages.forEach(m => { const k = (m.seller_name || '').trim(); (groups[k] = groups[k] || []).push(m); });
+  const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { sensitivity: 'base' })));
+  const generalTitles = new Set((groups[''] || []).map(m => String(m.title || '').trim().toLowerCase()));
+  grid.innerHTML = keys.map(k => {
+    const list = groups[k].slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.title).localeCompare(String(b.title)));
+    const head = k === '' ? 'All sellers' : '🏷 ' + escHtml(k);
+    const cards = list.map(m => {
+      const off = m.active === false;
+      const replaces = k !== '' && generalTitles.has(String(m.title || '').trim().toLowerCase());
+      const preview = fillDriverMessage(m.body, Object.assign({}, DMSG_SAMPLE, { seller: k || 'Pure Peptides' }));
+      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start;${off ? 'opacity:.55' : ''}">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:13px;font-weight:600">${escHtml(m.title)} <span style="font-size:10px;color:var(--muted);font-family:var(--mono);font-weight:400">#${m.sort_order ?? ''}${off ? ' · hidden' : ''}${replaces ? ' · replaces the general one' : ''}</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(m.body)}</div>
+          <div style="font-size:11px;color:var(--text);margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;border-left:2px solid var(--green);padding-left:8px">${escHtml(preview)}</div>
+        </div>
+        ${currentRole === 'admin' ? `<div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="act-btn" onclick="openEditDriverMessage(${Number(m.id)})">Edit</button>
+          <button class="act-btn" onclick="toggleDriverMessage(${Number(m.id)})">${off ? 'Show' : 'Hide'}</button>
+          <button class="act-btn del" onclick="deleteDriverMessage(${Number(m.id)})" title="Delete">&#10005;</button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div><div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px">${head} (${list.length})</div><div style="display:flex;flex-direction:column;gap:8px">${cards}</div></div>`;
+  }).join('');
+}
+
+function _fillDmsgSellerSelect(selectedName) {
+  const sel = document.getElementById('dmsg-seller');
+  if (!sel) return;
+  const sellers = _dmsgSellers();
+  sel.innerHTML = '<option value="">— all sellers (general) —</option>' +
+    sellers.map(c => `<option value="${escAttr(c.id)}" data-name="${escAttr(c.name)}">${escHtml(c.name)}</option>`).join('');
+  if (selectedName) {
+    const want = String(selectedName).trim().toLowerCase();
+    const hit = sellers.find(c => String(c.name || '').trim().toLowerCase() === want);
+    if (hit) sel.value = hit.id;
+    else {   // seller renamed / no longer a seller — keep it so Save does not silently move the message
+      const o = document.createElement('option'); o.value = '__keep'; o.dataset.name = selectedName; o.textContent = selectedName + ' (not in the seller list)';
+      sel.appendChild(o); sel.value = '__keep';
+    }
+  }
+}
+
+function _dmsgSelectedSeller() {
+  const sel = document.getElementById('dmsg-seller');
+  if (!sel || !sel.value) return { id: null, name: null };
+  const opt = sel.selectedOptions[0];
+  return { id: sel.value === '__keep' ? (driverMessages.find(m => m.id === editDriverMsgId) || {}).seller_id || null : sel.value, name: (opt && opt.dataset.name) || null };
+}
+
+function renderDriverMessagePreview() {
+  const box = document.getElementById('dmsg-preview');
+  if (!box) return;
+  const seller = _dmsgSelectedSeller();
+  const body = document.getElementById('dmsg-body').value;
+  box.textContent = body.trim() ? fillDriverMessage(body, Object.assign({}, DMSG_SAMPLE, { seller: seller.name || 'Pure Peptides' })) : '—';
+}
+
+function _renderDmsgChips() {
+  const box = document.getElementById('dmsg-chips');
+  if (!box) return;
+  box.innerHTML = DMSG_PLACEHOLDERS.map(([k, hint]) =>
+    `<button type="button" class="act-btn" title="${escAttr(hint)}" onclick="insertDmsgPlaceholder('${k}')" style="font-family:var(--mono)">{${k}}</button>`).join('');
+}
+
+function insertDmsgPlaceholder(k) {
+  const ta = document.getElementById('dmsg-body');
+  const tok = '{' + k + '}';
+  const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? ta.value.length;
+  ta.value = ta.value.slice(0, a) + tok + ta.value.slice(b);
+  ta.focus(); ta.selectionStart = ta.selectionEnd = a + tok.length;
+  renderDriverMessagePreview();
+}
+
+function openNewDriverMessage() {
+  if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
+  if (!_driverMsgReady) { toast('Run add_driver_messages.sql first', true); return; }
+  editDriverMsgId = null;
+  document.getElementById('dmsg-modal-title').textContent = 'Add driver message';
+  document.getElementById('dmsg-title').value = '';
+  document.getElementById('dmsg-body').value = '';
+  const maxSort = driverMessages.reduce((m, x) => Math.max(m, parseInt(x.sort_order, 10) || 0), 0);
+  document.getElementById('dmsg-sort').value = maxSort + 10;
+  document.getElementById('dmsg-active').checked = true;
+  _fillDmsgSellerSelect(null); _renderDmsgChips(); renderDriverMessagePreview();
+  document.getElementById('dmsg-modal').classList.add('open');
+  setTimeout(() => document.getElementById('dmsg-title').focus(), 100);
+}
+
+function openEditDriverMessage(id) {
+  if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
+  const m = driverMessages.find(x => x.id === id);
+  if (!m) return;
+  editDriverMsgId = id;
+  document.getElementById('dmsg-modal-title').textContent = 'Edit driver message';
+  document.getElementById('dmsg-title').value = m.title || '';
+  document.getElementById('dmsg-body').value = m.body || '';
+  document.getElementById('dmsg-sort').value = m.sort_order ?? 100;
+  document.getElementById('dmsg-active').checked = m.active !== false;
+  _fillDmsgSellerSelect(m.seller_name || null); _renderDmsgChips(); renderDriverMessagePreview();
+  document.getElementById('dmsg-modal').classList.add('open');
+}
+
+async function saveDriverMessage() {
+  if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
+  const btn = document.getElementById('save-dmsg-btn');
+  if (btn.disabled) return;
+  const title = String(document.getElementById('dmsg-title').value || '').replace(/\s+/g, ' ').trim();
+  const body = String(document.getElementById('dmsg-body').value || '').trim();
+  if (!title) { toast('Title is required', true); return; }
+  if (!body) { toast('Message is required', true); return; }
+  const unknown = (body.match(/\{([A-Za-z_]+)\}/g) || []).map(t => t.slice(1, -1).toLowerCase()).filter(k => !DMSG_PLACEHOLDERS.some(p => p[0] === k));
+  if (unknown.length && !confirm('Unknown placeholder' + (unknown.length > 1 ? 's' : '') + ': {' + [...new Set(unknown)].join('}, {') + '}. The driver will see ' + (unknown.length > 1 ? 'them' : 'it') + ' as typed. Save anyway?')) return;
+  const seller = _dmsgSelectedSeller();
+  const sortRaw = parseInt(document.getElementById('dmsg-sort').value, 10);
+  const payload = {
+    title, body, seller_id: seller.id, seller_name: seller.name,
+    sort_order: isNaN(sortRaw) ? 100 : Math.max(0, Math.min(9999, sortRaw)),
+    active: document.getElementById('dmsg-active').checked,
+    updated_by: currentUser.email, updated_at: new Date().toISOString()
+  };
+  const dup = driverMessages.find(m => m.id !== editDriverMsgId
+    && String(m.title || '').trim().toLowerCase() === title.toLowerCase()
+    && String(m.seller_name || '').trim().toLowerCase() === String(seller.name || '').trim().toLowerCase());
+  if (dup) { toast('A message titled "' + title + '" already exists for ' + (seller.name || 'all sellers'), true); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  const before = editDriverMsgId ? driverMessages.find(m => m.id === editDriverMsgId) : null;
+  let error;
+  try {
+    ({ error } = editDriverMsgId
+      ? await sb.from('driver_messages').update(payload).eq('id', editDriverMsgId)
+      : await sb.from('driver_messages').insert(payload));
+  } finally { btn.disabled = false; btn.textContent = 'Save'; }
+  if (error) {
+    console.log('DB error:', error);
+    const msg = String(error.message || error.details || '');
+    toast(/driver_messages_title_uq|duplicate/i.test(msg) ? 'A message with this title already exists for this seller' : 'Could not save: ' + (msg || 'try again'), true);
+    return;
+  }
+  const changes = {};
+  if (before) ['title', 'body', 'seller_name', 'sort_order', 'active'].forEach(k => { if ((before[k] ?? null) !== (payload[k] ?? null)) changes[k] = { before: before[k] ?? null, after: payload[k] ?? null }; });
+  logEvent(editDriverMsgId ? 'UPDATE' : 'CREATE', 'driver_message', editDriverMsgId || '', Object.assign({ title, seller: seller.name || 'all sellers' }, before ? { field_changes: changes } : {}));
+  toast(editDriverMsgId ? 'Message updated — drivers get it within 5 minutes' : 'Message added — drivers get it within 5 minutes');
+  closeModal('dmsg-modal');
+  await loadDriverMessages();
+  renderDriverMessagesGrid();
+}
+
+async function toggleDriverMessage(id) {
+  if (currentRole !== 'admin') return;
+  const m = driverMessages.find(x => x.id === id); if (!m) return;
+  const active = m.active === false;
+  const { error } = await sb.from('driver_messages').update({ active, updated_by: currentUser.email, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) { toast('Could not save — try again', true); return; }
+  logEvent('UPDATE', 'driver_message', id, { title: m.title, seller: m.seller_name || 'all sellers', action: active ? 'show' : 'hide', field_changes: { active: { before: !active, after: active } } });
+  await loadDriverMessages(); renderDriverMessagesGrid();
+}
+
+async function deleteDriverMessage(id) {
+  if (currentRole !== 'admin') return;
+  const m = driverMessages.find(x => x.id === id); if (!m) return;
+  if (!confirm('Delete the message "' + m.title + '"' + (m.seller_name ? ' for ' + m.seller_name : '') + '? (Hide keeps it for later.)')) return;
+  const { error } = await sb.from('driver_messages').delete().eq('id', id);
+  if (error) { toast('Could not delete — try again', true); return; }
+  logEvent('DELETE', 'driver_message', id, { title: m.title, seller: m.seller_name || 'all sellers', body: m.body });
+  await loadDriverMessages(); renderDriverMessagesGrid();
 }
 
 function _partnerNorm(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
