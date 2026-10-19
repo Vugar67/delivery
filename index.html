@@ -1514,6 +1514,8 @@ select option{background:#1a1d27;color:#f0f2ff}
           <a id="f-location-link" href="#" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--blue);font-family:var(--mono);word-break:break-all;flex:1"></a>
           <button onclick="clearLocation()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">✕</button>
         </div>
+        <!-- v13.87: photo at the door (Driver app v1.1) -->
+        <div id="f-pod" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:var(--mono);line-height:1.6"></div>
         <input type="hidden" id="f-location-url">
       </div>
       <div class="form-group form-full">
@@ -1851,7 +1853,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.86.2';
+const APP_VERSION = 'v13.87';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4971,6 +4973,7 @@ async function openNewOrder(){
   if(currentRole==='dispatcher') return;
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
+  _renderPodInModal(null);   // v13.87
   const mdb=document.getElementById('modal-delete-order-btn');if(mdb)mdb.style.display='none';
   // Hide driver field for non-admin
   const dg=document.getElementById('f-driver-group');
@@ -5100,6 +5103,7 @@ async function editOrder(id){
   } else {
     const cmc=document.getElementById('client-msg-card');if(cmc)cmc.style.display='none';
   }
+  _renderPodInModal(o);   // v13.87
   if(locPreview && locLink){
     if(o.location_url){
       locLink.href=o.location_url;
@@ -10265,7 +10269,115 @@ function _failBadgeHtml(o) {
   if (isNaN(t) || Date.now() - t.getTime() > 24 * 3600 * 1000) return '';
   const hhmm = t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' });
   const n = parseInt(o.fail_count, 10) || 0;
-  return `<div style="font-size:11px;color:var(--red);margin-top:4px;font-family:var(--mono);line-height:1.4">↩ failed ${hhmm}${o.last_fail_by ? ' · ' + escHtml(o.last_fail_by) : ''}${o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''}${n > 1 ? ' · ×' + n : ''}</div>`;
+  const cam = o.last_fail_photo ? ` <a href="#" onclick="event.preventDefault();event.stopPropagation();podOpen('${o.id}','failed')" title="Photo of the failed attempt" style="text-decoration:none">📷</a>` : '';
+  return `<div style="font-size:11px;color:var(--red);margin-top:4px;font-family:var(--mono);line-height:1.4">↩ failed ${hhmm}${o.last_fail_by ? ' · ' + escHtml(o.last_fail_by) : ''}${o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''}${n > 1 ? ' · ×' + n : ''}${cam}</div>`;
+}
+
+// ── v13.87: photo at the door (MyCRM Driver v1.1) ───────────────────────────
+// Photos live in the PRIVATE Storage bucket "delivery-photos" (add_driver_photos.sql); staff (admin / operator /
+// dispatcher + custom roles on them) get a 10-minute signed link. orders.delivery_photo = the Delivered photo,
+// orders.delivery_photo_skip = the driver's reason when there is none, orders.last_fail_photo = last failed attempt.
+async function _podSignedUrl(path) {
+  const enc = String(path).split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(SUPABASE_URL + '/storage/v1/object/sign/delivery-photos/' + enc, {
+    method: 'POST',
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn: 600 })
+  });
+  let j = {};
+  try { j = await res.json(); } catch (e) {}
+  const u = j.signedURL || j.signedUrl;
+  if (!res.ok || !u) throw new Error(j.message || j.error || ('HTTP ' + res.status));
+  return SUPABASE_URL + '/storage/v1' + (u.startsWith('/') ? u : '/' + u);
+}
+
+function _podTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso);
+  return isNaN(t) ? '' : t.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' });
+}
+
+async function podOpen(orderId, kind) {
+  const o = orders.find(x => x.id === orderId) || {};
+  const path = kind === 'failed' ? o.last_fail_photo : o.delivery_photo;
+  if (!path) { toast('No photo for this order', true); return; }
+  const old = document.getElementById('pod-overlay'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'pod-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2100;display:flex;align-items:center;justify-content:center;padding:16px';
+  const title = (kind === 'failed' ? '↩ Failed attempt · ' : '📷 Delivered · ') + escHtml(o.order_num || '');
+  ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:min(720px,100%);max-height:94vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div style="font-family:var(--mono);font-weight:700;color:var(--accent)">${title}</div>
+        <span id="pod-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
+      </div>
+      <div id="pod-body" style="padding:12px;overflow:auto;text-align:center;font-family:var(--mono);font-size:12px;color:var(--muted)">Loading photo…</div>
+      <div id="pod-meta" style="padding:8px 14px 12px;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--text)"></div>
+    </div>`;
+  const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
+  document.body.appendChild(ov);
+  ov.querySelector('#pod-x').onclick = close;
+  // the photo row carries GPS + who/when (RLS: staff only)
+  let row = null;
+  try { const { data } = await sb.from('delivery_photos').select('*').eq('path', path).limit(1); row = Array.isArray(data) ? data[0] : data; } catch (e) {}
+  const lat = row && row.lat != null ? row.lat : (kind !== 'failed' ? o.delivery_lat : null);
+  const lng = row && row.lng != null ? row.lng : (kind !== 'failed' ? o.delivery_lng : null);
+  const when = (row && row.created_at) || (kind === 'failed' ? o.last_fail_at : o.delivered_at);
+  const who = (row && row.driver_name) || (kind === 'failed' ? o.last_fail_by : o.driver);
+  const gps = (lat != null && lng != null)
+    ? `<a href="https://www.google.com/maps?q=${encodeURIComponent(lat + ',' + lng)}" target="_blank" rel="noopener" style="color:var(--blue)">📍 ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}</a>${row && row.accuracy_m ? ' ±' + Math.round(row.accuracy_m) + ' m' : ''}`
+    : '<span style="color:var(--muted)">GPS: off</span>';
+  const addr = [o.emirate, o.city, o.villa || o.apt].filter(Boolean).map(escHtml).join(', ');
+  ov.querySelector('#pod-meta').innerHTML =
+    `<div>${escHtml(who || '—')} · ${escHtml(_podTime(when))} (Dubai)${kind === 'failed' && o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''}</div>` +
+    `<div>${gps}${o.location_url ? ` · <a href="${escAttr(o.location_url)}" target="_blank" rel="noopener" style="color:var(--blue)">order location</a>` : ''}</div>` +
+    (addr ? `<div style="color:var(--muted)">${addr}</div>` : '');
+  try {
+    const url = await _podSignedUrl(path);
+    if (!document.body.contains(ov)) return;
+    ov.querySelector('#pod-body').innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener" title="Open full size"><img src="${escAttr(url)}" alt="Delivery photo" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto"></a>`;
+  } catch (e) {
+    if (!document.body.contains(ov)) return;
+    ov.querySelector('#pod-body').innerHTML = `<span style="color:var(--red)">Could not open the photo: ${escHtml(e.message || String(e))}</span>`;
+  }
+}
+
+// order modal (admin / operator): photo of Delivered, or the reason there is none; photo of the last failed attempt
+function _renderPodInModal(o) {
+  const el = document.getElementById('f-pod');
+  if (!el) return;
+  const rows = [];
+  if (o && o.delivery_photo) {
+    rows.push(`<div>📷 <b>Delivery photo</b> · ${escHtml(o.driver || '')} · ${escHtml(_podTime(o.delivered_at))} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','delivered')" style="color:var(--blue)">open</a></div>`);
+  } else if (o && o.delivery_photo_skip) {
+    rows.push(`<div style="color:var(--yellow,#e0b341)">⚠ Delivered without photo · ${escHtml(o.driver || '')}: ${escHtml(o.delivery_photo_skip)}</div>`);
+  }
+  if (o && o.last_fail_photo) {
+    rows.push(`<div>↩ Failed attempt photo · ${escHtml(o.last_fail_by || '')} · ${escHtml(_podTime(o.last_fail_at))}${o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','failed')" style="color:var(--blue)">open</a></div>`);
+  }
+  el.innerHTML = rows.join('');
+  el.style.display = rows.length ? '' : 'none';
+}
+
+// Dispatch → under the Sent column: orders the drivers closed themselves today (Dubai), with the photo
+function _podClosedTodayHtml() {
+  const dayStart = Date.now() - ((Date.now() + 4 * 3600e3) % 86400e3);   // Dubai = UTC+4, no DST
+  const list = orders.filter(o => o.delivery_status === 'Delivered' && o.delivered_at && (o.delivery_photo || o.delivery_photo_skip)
+                              && new Date(o.delivered_at).getTime() >= dayStart)
+                     .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)));
+  if (!list.length) return '';
+  const rows = list.map(o => {
+    const t = new Date(o.delivered_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' });
+    const proof = o.delivery_photo
+      ? `<a href="#" onclick="event.preventDefault();podOpen('${o.id}','delivered')" style="text-decoration:none" title="Delivery photo">📷</a>`
+      : `<span title="${escAttr(o.delivery_photo_skip || '')}" style="color:var(--yellow,#e0b341)">⚠ no photo: ${escHtml(o.delivery_photo_skip || '')}</span>`;
+    return `<div style="display:flex;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px">
+      <span style="color:var(--green);font-weight:700">${escHtml(o.order_num)}</span><span>${escHtml(o.driver || '')}</span><span style="color:var(--muted)">${t}</span><span style="margin-left:auto">${proof}</span></div>`;
+  }).join('');
+  return `<details style="margin-top:10px" open><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--green);font-weight:700;padding:4px 8px">✓ Closed in the Driver app today (${list.length})</summary>${rows}</details>`;
 }
 
 function toggleDispatchOrder(id) {
@@ -10410,10 +10522,12 @@ async function dispatchMarkFailed(orderId) {
   // v13.85: the attempt itself (same fields the Driver app writes) — only when the columns exist
   const _hasFailCols = Object.prototype.hasOwnProperty.call(o, 'fail_count');
   if (_hasFailCols) Object.assign(_failPatch, { last_fail_at: _failAt, last_fail_by: failedDriver, last_fail_reason: reason, fail_count: (parseInt(o.fail_count, 10) || 0) + 1 });
+  if (Object.prototype.hasOwnProperty.call(o, 'last_fail_photo')) _failPatch.last_fail_photo = null;   // v13.87: this attempt has no photo
   const { error: _failErr } = await sb.from('orders').update(_failPatch).eq('id', orderId);
   if (_failErr) { console.log('DB error:', _failErr); toast('Could not save — please try again', true); return; }
   o.driver = null; o.wa_sent = false; o.wa_sent_at = null; o.delivery_status = 'Ready for Pick-up';
   if (_hasFailCols) Object.assign(o, { last_fail_at: _failAt, last_fail_by: failedDriver, last_fail_reason: reason, fail_count: _failPatch.fail_count });
+  if ('last_fail_photo' in _failPatch) o.last_fail_photo = null;
   logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_delivery_failed', driver_failed: failedDriver, reason: reason, delivery_status: 'Ready for Pick-up' });
   renderDispatchSent();
   renderDispatchQueue();
@@ -10610,10 +10724,10 @@ function renderDispatchSent() {
   const sent = dispatchApplyFilter(allSent, 'sent');        // v13.71
   if (countEl) countEl.textContent = _dfCountText(sent.length, allSent.length);
   if (!allSent.length) {
-    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No dispatched orders yet</div>';
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No dispatched orders yet</div>' + _podClosedTodayHtml();   // v13.87
     return;
   }
-  if (!sent.length) { el.innerHTML = _dfEmptyHtml('sent'); return; }
+  if (!sent.length) { el.innerHTML = _dfEmptyHtml('sent') + _podClosedTodayHtml(); return; }   // v13.87
   // Group by driver
   const byDriver = {};
   sent.forEach(o => {
@@ -10651,7 +10765,7 @@ function renderDispatchSent() {
           </div>
         </div>`;
       }).join('')}
-    </div>`).join('');
+    </div>`).join('') + _podClosedTodayHtml();   // v13.87
 }
 
 
