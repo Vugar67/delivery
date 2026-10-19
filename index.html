@@ -607,6 +607,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </select>
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
+        <button class="btn btn-ghost" id="cash-btn" onclick="openCashPanel()" title="Cash taken by the drivers, handovers (v13.89)">💵 Cash</button>
         <button class="btn btn-ghost" id="orders-export-btn" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
@@ -633,6 +634,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
           </div>
           <button id="dispatch-send-btn" onclick="openDispatchModal()" disabled style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 20px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;opacity:.4">▶ SEND</button>
+          <button id="dispatch-cash-btn" onclick="openCashPanel()" style="background:none;border:1px solid var(--accent);border-radius:6px;padding:6px 12px;color:var(--accent);font-family:var(--mono);font-size:11px;cursor:pointer">💵 Cash</button>
           <button onclick="toggleDispatchMode()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">✕ Exit</button>
         </div>
       </div>
@@ -1887,7 +1889,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.88';
+const APP_VERSION = 'v13.89';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2522,6 +2524,8 @@ async function initApp(){
   nav.innerHTML=`<a class="tab-btn active" href="#orders" onclick="showView('orders');return false;">Orders</a>`;
   // v13.70.2: Dispatch belongs to dispatchers and admins — operators lose the button
   if(isOperator){ const _db=document.getElementById('dispatch-btn'); if(_db) _db.style.display='none'; }
+  // v13.89: 💵 Cash — admin and dispatcher only
+  if(!CASH_ROLES.includes(currentRole)){ ['cash-btn','dispatch-cash-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
@@ -10598,6 +10602,8 @@ function _renderPodInModal(o) {
   const el = document.getElementById('f-pod');
   if (!el) return;
   const rows = [];
+  const _cashRow = _cashModalRow(o);   // v13.89
+  if (_cashRow) rows.push(_cashRow);
   if (o && o.delivery_photo) {
     rows.push(`<div>📷 <b>Delivery photo</b> · ${escHtml(o.driver || '')} · ${escHtml(_podTime(o.delivered_at))} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','delivered')" style="color:var(--blue)">open</a></div>`);
   } else if (o && o.delivery_photo_skip) {
@@ -10626,6 +10632,276 @@ function _podClosedTodayHtml() {
       <span style="color:var(--green);font-weight:700">${escHtml(o.order_num)}</span><span>${escHtml(o.driver || '')}</span><span style="color:var(--muted)">${t}</span><span style="margin-left:auto">${proof}</span></div>`;
   }).join('');
   return `<details style="margin-top:10px" open><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--green);font-weight:700;padding:4px 8px">✓ Closed in the Driver app today (${list.length})</summary>${rows}</details>`;
+}
+
+// ── v13.89: cash taken at the door (add_driver_cash.sql) ──────────────────────────────────────────
+// Cash on delivery: whoever closes the order enters the cash actually taken (after change). Less than due is
+// refused (the DB checks it too), more is allowed — the driver hands over everything. 💵 Cash = per-driver summary
+// for a Dubai day + handovers (admin / dispatcher accept, only the admin cancels).
+const CASH_ROLES = ['admin', 'dispatcher'];
+function _cashReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'cash_received'); }
+function _isCashOnDelivery(s) {
+  const t = String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return (t.includes('on delivery') && !t.includes('link on delivery')) || t === 'cod' || t === 'cash';
+}
+function _r2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+function _numOrNull(v) { if (v === null || v === undefined || v === '') return null; const n = parseFloat(v); return isFinite(n) ? n : null; }
+// same rule as order_cash_due() in the DB: Σ(price × qty) + delivery − discount; no items → total
+function _cashDue(o, items) {
+  let v;
+  if (Array.isArray(items) && items.length) {
+    v = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (_numOrNull(i.quantity) ?? 1), 0)
+        + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0);
+  } else if (_numOrNull(o.total) !== null) {
+    v = _numOrNull(o.total);
+  } else {
+    v = (parseFloat(o.subtotal) || 0) + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0);
+  }
+  return _r2(Math.max(v, 0));
+}
+// "880" "880.5" "880,50" "1 200" "1,200.50" → number (≤ 2 decimals); anything else → null (same as the Driver app)
+function _parseCash(s) {
+  s = String(s == null ? '' : s).replace(/[\s ]/g, '');
+  if (!s) return null;
+  let p;
+  if (/^\d{1,7}(\.\d{1,2})?$/.test(s)) p = s;
+  else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s)) p = s.replace(/,/g, '');
+  else if (/^\d{1,7},\d{1,2}$/.test(s)) p = s.replace(',', '.');
+  else return null;
+  return _r2(parseFloat(p));
+}
+// less → refused · more than due × 2 + 1000 → typo, refused (DB limit) · a lot more → confirm once more
+function _checkCash(rec, due) {
+  const r = _r2(rec), d = _r2(due);
+  let kind;
+  if (r < d - 0.005) kind = 'less';
+  else if (r > d * 2 + 1000) kind = 'too_much';
+  else if (r - d < 0.005) kind = 'exact';
+  else if (r - d > Math.max(100, d * 0.25)) kind = 'big_over';
+  else kind = 'over';
+  return { kind, received: r, due: d, over: _r2(r - d), canSave: kind === 'exact' || kind === 'over' || kind === 'big_over' };
+}
+function _aed(x) { return Number(x || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' AED'; }
+function _dubaiToday() { return new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10); }
+function _cashErrText(error) {
+  const m = (error && error.message) || String(error || '');
+  if (/cash_day_summary|cash_driver_day|cash_handover_add|cash_handover_void/.test(m) && /(find|exist|schema cache)/i.test(m)) return 'Cash is not set up yet — run add_driver_cash.sql in Supabase first.';
+  return m || 'Something went wrong';
+}
+
+// order modal line (admin / dispatcher): what was taken and by whom
+function _cashModalRow(o) {
+  if (!o || !_cashReady(o) || o.cash_received == null || !CASH_ROLES.includes(currentRole)) return '';
+  const over = _r2(o.cash_received - (o.cash_due || 0));
+  const src = o.cash_source === 'app' ? 'Driver app' : (o.cash_source || '');
+  return `<div>💵 <b>Cash received ${_aed(o.cash_received)}</b> · due ${_aed(o.cash_due)}` +
+         (over > 0.004 ? ` · <b style="color:var(--accent)">+${_aed(over)} over</b>` : '') +
+         ` · ${escHtml(o.cash_received_by || '')}${src ? ' (' + escHtml(src) + ')' : ''} · ${escHtml(_podTime(o.cash_received_at))}</div>`;
+}
+
+// ── 💵 Cash panel ───────────────────────────────────────────────────────
+let _cashDay = null;
+const _cashOpen = new Set();   // drivers whose details are expanded
+
+async function openCashPanel(day) {
+  if (!CASH_ROLES.includes(currentRole)) { toast('🔒 Cash — dispatchers and admins only', true); return; }
+  _cashDay = day || _cashDay || _dubaiToday();
+  let ov = document.getElementById('cash-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'cash-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto';
+    ov.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1000px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent)">💵 Cash — drivers</div>
+          <div style="flex:1"></div>
+          <button type="button" id="cash-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
+          <input type="date" id="cash-day" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+          <button type="button" id="cash-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+          <button type="button" id="cash-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+          <button type="button" id="cash-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
+          <span id="cash-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
+        </div>
+        <div id="cash-body" style="padding:8px 16px 4px;font-family:var(--mono);font-size:12px">Loading…</div>
+        <div style="padding:8px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
+          Cash on delivery orders delivered that day (Dubai). <b>Taken</b> = what the driver (or the dispatcher) entered at Delivered; <b>Over</b> = taken above due.
+          <b>On hand</b> = all cash taken − all cash handed over, at the end of the day (today: now) — cash not handed over carries over to the next day.
+          Click a driver for the orders and handovers.
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+    const onKey = ev => { if (ev.key === 'Escape' && !document.getElementById('cash-accept-overlay')) close(); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
+    ov.querySelector('#cash-x').onclick = close;
+    const shift = n => { const d = new Date(_cashDay + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); openCashPanel(d.toISOString().slice(0, 10)); };
+    ov.querySelector('#cash-prev').onclick = () => shift(-1);
+    ov.querySelector('#cash-next').onclick = () => shift(1);
+    ov.querySelector('#cash-today').onclick = () => openCashPanel(_dubaiToday());
+    ov.querySelector('#cash-refresh').onclick = () => openCashPanel(_cashDay);
+    ov.querySelector('#cash-day').onchange = ev => { if (ev.target.value) openCashPanel(ev.target.value); };
+  }
+  ov.querySelector('#cash-day').value = _cashDay;
+  ov.querySelector('#cash-next').disabled = _cashDay >= _dubaiToday();
+  await _renderCashBody();
+}
+
+async function _renderCashBody() {
+  const body = document.getElementById('cash-body');
+  if (!body) return;
+  const day = _cashDay;
+  const { data, error } = await sb.rpc('cash_day_summary', { p_day: day });
+  if (day !== _cashDay || !document.getElementById('cash-body')) return;
+  if (error) { body.innerHTML = `<div style="color:var(--red);padding:10px 0">${escHtml(_cashErrText(error))}</div>`; return; }
+  const rows = Array.isArray(data) ? data : [];
+  const isToday = day === _dubaiToday();
+  if (!rows.length) {
+    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No Cash on delivery orders delivered ${isToday ? 'today' : 'on ' + escHtml(day)} and no cash on hand.</div>`;
+    return;
+  }
+  const n = v => Number(v || 0);
+  const tot = rows.reduce((t, r) => ({ cod: t.cod + n(r.cod_orders), due: t.due + n(r.due_sum), rec: t.rec + n(r.received_sum), over: t.over + n(r.over_sum), hand: t.hand + n(r.handed_sum), on: t.on + n(r.on_hand) }), { cod: 0, due: 0, rec: 0, over: 0, hand: 0, on: 0 });
+  const th = (t, right) => `<th style="padding:6px 8px;text-align:${right ? 'right' : 'left'};font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">${t}</th>`;
+  const td = (h, right, extra) => `<td style="padding:7px 8px;text-align:${right ? 'right' : 'left'};border-bottom:1px solid var(--border);vertical-align:top${extra ? ';' + extra : ''}">${h}</td>`;
+  let html = `<table style="width:100%;border-collapse:collapse"><thead><tr>${th('Driver')}${th('COD', 1)}${th('Due', 1)}${th('Taken', 1)}${th('Over', 1)}${th('Handed over', 1)}${th(isToday ? 'On hand now' : 'On hand end of day', 1)}${th('')}</tr></thead><tbody>`;
+  rows.forEach(r => {
+    const d = r.driver_name;
+    const open = _cashOpen.has(d);
+    const miss = n(r.missing_orders) > 0 ? `<div style="color:var(--yellow,#e0b341);font-size:10px" title="Closed without an amount (old app / old core / SQL) — counted at due in Due, not in Taken">⚠ ${n(r.missing_orders)} without amount · ${_aed(r.missing_due)}</div>` : '';
+    const carry = Math.abs(n(r.carried_in)) > 0.004 ? `<div style="color:var(--muted);font-size:10px">incl. ${_aed(r.carried_in)} from earlier days</div>` : '';
+    const onHandColor = n(r.on_hand) > 0.004 ? 'var(--accent)' : (n(r.on_hand) < -0.004 ? 'var(--red)' : 'var(--muted)');
+    html += `<tr data-drv="${escAttr(d)}" class="cash-row" style="cursor:pointer">` +
+      td(`<span style="color:var(--muted)">${open ? '▾' : '▸'}</span> <b>${escHtml(d)}</b>`) +
+      td(`${n(r.cod_orders)}${miss}`, 1) +
+      td(_aed(r.due_sum), 1) +
+      td(_aed(r.received_sum), 1) +
+      td(n(r.over_sum) > 0.004 ? `<b style="color:var(--accent)">+${_aed(r.over_sum)}</b>` : '<span style="color:var(--muted)">—</span>', 1) +
+      td(n(r.handed_sum) > 0.004 ? _aed(r.handed_sum) : '<span style="color:var(--muted)">—</span>', 1) +
+      td(`<b style="color:${onHandColor};font-size:13px">${_aed(r.on_hand)}</b>${carry}`, 1) +
+      td(isToday ? `<button type="button" class="cash-accept" data-drv="${escAttr(d)}" data-onhand="${n(r.on_hand)}" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">💵 Accept cash</button>` : '', 1, 'white-space:nowrap') +
+      `</tr>`;
+    if (open) html += `<tr><td colspan="8" id="cash-det-${escAttr(d).replace(/[^A-Za-z0-9_-]/g, '_')}" style="padding:4px 8px 12px 24px;border-bottom:1px solid var(--border);background:var(--surface2)">Loading…</td></tr>`;
+  });
+  html += `<tr style="font-weight:700">${td('Total')}${td(tot.cod, 1)}${td(_aed(tot.due), 1)}${td(_aed(tot.rec), 1)}${td(tot.over > 0.004 ? '+' + _aed(tot.over) : '—', 1)}${td(tot.hand > 0.004 ? _aed(tot.hand) : '—', 1)}${td(_aed(tot.on), 1)}${td('')}</tr></tbody></table>`;
+  if (!isToday) html += `<div style="color:var(--muted);font-size:11px;padding:6px 0">Cash is accepted on today's page only.</div>`;
+  body.innerHTML = html;
+  body.querySelectorAll('.cash-row').forEach(tr => tr.addEventListener('click', ev => {
+    if (ev.target.closest('.cash-accept')) return;
+    const d = tr.getAttribute('data-drv');
+    if (_cashOpen.has(d)) _cashOpen.delete(d); else _cashOpen.add(d);
+    _renderCashBody();
+  }));
+  body.querySelectorAll('.cash-accept').forEach(b => b.addEventListener('click', ev => {
+    ev.stopPropagation();
+    cashAcceptDialog(b.getAttribute('data-drv'), parseFloat(b.getAttribute('data-onhand')) || 0);
+  }));
+  for (const d of _cashOpen) if (rows.some(r => r.driver_name === d)) _renderCashDetails(d);
+}
+
+async function _renderCashDetails(driver) {
+  const id = 'cash-det-' + escAttr(driver).replace(/[^A-Za-z0-9_-]/g, '_');
+  const day = _cashDay;
+  const { data, error } = await sb.rpc('cash_driver_day', { p_driver: driver, p_day: day });
+  const el = document.getElementById(id);
+  if (!el || day !== _cashDay) return;
+  if (error) { el.innerHTML = `<span style="color:var(--red)">${escHtml(_cashErrText(error))}</span>`; return; }
+  const ords = (data && data.orders) || [];
+  const hos = (data && data.handovers) || [];
+  const t = iso => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }) : '';
+  let h = `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:4px 0">Orders (${ords.length})</div>`;
+  if (!ords.length) h += `<div style="color:var(--muted)">—</div>`;
+  ords.forEach(o => {
+    const over = o.received != null ? _r2(o.received - o.due) : 0;
+    const src = o.source === 'app' ? '📱 app' : (o.source || '');
+    h += `<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
+      <span style="color:var(--muted);min-width:40px">${t(o.delivered_at)}</span>
+      <a href="#" onclick="event.preventDefault();editOrder('${escAttr(o.id)}')" style="color:var(--green);font-weight:700;text-decoration:none">${escHtml(o.order_num || '')}</a>
+      <span style="min-width:120px">${escHtml(o.client_name || '')}</span>
+      <span>due ${_aed(o.due)}</span>
+      ${o.received != null
+        ? `<span>taken <b>${_aed(o.received)}</b></span>${over > 0.004 ? `<b style="color:var(--accent)">+${_aed(over)}</b>` : ''}<span style="color:var(--muted)">${escHtml(o.by || '')}${src ? ' · ' + escHtml(src) : ''}</span>`
+        : `<span style="color:var(--yellow,#e0b341)">⚠ closed without amount</span>`}
+    </div>`;
+  });
+  h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">Handed over (${hos.filter(x => !x.voided_at).length})</div>`;
+  if (!hos.length) h += `<div style="color:var(--muted)">—</div>`;
+  hos.forEach(x => {
+    const voided = !!x.voided_at;
+    h += `<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap;${voided ? 'opacity:.55' : ''}">
+      <span style="color:var(--muted);min-width:40px">${t(x.at)}</span>
+      <b style="${voided ? 'text-decoration:line-through' : ''}">${_aed(x.amount)}</b>
+      <span style="color:var(--muted)">accepted by ${escHtml(x.by || '—')}</span>
+      ${x.note ? `<span>“${escHtml(x.note)}”</span>` : ''}
+      ${voided ? `<span style="color:var(--red)">cancelled by ${escHtml(x.voided_by || '')}: ${escHtml(x.void_reason || '')}</span>`
+               : (currentRole === 'admin' ? `<a href="#" class="cash-void" data-id="${x.id}" style="color:var(--red);margin-left:auto">cancel</a>` : '')}
+    </div>`;
+  });
+  el.innerHTML = h;
+  el.querySelectorAll('.cash-void').forEach(a => a.addEventListener('click', async ev => {
+    ev.preventDefault();
+    const reason = (prompt('Cancel this handover? Write why (it stays in the history):') || '').trim();
+    if (!reason) return;
+    const { error: e2 } = await sb.rpc('cash_handover_void', { p_id: parseInt(a.getAttribute('data-id'), 10), p_reason: reason });
+    if (e2) { toast(_cashErrText(e2), true); return; }
+    toast('Handover cancelled');
+    _renderCashBody();
+  }));
+}
+
+function cashAcceptDialog(driver, onHand) {
+  const ex = document.getElementById('cash-accept-overlay');
+  if (ex) ex.remove();
+  const ov = document.createElement('div');
+  ov.id = 'cash-accept-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2100;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:380px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-family:var(--mono);font-weight:700">💵 Accept cash from ${escHtml(driver)}</div>
+      <div style="padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.6">
+        <div>On hand now: <b style="color:var(--accent)">${_aed(onHand)}</b></div>
+        <label style="display:block;margin-top:10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Amount received, AED</label>
+        <input id="cash-acc-amount" inputmode="decimal" autocomplete="off" value="${onHand > 0.004 ? _r2(onHand).toFixed(2) : ''}" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:var(--mono);font-size:15px;color:var(--text)">
+        <div id="cash-acc-msg" style="min-height:18px;font-size:11px;margin-top:4px"></div>
+        <label style="display:block;margin-top:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Note (optional)</label>
+        <input id="cash-acc-note" maxlength="300" autocomplete="off" placeholder="e.g. part of today, rest tomorrow" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;background:var(--surface2);border-radius:0 0 12px 12px">
+        <button type="button" id="cash-acc-cancel" style="padding:8px 14px;font-family:var(--mono);font-size:12px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+        <button type="button" id="cash-acc-ok" style="padding:8px 16px;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--green);color:#000;border:none;border-radius:8px;cursor:pointer">✓ Received</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const amt = ov.querySelector('#cash-acc-amount');
+  const msg = ov.querySelector('#cash-acc-msg');
+  const ok = ov.querySelector('#cash-acc-ok');
+  const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  const check = () => {
+    const v = _parseCash(amt.value);
+    if (amt.value.trim() === '') { msg.textContent = ''; ok.disabled = true; ok.style.opacity = .4; ok.textContent = '✓ Received'; return null; }
+    if (v === null || v <= 0) { msg.innerHTML = '<span style="color:var(--red)">Numbers only, more than 0 — e.g. 900 or 900.50</span>'; ok.disabled = true; ok.style.opacity = .4; ok.textContent = '✓ Received'; return null; }
+    msg.innerHTML = v > onHand + 0.004 ? `<span style="color:var(--yellow,#e0b341)">More than on hand (${_aed(onHand)}) — check before saving</span>`
+                  : (v < onHand - 0.004 ? `<span style="color:var(--muted)">${_aed(_r2(onHand - v))} stays on hand</span>` : '<span style="color:var(--green)">All cash on hand</span>');
+    ok.disabled = false; ok.style.opacity = 1; ok.textContent = '✓ Received ' + _aed(v);
+    return v;
+  };
+  amt.addEventListener('input', check);
+  check();
+  ov.querySelector('#cash-acc-cancel').onclick = close;
+  ok.onclick = async () => {
+    const v = check();
+    if (v === null) return;
+    ok.disabled = true;
+    const { data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: ov.querySelector('#cash-acc-note').value.trim() || null });
+    if (error) { ok.disabled = false; toast(_cashErrText(error), true); return; }
+    close();
+    toast('💵 ' + _aed(v) + ' received from ' + driver + ' · on hand ' + _aed(data && data.on_hand));
+    _renderCashBody();
+  };
+  setTimeout(() => { amt.focus(); amt.select(); }, 0);
 }
 
 function toggleDispatchOrder(id) {
@@ -10723,17 +10999,27 @@ async function dispatchMarkDelivered(orderId) {
     toast(o.order_num + ' is no longer En Route (' + (o.delivery_status || '—') + ')', true);
     renderDispatchSent(); renderDispatchQueue(); return;
   }
-  if (!(await confirmDeliveredDialog(o, items))) return;   // v13.71: full-info dialog instead of confirm()
+  const _res = await confirmDeliveredDialog(o, items);   // v13.71: full-info dialog instead of confirm()
+  if (!_res) return;
+  const _cash = (_res && typeof _res.cash === 'number') ? _res.cash : null;   // v13.89: cash taken (Cash on delivery)
   const _dAt = new Date().toISOString();   // v13.70.5: physical delivery moment for Reports
   // v13.71: the dialog can stay open for a while — the PATCH is conditional on the order STILL
   // being En Route, so a change made meanwhile (another tab, Aramex sync, admin) is never overwritten.
   // Our PostgREST client returns no body/row-count for PATCH, so the outcome is verified by re-reading.
+  const _patch = { delivery_status: 'Delivered', delivered_at: _dAt, updated_by: currentUser.email };
+  if (_cash !== null) _patch.cash_received = _cash;   // v13.89: the DB computes cash_due and refuses less than due
   const { error: _updErr } = await sb.from('orders')
-    .update({ delivery_status: 'Delivered', delivered_at: _dAt, updated_by: currentUser.email })
+    .update(_patch)
     .eq('id', orderId).eq('delivery_status', 'En Route');
-  if (_updErr) { console.log('DB error:', _updErr); toast('Could not save — please try again', true); return; }
+  if (_updErr) {
+    console.log('DB error:', _updErr);
+    const _m = (_updErr && _updErr.message) || '';
+    toast(/Less than due|looks wrong|Cash /.test(_m) ? '💵 ' + _m : 'Could not save — please try again', true);
+    return;
+  }
   let _after = null;
-  try { const { data } = await sb.from('orders').select('delivery_status,delivered_at,driver').eq('id', orderId).single(); _after = data; } catch (e) { /* re-read failed — trust the PATCH */ }
+  const _cols = 'delivery_status,delivered_at,driver' + (_cashReady(o) ? ',cash_due,cash_received,cash_received_at,cash_received_by,cash_source' : '');
+  try { const { data } = await sb.from('orders').select(_cols).eq('id', orderId).single(); _after = data; } catch (e) { /* re-read failed — trust the PATCH */ }
   if (_after && _after.delivery_status !== 'Delivered') {
     // 0 rows matched: the order left En Route while the dialog was open — nothing was written
     Object.assign(o, _after);
@@ -10741,10 +11027,12 @@ async function dispatchMarkDelivered(orderId) {
     renderDispatchSent(); renderDispatchQueue(); return;
   }
   o.delivery_status = 'Delivered'; o.delivered_at = (_after && _after.delivered_at) || _dAt;
-  logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_mark_delivered', driver: o.driver, delivery_status: 'Delivered' });
+  if (_after && _cashReady(o)) ['cash_due', 'cash_received', 'cash_received_at', 'cash_received_by', 'cash_source'].forEach(k => { if (k in _after) o[k] = _after[k]; });
+  logEvent('UPDATE', 'order', orderId, { order_num: o.order_num, action: 'dispatch_mark_delivered', driver: o.driver, delivery_status: 'Delivered',
+    ...(_cash !== null ? { cash_received: _cash, cash_due: o.cash_due != null ? o.cash_due : undefined } : {}) });
   renderDispatchSent();
   renderDispatchQueue();
-  toast('✅ ' + o.order_num + ' — delivered by ' + (o.driver || 'driver'));
+  toast('✅ ' + o.order_num + ' — delivered by ' + (o.driver || 'driver') + (_cash !== null ? ' · cash ' + _aed(_cash) : ''));
 }
 
 async function dispatchMarkFailed(orderId) {
@@ -10783,8 +11071,10 @@ async function dispatchMarkFailed(orderId) {
 }
 
 // v13.71: full-information confirm dialog for ✓ Delivered (replaces the bare confirm()).
-// Resolves true only on the explicit "Confirm delivered" click; ✕ / Cancel / Esc / click outside → false.
+// Resolves only on the explicit "Confirm delivered" click; ✕ / Cancel / Esc / click outside → false.
 // Enter is deliberately NOT bound — closing an order must be a click.
+// v13.89: resolves { cash } — for Cash on delivery (after add_driver_cash.sql) the cash taken must be chosen first:
+// "Exactly X" or "Other amount"; less than due is refused, a lot more needs a tick, a typo-size amount is refused.
 function confirmDeliveredDialog(o, items) {
   return new Promise(resolve => {
     const existing = document.getElementById('confirm-delivered-overlay');
@@ -10797,6 +11087,8 @@ function confirmDeliveredDialog(o, items) {
     const needsCollect = (o.payment_status || '').toLowerCase().includes('on delivery');
     const itemsSubtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.quantity) || 1), 0);
     const cashToCollect = itemsSubtotal + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0); // same rule as the driver WhatsApp message (v13.51)
+    const askCash = _cashReady(o) && _isCashOnDelivery(o.payment_status);   // v13.89
+    const cashDue = askCash ? _cashDue(o, items) : 0;
     const sentAgo = o.wa_sent_at ? (() => { const m = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min ago'; })() : '';
     const itemsQty = items.reduce((s, i) => s + (parseFloat(i.quantity) || 1), 0);
 
@@ -10825,11 +11117,29 @@ function confirmDeliveredDialog(o, items) {
         ? `<div style="font-family:var(--mono);font-size:12px;line-height:1.5">${items.map(i => `<div>• ${e(i.product_name)} <span style="color:var(--muted)">×${e(i.quantity || 1)}</span></div>`).join('')}<div style="color:var(--muted);font-size:11px;margin-top:2px">${itemsQty} item${itemsQty !== 1 ? 's' : ''} · subtotal ${itemsSubtotal.toFixed(2)} AED</div></div>`
         : '<span style="color:var(--muted)">— no items —</span>') +
       row('Payment', `${e(o.payment_status) || '—'}`) +
-      (needsCollect
+      (askCash ? '' : needsCollect
         ? row('Cash', `<b style="font-family:var(--mono);font-size:15px;color:var(--accent)">💵 ${cashToCollect.toFixed(2)} AED</b> <span style="color:var(--muted);font-size:11px">to collect</span>`, { hl: true })
         : row('Total', `<span style="font-family:var(--mono)">${(parseFloat(o.total) || cashToCollect).toFixed(2)} AED</span> <span style="color:var(--muted);font-size:11px">· nothing to collect</span>`)) +
       row('Driver note', o.driver_note && String(o.driver_note).trim() ? `<div style="white-space:pre-wrap;color:var(--accent)">📝 ${e(String(o.driver_note).trim())}</div>` : '') +
       row('Notes', o.notes && String(o.notes).trim() ? `<div style="white-space:pre-wrap">${e(String(o.notes).trim())}</div>` : '');
+
+    // v13.89: cash taken from the client (Cash on delivery)
+    const _btn = 'padding:8px 12px;font-family:var(--mono);font-size:12px;border-radius:8px;cursor:pointer';
+    const cashBlock = askCash ? `
+      <div id="cdd-cash" style="margin:10px -16px 0;padding:10px 16px;background:rgba(245,166,35,.07);border-top:1px solid var(--border)">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">💵 Cash taken from the client</div>
+        <div style="font-size:13px;margin:2px 0 8px">Due <b style="font-family:var(--mono);font-size:15px;color:var(--accent)">${_aed(cashDue)}</b></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="cdd-exact" style="${_btn};background:transparent;color:var(--green);border:1px solid var(--green);font-weight:700">✓ Exactly ${_aed(cashDue)}</button>
+          <button type="button" id="cdd-other" style="${_btn};background:transparent;color:var(--text);border:1px solid var(--border)">Other amount</button>
+        </div>
+        <div id="cdd-other-wrap" style="display:none;margin-top:8px">
+          <input id="cdd-amount" inputmode="decimal" autocomplete="off" placeholder="Cash taken, AED" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:var(--mono);font-size:14px;color:var(--text)">
+          <div id="cdd-msg" style="min-height:16px;font-size:11px;margin-top:4px;font-family:var(--mono)"></div>
+          <label id="cdd-sure-wrap" style="display:none;font-size:12px;margin-top:4px;cursor:pointer"><input type="checkbox" id="cdd-sure"> <span id="cdd-sure-text"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">What the driver kept after giving change. Less than due is not accepted — change the order first (discount), then close.</div>
+      </div>` : '';
 
     const overlay = document.createElement('div');
     overlay.id = 'confirm-delivered-overlay';
@@ -10843,7 +11153,7 @@ function confirmDeliveredDialog(o, items) {
           </div>
           <span id="confirm-delivered-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:4px 6px">✕</span>
         </div>
-        <div style="padding:4px 16px 8px;overflow-y:auto;flex:1">${body}</div>
+        <div style="padding:4px 16px 8px;overflow-y:auto;flex:1">${body}${cashBlock}</div>
         <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;background:var(--surface2);border-radius:0 0 12px 12px">
           <button id="confirm-delivered-cancel" type="button" style="padding:8px 16px;font-family:var(--mono);font-size:12px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
           <button id="confirm-delivered-ok" type="button" style="padding:8px 18px;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--green);color:#000;border:none;border-radius:8px;cursor:pointer">✓ Confirm delivered</button>
@@ -10863,7 +11173,53 @@ function confirmDeliveredDialog(o, items) {
     overlay.addEventListener('click', ev => { if (ev.target === overlay) finish(false); });
     overlay.querySelector('#confirm-delivered-x').onclick = () => finish(false);
     overlay.querySelector('#confirm-delivered-cancel').onclick = () => finish(false);
-    overlay.querySelector('#confirm-delivered-ok').onclick = () => finish(true);
+    const okBtn = overlay.querySelector('#confirm-delivered-ok');
+    if (!askCash) {
+      okBtn.onclick = () => finish({ cash: null });
+    } else {
+      // v13.89: Confirm stays disabled until a valid amount is chosen
+      let mode = null;   // 'exact' | 'other'
+      const exactB = overlay.querySelector('#cdd-exact'), otherB = overlay.querySelector('#cdd-other');
+      const wrap = overlay.querySelector('#cdd-other-wrap'), amt = overlay.querySelector('#cdd-amount');
+      const msg = overlay.querySelector('#cdd-msg'), sureWrap = overlay.querySelector('#cdd-sure-wrap'), sure = overlay.querySelector('#cdd-sure');
+      const chosen = () => {
+        if (mode === 'exact') return cashDue;
+        if (mode !== 'other') return null;
+        const v = _parseCash(amt.value);
+        if (v === null) return null;
+        const c = _checkCash(v, cashDue);
+        if (!c.canSave || (c.kind === 'big_over' && !sure.checked)) return null;
+        return c.received;
+      };
+      const refresh = () => {
+        exactB.style.background = mode === 'exact' ? 'var(--green)' : 'transparent';
+        exactB.style.color = mode === 'exact' ? '#000' : 'var(--green)';
+        otherB.style.borderColor = mode === 'other' ? 'var(--accent)' : 'var(--border)';
+        wrap.style.display = mode === 'other' ? '' : 'none';
+        if (mode === 'other') {
+          const raw = amt.value.trim(), v = _parseCash(raw);
+          const c = v === null ? null : _checkCash(v, cashDue);
+          sureWrap.style.display = c && c.kind === 'big_over' ? '' : 'none';
+          if (c && c.kind === 'big_over') overlay.querySelector('#cdd-sure-text').textContent = 'Yes, the client gave ' + _aed(c.received);
+          msg.innerHTML = !raw ? '' : v === null ? '<span style="color:var(--red)">Numbers only — e.g. 900 or 900.50</span>'
+            : c.kind === 'less' ? `<span style="color:var(--red);font-weight:700">Less than ${_aed(cashDue)} is not allowed — change the order first</span>`
+            : c.kind === 'too_much' ? '<span style="color:var(--red);font-weight:700">Too much for this order — check the number</span>'
+            : c.kind === 'exact' ? '<span style="color:var(--muted)">Same as due</span>'
+            : `<span style="color:var(--accent);font-weight:700">+${_aed(c.over)} over due — the driver hands over all of it</span>`;
+        }
+        const v = chosen();
+        okBtn.disabled = v === null;
+        okBtn.style.opacity = v === null ? .4 : 1;
+        okBtn.style.cursor = v === null ? 'not-allowed' : 'pointer';
+        okBtn.textContent = v === null ? '✓ Confirm delivered' : '✓ Confirm delivered · ' + _aed(v);
+      };
+      exactB.onclick = () => { mode = 'exact'; refresh(); };
+      otherB.onclick = () => { mode = 'other'; refresh(); setTimeout(() => amt.focus(), 0); };
+      amt.addEventListener('input', () => { sure.checked = false; refresh(); });
+      sure.addEventListener('change', refresh);
+      okBtn.onclick = () => { const v = chosen(); if (v !== null) finish({ cash: v }); };
+      refresh();
+    }
     document.body.appendChild(overlay);
     overlay.querySelector('#confirm-delivered-cancel').focus();
   });
