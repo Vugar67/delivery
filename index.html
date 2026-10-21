@@ -206,13 +206,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 /* v13.71.6: inline line-name editor */
 .cart-name-edit{display:flex;flex-direction:column;gap:4px;min-width:0}
 .cart-name-edit input{background:var(--surface2);border:1px solid var(--accent);border-radius:6px;padding:4px 7px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;box-sizing:border-box}
-.cart-name-edit .cne-name{width:100%}
 .cart-name-edit .cne-row{display:flex;gap:4px;align-items:center}
-.cart-name-edit .cne-unit{width:64px}
 .cart-name-edit button{border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:6px;padding:3px 8px;font-family:var(--mono);font-size:11px;cursor:pointer}
 .cart-name-edit .cne-ok{color:var(--green);border-color:rgba(74,222,128,.5)}
 .cart-name-edit .cne-cancel{color:#ff6666}
-.cart-name-edit .cne-reset{color:var(--muted);margin-left:auto}
 .shop-cart-item-del:hover{color:var(--red)}
 .shop-cart-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 
@@ -1889,7 +1886,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.89';
+const APP_VERSION = 'v13.90';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4219,10 +4216,12 @@ function renderCart() {
   const getUnit  = item => item.is_custom ? (item.unit || '') : (item.unitOverride || item.product.unit);  // v13.71.6: per-line unit edit
   const _sellerEl = document.getElementById('f-seller-id') || {};
   const _sellerId = window._selectedSellerId || '';
-  const _editedTag = ' <span title="Name edited for this order only — catalog is untouched" style="font-size:9px;color:var(--accent);font-family:var(--mono);background:rgba(245,166,35,.15);padding:1px 5px;border-radius:3px">EDITED</span>';
+  // v13.90: line names are no longer editable; a saved name that differs from the catalog / alias (an edit made before
+  // v13.90, or a product renamed in the catalog after the order) is kept as it was saved and marked SAVED NAME.
+  const _editedTag = ' <span title="Saved on this order with a name that differs from the catalog (an older edit or a catalog rename) — kept as is. Line names cannot be edited; to get the catalog name, remove the line and add it again." style="font-size:9px;color:var(--accent);font-family:var(--mono);background:rgba(245,166,35,.15);padding:1px 5px;border-radius:3px">SAVED NAME</span>';
   const getName = item => {
     if (item.is_custom) return escAttr(item.product_name);
-    if (item.nameOverride) return escAttr(item.nameOverride) + _editedTag;   // v13.71.6: manual name wins over alias
+    if (item.nameOverride) return escAttr(item.nameOverride) + _editedTag;   // v13.71.6 override kept for old orders (v13.90: read-only)
     const alias = _sellerId ? getAlias(_sellerId, item.product.id) : null;
     return alias ? escAttr(item.product.name) + ' <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">→ ' + escAttr(alias) + '</span>' : escAttr(item.product.name);
   };
@@ -4251,7 +4250,9 @@ function renderCart() {
         <span style="font-size:10px;color:var(--muted)">AED</span>
       </div>
       <div class="shop-cart-item-price">${(getPrice(item)*getQty(item)).toFixed(2)}</div>
-      <button class="shop-cart-edit" onclick="startCartNameEdit(${i})" title="Edit the line name / unit for this order (catalog is not changed)">&#9998;</button>
+      ${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length
+        ? `<button class="shop-cart-edit" onclick="startCartNameEdit(${i})" title="Edit the doses of this complicated product (the name is composed again)">&#9998;</button>`
+        : '<span class="shop-cart-edit" style="visibility:hidden" aria-hidden="true">&#9998;</span>'}
       <button class="shop-cart-split" onclick="splitCartLine(${i})" title="Split: move 1 unit to a new line with its own price (gift, discount)">&#10697;</button>
       <button class="shop-cart-item-del" onclick="removeFromCart(${i})">&#10005;</button>
     </div>`).join('');
@@ -4295,67 +4296,19 @@ function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
 // (a gift unit at 0, one unit at a discount…). Qty > 1: one unit moves to the new line;
 // qty = 1: a second unit is added. The new line starts at the source line's price and
 // its own composition (customComponents) is copied, so the operator only edits the price.
-// v13.71.6: inline edit of a cart line's NAME and UNIT — for this order only, the catalog is
-// untouched. Regular product: stored as nameOverride/unitOverride (product_id stays, so stock,
-// committed qty and seller prices keep working; a manual name beats the seller alias).
-// Custom item: edits product_name/unit directly. Enter / ✓ = save, Esc / ✕ / blur-away = cancel.
-// Replaced the "Customize composition" (syringe) entry point — that flow is done via Custom Items.
-function _cartLineCatalogName(item) {
-  if (item.is_custom) return item.product_name || '';
-  const sid = window._selectedSellerId || '';
-  const alias = sid ? getAlias(sid, item.product.id) : null;
-  return alias || item.product.name || '';
-}
+// v13.90 (Vugar 21.10): line NAMES and UNITS are NOT editable in the cart — for anyone, admin included. A regular line
+// prints the catalog name (or the seller alias), a custom line the name composed by the custom-item form, and the unit
+// comes from the card. (v13.71.6 had an inline editor — removed: the invoice printed the nickname, the label the Sticker
+// Name, and everything else the typed text, so one line carried three different names; in practice it was used to sell
+// "Doctor Consultation" through the Alcohol Swab Pads card.) Wrong line → ✕ and add it again. Names saved on old
+// orders stay as they were saved (nameOverride / unitOverride round-trip, see editOrder) and are never rewritten.
+// ✎ remains on Complicated Custom Product lines only — it edits the doses (startCartDoseEdit).
 function startCartNameEdit(i) {
   const item = cart[i]; if (!item) return;
   if (item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length) return startCartDoseEdit(i);   // v13.86
-  const cell = document.getElementById('cart-name-' + i); if (!cell) return;
-  if (cell.querySelector('.cart-name-edit')) return;            // already editing
-  const curName = item.is_custom ? (item.product_name || '') : (item.nameOverride || _cartLineCatalogName(item));
-  const curUnit = item.is_custom ? (item.unit || '') : (item.unitOverride || item.product.unit || '');
-  cell.innerHTML = `
-    <div class="cart-name-edit">
-      <input class="cne-name" value="${escAttr(curName)}" placeholder="Line name (as it will print on the invoice)" maxlength="200">
-      <div class="cne-row">
-        <input class="cne-unit" value="${escAttr(curUnit)}" placeholder="unit" maxlength="20">
-        <button type="button" class="cne-ok" title="Save (Enter)">&#10003;</button>
-        <button type="button" class="cne-cancel" title="Cancel (Esc)">&#10005;</button>
-        ${!item.is_custom ? `<button type="button" class="cne-reset" title="Back to the catalog name">catalog</button>` : ''}
-      </div>
-    </div>`;
-  const nameInp = cell.querySelector('.cne-name'), unitInp = cell.querySelector('.cne-unit');
-  const commit = () => commitCartNameEdit(i, nameInp.value, unitInp.value);
-  const cancel = () => renderCart();
-  cell.querySelector('.cne-ok').onclick = commit;
-  cell.querySelector('.cne-cancel').onclick = cancel;
-  const rst = cell.querySelector('.cne-reset');
-  if (rst) rst.onclick = () => { delete item.nameOverride; delete item.unitOverride; renderCart(); };
-  [nameInp, unitInp].forEach(inp => inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  }));
-  nameInp.focus(); nameInp.select();
+  toast('Line names cannot be edited — remove the line (✕) and add it again', true);
 }
-function commitCartNameEdit(i, name, unit) {
-  const item = cart[i]; if (!item) return;
-  name = String(name || '').trim(); unit = String(unit || '').trim();
-  if (!name) { toast('Line name cannot be empty', true); return; }
-  if (item.is_custom) {
-    // v13.73: a custom line must keep starting with a Custom Products name that has an Invoice
-    // Nickname — otherwise the invoice would print whatever was typed here
-    if (!_customDirMatch(name)) {
-      toast('🧾 A custom line must keep starting with its name from the Custom Products list — you can change the kind/dosage part after it. ' + (currentRole === 'admin' ? 'New names: Directories → Custom Products.' : 'New names: ask the admin.'), true);
-      return;
-    }
-    if (name !== String(item.product_name || '').trim()) item.name_edited = true;   // v13.83: a renamed custom line gets no label at the Packer
-    item.product_name = name; item.unit = unit || 'pcs';
-  } else {
-    // Same as the catalog/alias text → no override (keeps the line "clean")
-    if (name === _cartLineCatalogName(item)) delete item.nameOverride; else item.nameOverride = name;
-    if (!unit || unit === (item.product.unit || '')) delete item.unitOverride; else item.unitOverride = unit;
-  }
-  renderCart();
-}
+function commitCartNameEdit() { toast('Line names cannot be edited — remove the line (✕) and add it again', true); }   // v13.90: kept as a guard
 
 // v13.86: ✎ on a Complicated Custom Product line edits ONLY the doses — the name is composed again (base name and the
 // SOLVENT ML suffix kept), name_edited stays false, so the Packer still prints the label.
@@ -4561,6 +4514,13 @@ function filterSellerDropdown(q) {
   setTimeout(() => { const si = document.getElementById('seller-search-input'); if(si && !q) si.focus(); }, 50);
 }
 
+// v13.90: the Clients card of a seller by its name (orders store seller_name only). First seller card with that name.
+function _sellerIdByName(name) {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n) return null;
+  const c = (clients || []).find(x => x.is_seller && String(x.name || '').trim().toLowerCase() === n);
+  return c ? c.id : null;
+}
 function selectSeller(clientId) {
   const c = clients.find(x => x.id === clientId);
   if (!c) return;
@@ -5112,7 +5072,9 @@ async function editOrder(id){
   const ccb=document.getElementById('client-clear-btn');if(ccb)ccb.style.display=o.client_name?'':'none';
   const snEl=document.getElementById('f-seller-name');if(snEl)snEl.value=o.seller_name||'';
   const scb=document.getElementById('seller-clear-btn');if(scb)scb.style.display=o.seller_name?'':'none';
-  window._selectedSellerId = o.seller_id || null;
+  // v13.90: orders.seller_id does not exist (orders carry seller_name only) — find the seller card by name, else the
+  // alias lookup never worked when re-opening an order and every alias showed up as an "edited" name.
+  window._selectedSellerId = _sellerIdByName(o.seller_name);
   const invDisp=document.getElementById('f-invoice-display');if(invDisp)invDisp.value=o.invoice_number||'—';
   const invGrp=document.getElementById('f-invoice-group');if(invGrp)invGrp.style.display=o.invoice_number?'':'none';
   document.getElementById('f-confirmed').value=o.confirmed||'No';
@@ -5180,7 +5142,7 @@ async function editOrder(id){
     const customPrice = (savedPrice !== originalPrice) ? savedPrice : undefined;
     const line = {product:p,qty:parseFloat(item.quantity),customPrice};
     // v13.71.6: a saved name that is neither the catalog name nor the seller alias = a manual edit → keep it
-    const _alias = o.seller_id ? getAlias(o.seller_id, p.id) : null;
+    const _alias = window._selectedSellerId ? getAlias(window._selectedSellerId, p.id) : null;   // v13.90: seller resolved by name above
     const _savedName = String(item.product_name || '').trim();
     if (_savedName && _savedName !== String(p.name || '').trim() && _savedName !== String(_alias || '').trim()) line.nameOverride = _savedName;
     if (item.unit && String(item.unit) !== String(p.unit || '')) line.unitOverride = String(item.unit);
