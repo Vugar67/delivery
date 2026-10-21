@@ -487,6 +487,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 .dsent-card{border-radius:8px;padding:8px 10px;margin-bottom:6px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.05)}
 .dsent-head{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:7px}
 .dsent-num{font-size:13px;font-weight:700;color:var(--green)}
+.dsent-seq{display:inline-block;min-width:22px;padding:1px 6px;border-radius:10px;background:var(--green);color:#000;font-size:11px;font-weight:700;text-align:center}
+.dsent-seq.off{background:transparent;color:var(--muted);border:1px dashed var(--border)}
 .dsent-drv{color:var(--accent);font-weight:700}
 .dsent-em{color:var(--text);font-weight:700}
 .dsent-ph{color:var(--text)}
@@ -1886,7 +1888,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.90';
+const APP_VERSION = 'v13.91';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -10560,10 +10562,29 @@ async function podOpen(orderId, kind) {
 }
 
 // order modal (admin / operator): photo of Delivered, or the reason there is none; photo of the last failed attempt
+// ── v13.91: the driver's own delivery sequence (orders.route_seq, written by the Driver app only — add_driver_route.sql) ──
+function _routeReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'route_seq'); }
+// position 1..N among the driver's En Route orders, in his order (the stored number may have gaps after deliveries)
+function _routePositions(driver) {
+  const placed = orders.filter(o => o.driver === driver && o.delivery_status === 'En Route' && !o.deleted && o.route_seq != null)
+                       .sort((a, b) => (a.route_seq - b.route_seq) || String(a.order_num).localeCompare(String(b.order_num)));
+  const pos = {};
+  placed.forEach((o, i) => { pos[o.id] = i + 1; });
+  return pos;
+}
+function _routeModalRow(o) {
+  if (!o || !_routeReady(o) || o.route_seq == null || o.delivery_status !== 'En Route' || !o.driver) return '';
+  const pos = _routePositions(o.driver)[o.id];
+  if (!pos) return '';
+  return `<div>🧭 <b>#${pos} in ${escHtml(o.driver)}'s route</b>${o.route_set_at ? ' · set ' + escHtml(_podTime(o.route_set_at)) : ''} <span style="color:var(--muted)">(the driver orders his stops in the app)</span></div>`;
+}
+
 function _renderPodInModal(o) {
   const el = document.getElementById('f-pod');
   if (!el) return;
   const rows = [];
+  const _routeRow = _routeModalRow(o);   // v13.91
+  if (_routeRow) rows.push(_routeRow);
   const _cashRow = _cashModalRow(o);   // v13.89
   if (_cashRow) rows.push(_cashRow);
   if (o && o.delivery_photo) {
@@ -11300,10 +11321,17 @@ function renderDispatchSent() {
     if (!byDriver[o.driver]) byDriver[o.driver] = [];
     byDriver[o.driver].push(o);
   });
-  el.innerHTML = Object.entries(byDriver).map(([driver, dOrders]) => `
+  el.innerHTML = Object.entries(byDriver).map(([driver, dOrders]) => {
+    // v13.91: the driver's own sequence — placed orders first in his order, the rest as they were
+    const pos = _routePositions(driver);
+    const hasRoute = Object.keys(pos).length > 0;
+    const routeTotal = allSent.filter(o => o.driver === driver).length;
+    if (hasRoute) dOrders = dOrders.slice().sort((a, b) => (pos[a.id] || 1e9) - (pos[b.id] || 1e9));
+    return `
     <div style="margin-bottom:10px">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;padding:4px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)">🚗 ${driver} (${dOrders.length})${_driverHasApp(driver) ? ' <span title="Closes orders himself in the MyCRM Driver app" style="color:var(--green);font-weight:400">📱 app</span>' : ''}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;padding:4px 8px;margin-bottom:4px;border-bottom:1px solid var(--border)">🚗 ${driver} (${dOrders.length})${_driverHasApp(driver) ? ' <span title="Closes orders himself in the MyCRM Driver app" style="color:var(--green);font-weight:400">📱 app</span>' : ''}${hasRoute ? ` <span title="The driver numbered his stops in the app" style="color:var(--muted);font-weight:400">· route ${Object.keys(pos).length}/${routeTotal}</span>` : ''}</div>
       ${dOrders.map(o => {
+        const seq = hasRoute ? (pos[o.id] ? `<span class="dsent-seq" title="#${pos[o.id]} in the driver's route">#${pos[o.id]}</span>` : `<span class="dsent-seq off" title="Not placed in the driver's route yet">—</span>`) : '';
         const sentAgo = o.wa_sent_at ? (() => {
           const diff = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000);
           return diff < 1 ? 'just now' : diff + 'm ago';
@@ -11319,7 +11347,7 @@ function renderDispatchSent() {
         ].filter(Boolean).join('<span class="dsent-sep">·</span>');
         const isOwn = (o.driver || '') !== ARAMEX_DRIVER;
         return `<div class="dsent-card">
-          <div class="dsent-head">${head}<span class="dsent-ago">${sentAgo}</span></div>
+          <div class="dsent-head">${seq}${head}<span class="dsent-ago">${sentAgo}</span></div>
           ${o.driver_note && String(o.driver_note).trim() ? `<div class="dsent-note" title="${escAttr(o.driver_note.trim())}">📝 ${escAttr(o.driver_note.trim())}</div>` : ''}
           <div class="dsent-btns">
             ${isOwn ? `<button class="dbtn dbtn-ok" onclick="event.stopPropagation();dispatchMarkDelivered('${o.id}')" title="Driver delivered this order — close it">✓ Delivered</button>
@@ -11331,7 +11359,7 @@ function renderDispatchSent() {
           </div>
         </div>`;
       }).join('')}
-    </div>`).join('') + _podClosedTodayHtml();   // v13.87
+    </div>`; }).join('') + _podClosedTodayHtml();   // v13.87
 }
 
 
