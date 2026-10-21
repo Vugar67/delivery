@@ -607,6 +607,8 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
         <button class="btn btn-ghost" id="cash-btn" onclick="openCashPanel()" title="Cash taken by the drivers, handovers (v13.89)">💵 Cash</button>
+        <button class="btn btn-ghost" id="trips-btn" onclick="openTripsPanel()" title="Staff pick-up / drop-off and driver tasks (v13.92)">🚐 Trips</button>
+        <button class="btn btn-ghost" id="dw-btn" onclick="openDriversWeek()" title="Weekly drivers report, Excel (admin, v13.92)">📊 Drivers week</button>
         <button class="btn btn-ghost" id="orders-export-btn" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
@@ -634,6 +636,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           </div>
           <button id="dispatch-send-btn" onclick="openDispatchModal()" disabled style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 20px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;opacity:.4">▶ SEND</button>
           <button id="dispatch-cash-btn" onclick="openCashPanel()" style="background:none;border:1px solid var(--accent);border-radius:6px;padding:6px 12px;color:var(--accent);font-family:var(--mono);font-size:11px;cursor:pointer">💵 Cash</button>
+          <button id="dispatch-trips-btn" onclick="openTripsPanel()" style="background:none;border:1px solid var(--accent);border-radius:6px;padding:6px 12px;color:var(--accent);font-family:var(--mono);font-size:11px;cursor:pointer">🚐 Trips</button>
           <button onclick="toggleDispatchMode()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">✕ Exit</button>
         </div>
       </div>
@@ -1888,7 +1891,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.91';
+const APP_VERSION = 'v13.92';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2525,6 +2528,9 @@ async function initApp(){
   if(isOperator){ const _db=document.getElementById('dispatch-btn'); if(_db) _db.style.display='none'; }
   // v13.89: 💵 Cash — admin and dispatcher only
   if(!CASH_ROLES.includes(currentRole)){ ['cash-btn','dispatch-cash-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
+  // v13.92: 🚐 Trips — admin and dispatcher; 📊 Drivers week — admin only
+  if(!TRIP_ROLES.includes(currentRole)){ ['trips-btn','dispatch-trips-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
+  if(currentRole!=='admin'){ const _dw=document.getElementById('dw-btn'); if(_dw) _dw.style.display='none'; }
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
@@ -10680,6 +10686,566 @@ function _cashModalRow(o) {
   return `<div>💵 <b>Cash received ${_aed(o.cash_received)}</b> · due ${_aed(o.cash_due)}` +
          (over > 0.004 ? ` · <b style="color:var(--accent)">+${_aed(over)} over</b>` : '') +
          ` · ${escHtml(o.cash_received_by || '')}${src ? ' (' + escHtml(src) + ')' : ''} · ${escHtml(_podTime(o.cash_received_at))}</div>`;
+}
+
+// ── v13.92: 🚐 Trips (staff pick-up / drop-off, tasks) + 📊 Drivers week (admin) ─────────────────────
+// A trip is not an order: the driver brings staff from home (Pick up), takes them home (Drop off) or goes on a
+// task. Admin and dispatcher build it from two libraries (locations, staff): driver + date (+ time) + stops
+// (a location + the people at it) + a required note. Rule of simplicity (Vugar 21.10): the system counts what
+// the dispatcher entered — 1 stop = 1 point, one Done per trip (driver in the app, or here). All writes to trips
+// go through the RPCs of add_trips.sql (they log); the libraries are plain tables (RLS: admin/dispatcher).
+const TRIP_ROLES = ['admin', 'dispatcher'];
+const TRIP_KINDS = {
+  pickup:  { label: 'Pick up',  hint: 'bring staff from home', color: '#4da3ff' },
+  dropoff: { label: 'Drop off', hint: 'take staff home',       color: '#b07cff' },
+  task:    { label: 'Task',     hint: 'send the driver on a task', color: 'var(--accent)' }
+};
+let _tripDay = null, _tripTab = 'trips', _tripLocs = [], _tripStaff = [], _tripEdit = null, _tripLibEdit = null;
+
+function _tripErrText(error) {
+  const m = (error && (error.message || error.hint)) || String(error || '');
+  if (/trip_locations|trip_stops|relation .*trips|Could not find the function public\.(trip|driver_my_trips|drivers_week)|schema cache/i.test(m))
+    return 'Trips are not set up yet — run add_trips.sql in Supabase';
+  return m || 'Something went wrong';
+}
+function _tripFmtDay(d) { const p = String(d || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : String(d || ''); }
+function _tripTime(iso) { return iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }) : ''; }
+function _tripShift(day, n) { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function _tripKindChip(kind) {
+  const k = TRIP_KINDS[kind] || { label: kind, color: 'var(--muted)' };
+  return `<span style="display:inline-block;border:1px solid ${k.color};color:${k.color};border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${escHtml(k.label)}</span>`;
+}
+async function _tripLoadLibs() {
+  const [l, s] = await Promise.all([
+    sb.from('trip_locations').select('*').order('name'),
+    sb.from('staff').select('*').order('name')
+  ]);
+  if (l.error) return l.error;
+  if (s.error) return s.error;
+  _tripLocs = l.data || [];
+  _tripStaff = s.data || [];
+  return null;
+}
+const _tripLocName = id => (_tripLocs.find(l => l.id === id) || {}).name || '—';
+const _tripStaffName = id => (_tripStaff.find(s => s.id === id) || {}).name || ('#' + id);
+
+// ── the panel ──────────────────────────────────────────────────────────
+async function openTripsPanel(day, tab) {
+  if (!TRIP_ROLES.includes(currentRole)) { toast('🔒 Trips — dispatchers and admins only', true); return; }
+  _tripDay = day || _tripDay || _dubaiToday();
+  if (tab) _tripTab = tab;
+  let ov = document.getElementById('trips-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'trips-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto';
+    ov.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1000px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent);margin-right:6px">🚐 Trips</div>
+          <button type="button" class="btn btn-ghost trip-tab" data-tab="trips" style="padding:4px 10px;font-size:11px">Trips</button>
+          <button type="button" class="btn btn-ghost trip-tab" data-tab="locations" style="padding:4px 10px;font-size:11px">📍 Locations</button>
+          <button type="button" class="btn btn-ghost trip-tab" data-tab="staff" style="padding:4px 10px;font-size:11px">👥 Staff</button>
+          <div style="flex:1"></div>
+          <span id="trip-daybar" style="display:flex;gap:6px;align-items:center">
+            <button type="button" id="trip-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
+            <input type="date" id="trip-day" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+            <button type="button" id="trip-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+            <button type="button" id="trip-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+            <button type="button" id="trip-new" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:6px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">+ Trip</button>
+          </span>
+          <button type="button" id="trip-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
+          <span id="trip-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
+        </div>
+        <div id="trip-body" style="padding:8px 16px 14px;font-family:var(--mono);font-size:12px">Loading…</div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+    const onKey = ev => { if (ev.key === 'Escape' && !document.getElementById('trip-edit-overlay')) close(); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
+    ov.querySelector('#trip-x').onclick = close;
+    ov.querySelector('#trip-prev').onclick = () => openTripsPanel(_tripShift(_tripDay, -1));
+    ov.querySelector('#trip-next').onclick = () => openTripsPanel(_tripShift(_tripDay, 1));
+    ov.querySelector('#trip-today').onclick = () => openTripsPanel(_dubaiToday());
+    ov.querySelector('#trip-refresh').onclick = () => openTripsPanel(_tripDay);
+    ov.querySelector('#trip-day').onchange = ev => { if (ev.target.value) openTripsPanel(ev.target.value); };
+    ov.querySelector('#trip-new').onclick = () => tripEditDialog(null);
+    ov.querySelectorAll('.trip-tab').forEach(b => b.onclick = () => { _tripLibEdit = null; openTripsPanel(_tripDay, b.getAttribute('data-tab')); });
+  }
+  ov.querySelector('#trip-day').value = _tripDay;
+  ov.querySelector('#trip-daybar').style.display = _tripTab === 'trips' ? 'flex' : 'none';
+  ov.querySelectorAll('.trip-tab').forEach(b => {
+    const on = b.getAttribute('data-tab') === _tripTab;
+    b.style.borderColor = on ? 'var(--accent)' : ''; b.style.color = on ? 'var(--accent)' : '';
+  });
+  const body = ov.querySelector('#trip-body');
+  const err = await _tripLoadLibs();
+  if (err) { body.innerHTML = `<div style="color:var(--red);padding:12px 0">${escHtml(_tripErrText(err))}</div>`; return; }
+  if (_tripTab === 'locations') return _renderTripLocations();
+  if (_tripTab === 'staff') return _renderTripStaff();
+  return _renderTripList();
+}
+
+async function _renderTripList() {
+  const body = document.getElementById('trip-body');
+  if (!body) return;
+  const day = _tripDay, isToday = day === _dubaiToday();
+  const reqs = [sb.from('trips').select('*').eq('trip_date', day).order('trip_time', { ascending: true }).order('id', { ascending: true })];
+  if (isToday) reqs.push(sb.from('trips').select('*').lt('trip_date', day).eq('status', 'planned').order('trip_date', { ascending: true }));
+  const res = await Promise.all(reqs);
+  if (day !== _tripDay || !document.getElementById('trip-body')) return;
+  const bad = res.find(r => r.error);
+  if (bad) { body.innerHTML = `<div style="color:var(--red);padding:12px 0">${escHtml(_tripErrText(bad.error))}</div>`; return; }
+  const late = (res[1] && res[1].data) || [];
+  const trips = [...late, ...(res[0].data || [])];
+  let stops = [];
+  if (trips.length) {
+    const r = await sb.from('trip_stops').select('*').in('trip_id', trips.map(t => t.id)).order('sort', { ascending: true });
+    if (r.error) { body.innerHTML = `<div style="color:var(--red)">${escHtml(_tripErrText(r.error))}</div>`; return; }
+    stops = r.data || [];
+  }
+  if (!trips.length) {
+    body.innerHTML = `<div style="color:var(--muted);padding:16px 0">No trips ${isToday ? 'today' : 'on ' + escHtml(_tripFmtDay(day))}. <b>+ Trip</b> — pick up / drop off staff or send a driver on a task.${!_tripLocs.length ? '<br>First add the places in <b>📍 Locations</b> and the people in <b>👥 Staff</b>.' : ''}</div>`;
+    return;
+  }
+  const cnt = { planned: 0, done: 0, cancelled: 0 };
+  trips.forEach(t => { cnt[t.status] = (cnt[t.status] || 0) + 1; });
+  let h = `<div style="color:var(--muted);font-size:11px;margin:4px 0 8px">${trips.length} trip${trips.length > 1 ? 's' : ''} · ${cnt.planned} planned · ${cnt.done} done${cnt.cancelled ? ' · ' + cnt.cancelled + ' cancelled' : ''}</div>`;
+  trips.forEach(t => {
+    const ts = stops.filter(s => s.trip_id === t.id);
+    const overdue = t.trip_date < day;
+    const st = t.status === 'done'
+      ? `<span style="color:var(--green);font-weight:700">✓ done ${escHtml(_tripTime(t.done_at))}</span> <span style="color:var(--muted)">${t.done_source === 'app' ? '📱 app' : escHtml(t.done_by || '')}</span>`
+      : t.status === 'cancelled'
+        ? `<span style="color:var(--red);font-weight:700">cancelled</span> <span style="color:var(--muted)">${escHtml(t.cancel_reason || '')}</span>`
+        : `<span style="color:var(--yellow,#e0b341);font-weight:700">planned</span>${overdue ? ` <span style="color:var(--red)">· overdue (${escHtml(_tripFmtDay(t.trip_date))})</span>` : ''}`;
+    const btn = (act, label, color) => `<button type="button" class="trip-act" data-id="${t.id}" data-act="${act}" style="background:none;border:1px solid ${color || 'var(--border)'};color:${color || 'var(--text)'};border-radius:6px;padding:4px 9px;font-family:var(--mono);font-size:11px;cursor:pointer">${label}</button>`;
+    const acts = t.status === 'planned'
+      ? btn('edit', '✎ Edit') + btn('done', '✓ Done', 'var(--green)') + btn('cancel', '✕ Cancel', 'var(--red)')
+      : btn('reopen', '↺ Reopen');
+    const pts = ts.length;
+    h += `<div class="trip-card" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;${t.status === 'cancelled' ? 'opacity:.55;' : ''}${overdue ? 'border-color:var(--red);' : ''}">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:14px;min-width:44px">${t.trip_time ? escHtml(String(t.trip_time).slice(0, 5)) : '—'}</b>
+        ${_tripKindChip(t.kind)}
+        <b style="color:var(--accent)">🚗 ${escHtml(t.driver_name)}</b>
+        <span style="color:var(--muted)">${pts} stop${pts === 1 ? '' : 's'}</span>
+        <span>${st}</span>
+        <div style="flex:1"></div>
+        <span style="display:flex;gap:6px">${acts}</span>
+      </div>
+      <ol style="margin:8px 0 4px 18px;padding:0;line-height:1.6">${ts.map(s => `<li><b>${escHtml(s.place_name)}</b>${s.staff_names ? ` — ${escHtml(s.staff_names)}` : ''}${s.map_url ? ` <a href="${escAttr(s.map_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px">map</a>` : ''}</li>`).join('')}</ol>
+      <div style="color:var(--muted);white-space:pre-wrap">📝 ${escHtml(t.note)}</div>
+    </div>`;
+  });
+  body.innerHTML = h;
+  body.querySelectorAll('.trip-act').forEach(b => b.addEventListener('click', () => {
+    const id = +b.getAttribute('data-id'), act = b.getAttribute('data-act');
+    const t = trips.find(x => x.id === id);
+    if (act === 'edit') tripEditDialog(t, stops.filter(s => s.trip_id === id));
+    else if (act === 'done') tripSetStatus(t, 'done');
+    else if (act === 'cancel') tripSetStatus(t, 'cancelled');
+    else if (act === 'reopen') tripSetStatus(t, 'planned');
+  }));
+}
+
+async function tripSetStatus(t, status) {
+  let reason = null;
+  if (status === 'done' && !confirm(`Mark the trip of ${t.driver_name} as done?`)) return;
+  if (status === 'planned' && !confirm(`Reopen the trip of ${t.driver_name}? It goes back to planned${t.status === 'done' ? ' and leaves the report' : ''}.`)) return;
+  if (status === 'cancelled') {
+    reason = prompt(`Cancel the trip of ${t.driver_name} — why?`);
+    if (reason === null) return;
+    if (!reason.trim()) { toast('Write why the trip is cancelled', true); return; }
+  }
+  const { error } = await sb.rpc('trip_set_status', { p_id: t.id, p_status: status, p_reason: reason });
+  if (error) { toast('❌ ' + _tripErrText(error), true); return; }
+  toast(status === 'done' ? '✓ Trip done' : status === 'cancelled' ? 'Trip cancelled' : 'Trip reopened');
+  _renderTripList();
+}
+
+// ── create / edit ────────────────────────────────────────────────────
+function tripEditDialog(t, stops) {
+  if (!_tripLocs.some(l => l.active)) { toast('Add a location first (📍 Locations)', true); openTripsPanel(_tripDay, 'locations'); return; }
+  _tripEdit = {
+    id: t ? t.id : null,
+    kind: t ? t.kind : 'pickup',
+    driver: t ? t.driver_name : '',
+    date: t ? t.trip_date : _tripDay,
+    time: t && t.trip_time ? String(t.trip_time).slice(0, 5) : '',
+    note: t ? t.note : '',
+    stops: stops && stops.length ? stops.map(s => ({ location_id: s.location_id, staff_ids: (s.staff_ids || []).slice() })) : []
+  };
+  let ov = document.getElementById('trip-edit-overlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'trip-edit-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2100;display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto';
+  ov.innerHTML = `<div id="trip-edit" style="background:var(--surface);border:1px solid var(--accent);border-radius:12px;width:640px;max-width:100%;padding:16px;font-family:var(--mono);font-size:12px"></div>`;
+  document.body.appendChild(ov);
+  const onKey = ev => { if (ev.key === 'Escape') { document.removeEventListener('keydown', onKey); ov.remove(); } };
+  document.addEventListener('keydown', onKey);
+  _renderTripEdit();
+}
+
+function _tripEditSync() {   // read the inputs back into _tripEdit before a re-render
+  const e = _tripEdit, root = document.getElementById('trip-edit');
+  if (!e || !root) return;
+  e.driver = root.querySelector('#te-driver')?.value ?? e.driver;
+  e.date = root.querySelector('#te-date')?.value ?? e.date;
+  e.time = root.querySelector('#te-time')?.value ?? e.time;
+  e.note = root.querySelector('#te-note')?.value ?? e.note;
+  root.querySelectorAll('.te-loc').forEach(sel => { const i = +sel.getAttribute('data-i'); if (e.stops[i]) e.stops[i].location_id = sel.value ? +sel.value : null; });
+}
+
+function _renderTripEdit() {
+  const e = _tripEdit, root = document.getElementById('trip-edit');
+  if (!e || !root) return;
+  const field = 'background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px;color:var(--text)';
+  const lab = t => `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">${t}</div>`;
+  const drvNames = [...new Set(drivers.filter(d => d.active !== false && !/^(aramex|pick-?up)$/i.test(String(d.name || '').trim())).map(d => d.name))].sort((a, b) => a.localeCompare(b));
+  if (e.driver && !drvNames.includes(e.driver)) drvNames.unshift(e.driver);
+  const locs = _tripLocs.filter(l => l.active || e.stops.some(s => s.location_id === l.id));
+  const people = _tripStaff.filter(s => s.active);
+  const needPeople = e.kind !== 'task';
+  const kindBtns = Object.entries(TRIP_KINDS).map(([k, v]) => `<button type="button" class="te-kind" data-k="${k}" title="${escAttr(v.hint)}" style="flex:1;padding:8px;border-radius:8px;border:2px solid ${e.kind === k ? v.color : 'var(--border)'};background:${e.kind === k ? 'var(--surface2)' : 'none'};color:${e.kind === k ? v.color : 'var(--muted)'};font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">${escHtml(v.label)}<div style="font-size:9px;font-weight:400;opacity:.8">${escHtml(v.hint)}</div></button>`).join('');
+  const stopRows = e.stops.map((s, i) => {
+    const inStop = new Set(s.staff_ids);
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <b style="color:var(--muted);min-width:18px">${i + 1}.</b>
+        <select class="te-loc" data-i="${i}" style="${field};flex:1"><option value="">— location —</option>${locs.map(l => `<option value="${l.id}" ${l.id === s.location_id ? 'selected' : ''}>${escHtml(l.name)}${l.emirate ? ' · ' + escHtml(l.emirate) : ''}${l.active ? '' : ' (deactivated)'}</option>`).join('')}</select>
+        <button type="button" class="te-up" data-i="${i}" title="Move up" style="${field};cursor:pointer;padding:4px 8px" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button type="button" class="te-del" data-i="${i}" title="Remove stop" style="${field};cursor:pointer;padding:4px 8px;color:var(--red)">✕</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 0 24px">
+        ${s.staff_ids.map(id => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:2px 4px 2px 9px">${escHtml(_tripStaffName(id))} <span class="te-unp" data-i="${i}" data-p="${id}" style="cursor:pointer;color:var(--muted);padding:0 4px">✕</span></span>`).join('')}
+        <select class="te-addp" data-i="${i}" style="${field};padding:3px 6px;font-size:11px"><option value="">+ person${needPeople ? '' : ' (optional)'}</option>${people.filter(p => !inStop.has(p.id)).map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('')}</select>
+      </div>
+    </div>`;
+  }).join('');
+  root.innerHTML = `
+    <div style="display:flex;align-items:center;margin-bottom:8px">
+      <div style="font-size:15px;font-weight:700;color:var(--accent)">${e.id ? '✎ Trip #' + e.id : '+ New trip'}</div>
+      <div style="flex:1"></div><span id="te-x" style="cursor:pointer;color:var(--muted);font-size:16px">✕</span>
+    </div>
+    <div style="display:flex;gap:8px">${kindBtns}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:2;min-width:180px">${lab('Driver *')}<select id="te-driver" style="${field};width:100%"><option value="">— driver —</option>${drvNames.map(n => `<option ${n === e.driver ? 'selected' : ''}>${escHtml(n)}</option>`).join('')}</select></div>
+      <div style="flex:1;min-width:130px">${lab('Date *')}<input type="date" id="te-date" value="${escAttr(e.date || '')}" style="${field};width:100%"></div>
+      <div style="flex:1;min-width:100px">${lab('Time')}<input type="time" id="te-time" value="${escAttr(e.time || '')}" style="${field};width:100%"></div>
+    </div>
+    ${lab(`Stops * — 1 stop = 1 point in the report${needPeople ? '; each stop needs its people' : ''}`)}
+    <div id="te-stops">${stopRows || '<div style="color:var(--muted);padding:4px 0 8px">No stops yet.</div>'}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" id="te-addstop" style="${field};cursor:pointer">+ Stop</button>
+      <select id="te-addhome" style="${field}"><option value="">+ Person → their home</option>${people.map(p => `<option value="${p.id}">${escHtml(p.name)}${p.home_location_id ? ' — ' + escHtml(_tripLocName(p.home_location_id)) : ' — no home'}</option>`).join('')}</select>
+    </div>
+    ${lab('Note * — the details (who, where, what to bring)')}
+    <textarea id="te-note" rows="3" maxlength="1000" style="${field};width:100%;resize:vertical">${escHtml(e.note || '')}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button type="button" id="te-cancel" class="btn btn-ghost">Cancel</button>
+      <button type="button" id="te-save" style="background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 18px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">${e.id ? 'Save trip' : 'Create trip'}</button>
+    </div>`;
+  const close = () => { const ov = document.getElementById('trip-edit-overlay'); if (ov) ov.remove(); _tripEdit = null; };
+  root.querySelector('#te-x').onclick = close;
+  root.querySelector('#te-cancel').onclick = close;
+  root.querySelectorAll('.te-kind').forEach(b => b.onclick = () => { _tripEditSync(); e.kind = b.getAttribute('data-k'); _renderTripEdit(); });
+  root.querySelector('#te-addstop').onclick = () => { _tripEditSync(); e.stops.push({ location_id: null, staff_ids: [] }); _renderTripEdit(); };
+  root.querySelector('#te-addhome').onchange = ev => {
+    const p = _tripStaff.find(x => x.id === +ev.target.value);
+    if (!p) return;
+    _tripEditSync();
+    if (!p.home_location_id) { toast(`${p.name} has no home location — set it in 👥 Staff, or add a stop and pick the place`, true); _renderTripEdit(); return; }
+    if (e.stops.some(s => s.staff_ids.includes(p.id))) { toast(`${p.name} is already in this trip`, true); _renderTripEdit(); return; }
+    const s = e.stops.find(x => x.location_id === p.home_location_id);
+    if (s) s.staff_ids.push(p.id); else e.stops.push({ location_id: p.home_location_id, staff_ids: [p.id] });
+    _renderTripEdit();
+  };
+  root.querySelectorAll('.te-addp').forEach(sel => sel.onchange = () => {
+    const i = +sel.getAttribute('data-i'), id = +sel.value;
+    if (!id) return;
+    _tripEditSync();
+    const other = e.stops.findIndex((s, j) => j !== i && s.staff_ids.includes(id));
+    if (other >= 0) e.stops[other].staff_ids = e.stops[other].staff_ids.filter(x => x !== id);   // a person is at one stop
+    e.stops[i].staff_ids.push(id);
+    _renderTripEdit();
+  });
+  root.querySelectorAll('.te-unp').forEach(x => x.onclick = () => { _tripEditSync(); const i = +x.getAttribute('data-i'), id = +x.getAttribute('data-p'); e.stops[i].staff_ids = e.stops[i].staff_ids.filter(v => v !== id); _renderTripEdit(); });
+  root.querySelectorAll('.te-del').forEach(b => b.onclick = () => { _tripEditSync(); e.stops.splice(+b.getAttribute('data-i'), 1); _renderTripEdit(); });
+  root.querySelectorAll('.te-up').forEach(b => b.onclick = () => { _tripEditSync(); const i = +b.getAttribute('data-i'); if (i > 0) { const t = e.stops[i]; e.stops[i] = e.stops[i - 1]; e.stops[i - 1] = t; } _renderTripEdit(); });
+  root.querySelector('#te-save').onclick = saveTripEdit;
+}
+
+async function saveTripEdit() {
+  _tripEditSync();
+  const e = _tripEdit;
+  if (!e) return;
+  const miss = [];
+  if (!e.driver) miss.push('driver');
+  if (!e.date) miss.push('date');
+  if (!e.stops.length) miss.push('at least one stop');
+  if (e.stops.some(s => !s.location_id)) miss.push('a location for every stop');
+  if (e.kind !== 'task' && e.stops.some(s => !s.staff_ids.length)) miss.push('the people for every stop');
+  if (!String(e.note || '').trim()) miss.push('the note');
+  if (miss.length) { toast('Missing: ' + miss.join(', '), true); return; }
+  const btn = document.getElementById('te-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const { error } = await sb.rpc('trip_save', { p_trip: {
+    id: e.id, kind: e.kind, driver: e.driver, date: e.date, time: e.time || null, note: e.note.trim(),
+    stops: e.stops.map(s => ({ location_id: s.location_id, staff_ids: s.staff_ids }))
+  } });
+  if (error) { toast('❌ ' + _tripErrText(error), true); if (btn) { btn.disabled = false; btn.textContent = e.id ? 'Save trip' : 'Create trip'; } return; }
+  toast(e.id ? '✓ Trip saved' : `✓ Trip created — ${e.driver} sees it in the Driver app`);
+  const day = e.date;
+  const ov = document.getElementById('trip-edit-overlay'); if (ov) ov.remove();
+  _tripEdit = null;
+  openTripsPanel(day, 'trips');
+}
+
+// ── libraries: locations, staff ──────────────────────────────────────────
+function _tripLibField() { return 'background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px;color:var(--text)'; }
+
+function _renderTripLocations() {
+  const body = document.getElementById('trip-body');
+  if (!body) return;
+  const f = _tripLibField();
+  const ed = _tripLibEdit && _tripLibEdit.kind === 'loc' ? _tripLocs.find(l => l.id === _tripLibEdit.id) : null;
+  const ems = (typeof getLocs === 'function' ? getLocs('emirate').map(x => x.name) : []);
+  const used = id => _tripStaff.filter(s => s.active && s.home_location_id === id).length;
+  const rows = _tripLocs.slice().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name)).map(l => `<tr style="${l.active ? '' : 'opacity:.45'}">
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><b>${escHtml(l.name)}</b>${l.active ? '' : ' <span style="color:var(--muted)">(deactivated)</span>'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${escHtml(l.emirate || '')}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${l.map_url ? `<a href="${escAttr(l.map_url)}" target="_blank" rel="noopener" style="color:var(--accent)">map</a>` : '<span style="color:var(--red)">no map link</span>'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">${used(l.id) ? used(l.id) + ' home' + (used(l.id) > 1 ? 's' : '') : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+        <button type="button" class="tl-edit" data-id="${l.id}" style="${f};cursor:pointer;padding:3px 8px">✎</button>
+        <button type="button" class="tl-act" data-id="${l.id}" style="${f};cursor:pointer;padding:3px 8px">${l.active ? 'Deactivate' : 'Activate'}</button>
+      </td></tr>`).join('');
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px;padding:10px;border:1px dashed var(--border);border-radius:8px">
+      <b style="color:var(--accent)">${ed ? '✎ ' + escHtml(ed.name) : '+ Location'}</b>
+      <input id="tl-name" placeholder="Name * (e.g. Office Al Quoz, Ali home)" maxlength="80" value="${escAttr(ed ? ed.name : '')}" style="${f};flex:2;min-width:200px">
+      <select id="tl-em" style="${f}"><option value="">emirate</option>${ems.map(x => `<option ${ed && ed.emirate === x ? 'selected' : ''}>${escHtml(x)}</option>`).join('')}</select>
+      <input id="tl-map" placeholder="Google Maps link" maxlength="500" value="${escAttr(ed ? ed.map_url || '' : '')}" style="${f};flex:2;min-width:200px">
+      <button type="button" id="tl-save" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:6px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">${ed ? 'Save' : 'Add'}</button>
+      ${ed ? '<button type="button" id="tl-cancel" class="btn btn-ghost" style="padding:4px 10px">Cancel</button>' : ''}
+    </div>
+    ${_tripLocs.length ? `<table style="width:100%;border-collapse:collapse">${rows}</table>` : '<div style="color:var(--muted)">No locations yet. Add the office and the staff homes — the driver gets the map link.</div>'}`;
+  body.querySelector('#tl-save').onclick = () => saveTripLocation(ed);
+  const c = body.querySelector('#tl-cancel'); if (c) c.onclick = () => { _tripLibEdit = null; _renderTripLocations(); };
+  body.querySelectorAll('.tl-edit').forEach(b => b.onclick = () => { _tripLibEdit = { kind: 'loc', id: +b.getAttribute('data-id') }; _renderTripLocations(); });
+  body.querySelectorAll('.tl-act').forEach(b => b.onclick = () => toggleTripLib('trip_locations', _tripLocs.find(l => l.id === +b.getAttribute('data-id'))));
+}
+
+async function saveTripLocation(ed) {
+  const name = (document.getElementById('tl-name')?.value || '').trim();
+  const emirate = document.getElementById('tl-em')?.value || null;
+  const map_url = (document.getElementById('tl-map')?.value || '').trim() || null;
+  if (!name) { toast('Name is required', true); return; }
+  if (map_url && !/^https?:\/\//i.test(map_url)) { toast('Map link must start with https://', true); return; }
+  if (_tripLocs.some(l => l.active && l.name.trim().toLowerCase() === name.toLowerCase() && (!ed || l.id !== ed.id))) { toast(`"${name}" already exists`, true); return; }
+  const who = currentUser?.email || '';
+  const q = ed ? sb.from('trip_locations').update({ name, emirate, map_url, updated_at: new Date().toISOString() }).eq('id', ed.id)
+               : sb.from('trip_locations').insert({ name, emirate, map_url, created_by: who });
+  const { error } = await q;
+  if (error) { toast('❌ ' + _tripErrText(error), true); return; }
+  logEvent(ed ? 'UPDATE' : 'CREATE', 'trip_location', ed ? String(ed.id) : name, { action: ed ? 'trip_location_edited' : 'trip_location_created', name, emirate, map_url,
+    ...(ed ? { field_changes: Object.fromEntries([['name', ed.name, name], ['emirate', ed.emirate || null, emirate], ['map_url', ed.map_url || null, map_url]].filter(x => x[1] !== x[2]).map(x => [x[0], { before: x[1], after: x[2] }])) } : {}) });
+  toast(ed ? '✓ Location saved' : '✓ Location added');
+  _tripLibEdit = null;
+  openTripsPanel(_tripDay, 'locations');
+}
+
+function _renderTripStaff() {
+  const body = document.getElementById('trip-body');
+  if (!body) return;
+  const f = _tripLibField();
+  const ed = _tripLibEdit && _tripLibEdit.kind === 'staff' ? _tripStaff.find(s => s.id === _tripLibEdit.id) : null;
+  const locs = _tripLocs.filter(l => l.active || (ed && ed.home_location_id === l.id));
+  const rows = _tripStaff.slice().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name)).map(s => `<tr style="${s.active ? '' : 'opacity:.45'}">
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><b>${escHtml(s.name)}</b>${s.active ? '' : ' <span style="color:var(--muted)">(deactivated)</span>'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${s.phone ? escHtml(s.phone) : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border)">${s.home_location_id ? '🏠 ' + escHtml(_tripLocName(s.home_location_id)) : '<span style="color:var(--muted)">no home</span>'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+        <button type="button" class="ts-edit" data-id="${s.id}" style="${f};cursor:pointer;padding:3px 8px">✎</button>
+        <button type="button" class="ts-act" data-id="${s.id}" style="${f};cursor:pointer;padding:3px 8px">${s.active ? 'Deactivate' : 'Activate'}</button>
+      </td></tr>`).join('');
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px;padding:10px;border:1px dashed var(--border);border-radius:8px">
+      <b style="color:var(--accent)">${ed ? '✎ ' + escHtml(ed.name) : '+ Person'}</b>
+      <input id="ts-name" placeholder="Name *" maxlength="80" value="${escAttr(ed ? ed.name : '')}" style="${f};flex:2;min-width:160px">
+      <input id="ts-phone" placeholder="Phone" maxlength="30" value="${escAttr(ed ? ed.phone || '' : '')}" style="${f};flex:1;min-width:120px">
+      <select id="ts-home" style="${f};flex:2;min-width:160px"><option value="">— home location —</option>${locs.map(l => `<option value="${l.id}" ${ed && ed.home_location_id === l.id ? 'selected' : ''}>${escHtml(l.name)}</option>`).join('')}</select>
+      <button type="button" id="ts-save" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:6px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">${ed ? 'Save' : 'Add'}</button>
+      ${ed ? '<button type="button" id="ts-cancel" class="btn btn-ghost" style="padding:4px 10px">Cancel</button>' : ''}
+    </div>
+    ${!_tripLocs.length ? '<div style="color:var(--muted);margin-bottom:8px">Tip: add the homes in 📍 Locations first, then pick one here.</div>' : ''}
+    ${_tripStaff.length ? `<table style="width:100%;border-collapse:collapse">${rows}</table>` : '<div style="color:var(--muted)">No staff yet.</div>'}`;
+  body.querySelector('#ts-save').onclick = () => saveTripStaff(ed);
+  const c = body.querySelector('#ts-cancel'); if (c) c.onclick = () => { _tripLibEdit = null; _renderTripStaff(); };
+  body.querySelectorAll('.ts-edit').forEach(b => b.onclick = () => { _tripLibEdit = { kind: 'staff', id: +b.getAttribute('data-id') }; _renderTripStaff(); });
+  body.querySelectorAll('.ts-act').forEach(b => b.onclick = () => toggleTripLib('staff', _tripStaff.find(s => s.id === +b.getAttribute('data-id'))));
+}
+
+async function saveTripStaff(ed) {
+  const name = (document.getElementById('ts-name')?.value || '').trim();
+  const phone = (document.getElementById('ts-phone')?.value || '').trim() || null;
+  const home = +(document.getElementById('ts-home')?.value || 0) || null;
+  if (!name) { toast('Name is required', true); return; }
+  if (_tripStaff.some(s => s.active && s.name.trim().toLowerCase() === name.toLowerCase() && (!ed || s.id !== ed.id))) { toast(`"${name}" already exists`, true); return; }
+  const q = ed ? sb.from('staff').update({ name, phone, home_location_id: home, updated_at: new Date().toISOString() }).eq('id', ed.id)
+               : sb.from('staff').insert({ name, phone, home_location_id: home, created_by: currentUser?.email || '' });
+  const { error } = await q;
+  if (error) { toast('❌ ' + _tripErrText(error), true); return; }
+  logEvent(ed ? 'UPDATE' : 'CREATE', 'staff', ed ? String(ed.id) : name, { action: ed ? 'staff_edited' : 'staff_created', name, phone, home: home ? _tripLocName(home) : null });
+  toast(ed ? '✓ Saved' : '✓ Person added');
+  _tripLibEdit = null;
+  openTripsPanel(_tripDay, 'staff');
+}
+
+async function toggleTripLib(table, row) {
+  if (!row) return;
+  const on = !row.active;
+  if (!on && !confirm(`Deactivate "${row.name}"? It disappears from new trips; past trips keep it.`)) return;
+  const { error } = await sb.from(table).update({ active: on, updated_at: new Date().toISOString() }).eq('id', row.id);
+  if (error) { toast('❌ ' + (/duplicate key/i.test(error.message || '') ? `An active "${row.name}" already exists` : _tripErrText(error)), true); return; }
+  logEvent('UPDATE', table === 'staff' ? 'staff' : 'trip_location', String(row.id), { action: (table === 'staff' ? 'staff_' : 'trip_location_') + (on ? 'activated' : 'deactivated'), name: row.name });
+  openTripsPanel(_tripDay, table === 'staff' ? 'staff' : 'locations');
+}
+
+// ── 📊 Drivers week (admin) ─────────────────────────────────────────────
+let _dwFrom = null, _dwData = null;
+function _dwSunday(day) { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.toISOString().slice(0, 10); }
+function _dwWeekNo(sunday) {   // ISO week of the Monday after the Sunday (11.10.2026 → 42, as in the team's sheet)
+  const d = new Date(sunday + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1);
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7)));
+  const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  return 1 + Math.round(((t - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7);
+}
+const _DW_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// rows of drivers_week → {days[7], drivers:[{name, active, cells[7]{d,s,t,sum}, worked, total}], totals}
+function _dwBuild(from, rows) {
+  const days = Array.from({ length: 7 }, (_, i) => _tripShift(from, i));
+  const by = new Map();
+  (rows || []).forEach(r => {
+    if (!by.has(r.driver_name)) by.set(r.driver_name, { name: r.driver_name, active: r.active !== false, cells: days.map(() => ({ d: 0, s: 0, t: 0, sum: 0 })) });
+    const i = r.day ? days.indexOf(String(r.day).slice(0, 10)) : -1;
+    if (i >= 0) {
+      const c = by.get(r.driver_name).cells[i];
+      c.d += +r.deliveries || 0; c.s += +r.staff_points || 0; c.t += +r.task_points || 0; c.sum = c.d + c.s + c.t;
+    }
+  });
+  const list = [...by.values()].map(x => ({ ...x, worked: x.cells.filter(c => c.sum > 0).length, total: x.cells.reduce((a, c) => a + c.sum, 0) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const col = k => days.map((_, i) => list.reduce((a, x) => a + x.cells[i][k], 0));
+  const totals = { sum: col('sum'), d: col('d'), s: col('s'), t: col('t') };
+  ['sum', 'd', 's', 't'].forEach(k => { totals[k + 'All'] = totals[k].reduce((a, b) => a + b, 0); });
+  return { from, days, drivers: list, totals, week: _dwWeekNo(from) };
+}
+
+async function openDriversWeek(from) {
+  if (currentRole !== 'admin') { toast('🔒 Drivers week — admins only', true); return; }
+  _dwFrom = _dwSunday(from || _dwFrom || _dubaiToday());
+  let ov = document.getElementById('dw-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'dw-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto';
+    ov.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1280px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent)">📊 Drivers — <span id="dw-title">week</span></div>
+          <div style="flex:1"></div>
+          <button type="button" id="dw-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
+          <button type="button" id="dw-this" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">This week</button>
+          <button type="button" id="dw-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+          <button type="button" id="dw-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">⬇ Excel</button>
+          <button type="button" id="dw-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
+          <span id="dw-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
+        </div>
+        <div id="dw-body" style="padding:10px 16px;font-family:var(--mono);font-size:12px;overflow-x:auto">Loading…</div>
+        <div style="padding:4px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
+          Own drivers (no Aramex, no self-collection). <b>Deliveries</b> = delivered orders, one point per client per day (by the time the order was closed, Dubai).
+          <b>Drop off / Pick up</b> = stops of done staff trips; <b>Tasks</b> = stops of done task trips (by the time of Done). A day counts as worked when the driver has any point that day.
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+    const onKey = ev => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
+    ov.querySelector('#dw-x').onclick = close;
+    ov.querySelector('#dw-prev').onclick = () => openDriversWeek(_tripShift(_dwFrom, -7));
+    ov.querySelector('#dw-next').onclick = () => openDriversWeek(_tripShift(_dwFrom, 7));
+    ov.querySelector('#dw-this').onclick = () => openDriversWeek(_dubaiToday());
+    ov.querySelector('#dw-refresh').onclick = () => openDriversWeek(_dwFrom);
+    ov.querySelector('#dw-xlsx').onclick = exportDriversWeek;
+  }
+  ov.querySelector('#dw-next').disabled = _dwFrom >= _dwSunday(_dubaiToday());
+  const body = ov.querySelector('#dw-body');
+  body.innerHTML = 'Loading…';
+  const wk = _dwFrom;
+  const { data, error } = await sb.rpc('drivers_week', { p_from: wk });
+  if (wk !== _dwFrom || !document.getElementById('dw-body')) return;
+  if (error) { _dwData = null; body.innerHTML = `<div style="color:var(--red);padding:10px 0">${escHtml(_tripErrText(error))}</div>`; return; }
+  _dwData = _dwBuild(wk, data);
+  ov.querySelector('#dw-title').textContent = `week ${_dwData.week} · ${_tripFmtDay(_dwData.days[0])} – ${_tripFmtDay(_dwData.days[6])}`;
+  body.innerHTML = _dwHtml(_dwData);
+}
+
+function _dwHtml(w) {
+  const th = (t, extra) => `<th style="padding:5px 6px;text-align:center;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap${extra ? ';' + extra : ''}">${t}</th>`;
+  const td = (h, extra) => `<td style="padding:5px 6px;text-align:center;border-bottom:1px solid var(--border)${extra ? ';' + extra : ''}">${h}</td>`;
+  const dayHead = w.days.map(d => th(`${_tripFmtDay(d).slice(0, 5)}<br>${_DW_DAYS[new Date(d + 'T00:00:00Z').getUTCDay()].slice(0, 3)}`)).join('');
+  const sep = 'border-left:2px solid var(--border)';
+  let h = `<table style="border-collapse:collapse;width:100%"><thead><tr>${th('Driver', 'text-align:left')}${dayHead}${th('Days<br>worked', sep)}${dayHead}${th('Total', sep)}</tr></thead><tbody>`;
+  w.drivers.forEach(x => {
+    const ticks = x.cells.map(c => td(c.sum > 0 ? '<span style="color:var(--green);font-weight:700">✓</span>' : '<span style="color:var(--border)">·</span>', c.sum > 0 ? '' : 'background:var(--surface2)')).join('');
+    const nums = x.cells.map(c => td(c.sum ? `<span title="deliveries ${c.d} · pick up/drop off ${c.s} · tasks ${c.t}">${c.sum}</span>` : '<span style="color:var(--muted)">0</span>')).join('');
+    h += `<tr>${td(`<b>${escHtml(x.name)}</b>${x.active ? '' : ' <span style="color:var(--muted);font-size:10px">(inactive)</span>'}`, 'text-align:left;white-space:nowrap')}${ticks}${td(`<b style="color:var(--accent)">${x.worked}</b>`, sep)}${nums}${td(`<b>${x.total}</b>`, sep)}</tr>`;
+  });
+  const foot = (label, arr, all, color) => `<tr style="font-weight:700${color ? ';color:' + color : ''}">${td(label, 'text-align:left;white-space:nowrap')}${w.days.map(() => td('')).join('')}${td('', sep)}${arr.map(v => td(v)).join('')}${td(all, sep)}</tr>`;
+  h += foot('Total locations', w.totals.sum, w.totals.sumAll);
+  h += foot('Drop off / Pick up', w.totals.s, w.totals.sAll, 'var(--muted)');
+  h += foot('Tasks', w.totals.t, w.totals.tAll, 'var(--muted)');
+  h += foot('Deliveries', w.totals.d, w.totals.dAll, 'var(--accent)');
+  h += '</tbody></table>';
+  if (!w.drivers.length) h += '<div style="color:var(--muted);padding:10px 0">No drivers.</div>';
+  return h;
+}
+
+// the same layout as the team's sheet: B–H ticks, J days worked, L–R points, S total; bottom rows by day
+function _dwAoa(w) {
+  const dates = w.days.map(d => d);
+  const wd = w.days.map(d => _DW_DAYS[new Date(d + 'T00:00:00Z').getUTCDay()]);
+  const aoa = [
+    [`DRIVER / WEEK ${w.week}`, ...dates, '', 'days', '', ...dates, 'TOTAL', ''],
+    ['', ...wd, '', 'worked', '', ...wd, '', '']
+  ];
+  w.drivers.forEach(x => aoa.push([x.name + (x.active ? '' : ' (inactive)'), ...x.cells.map(c => c.sum > 0 ? '✓' : ''), '', x.worked, '', ...x.cells.map(c => c.sum), x.total, '']));
+  const blank = Array(7).fill('');
+  aoa.push(['', ...blank, '', '', '', ...w.totals.sum, w.totals.sumAll, 'Total locations']);
+  aoa.push(['', ...blank, '', '', '', ...w.totals.s, w.totals.sAll, 'Drop off / Pick up']);
+  aoa.push(['', ...blank, '', '', '', ...w.totals.t, w.totals.tAll, 'Tasks']);
+  aoa.push(['', ...blank, '', '', '', ...w.totals.d, w.totals.dAll, 'Deliveries']);
+  return aoa;
+}
+
+async function exportDriversWeek() {
+  if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
+  if (!_dwData) { toast('Nothing to export', true); return; }
+  const XL = await _loadXLSX();
+  const ws = XL.utils.aoa_to_sheet(_dwAoa(_dwData));
+  ws['!cols'] = [{ wch: 20 }, ...Array(7).fill({ wch: 11 }), { wch: 2 }, { wch: 7 }, { wch: 2 }, ...Array(7).fill({ wch: 11 }), { wch: 8 }, { wch: 18 }];
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, `Week ${_dwData.week}`);
+  const fn = `drivers_week${_dwData.week}_${_dwData.days[0]}.xlsx`;
+  XL.writeFile(wb, fn);
+  logEvent('EXPORT', 'report', 'drivers_week', { action: 'drivers_week_export', week: _dwData.week, from: _dwData.days[0], drivers: _dwData.drivers.length });
+  toast('⬇ ' + fn);
 }
 
 // ── 💵 Cash panel ───────────────────────────────────────────────────────
