@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
+<meta name="mycrm-version" content="v13.95"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1893,7 +1894,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.94';
+const APP_VERSION = 'v13.95';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2240,7 +2241,7 @@ setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60
         "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>clients.claim())));",
         "self.addEventListener('fetch',e=>{",
         "  if(e.request.method!=='GET')return;",
-        "  if(e.request.url.includes('supabase.co')||e.request.url.includes('googleapis'))return;",
+        "  if(e.request.url.includes('supabase.co')||e.request.url.includes('googleapis')||e.request.url.includes('vcheck='))return;",
         "  e.respondWith(caches.open(C).then(cache=>fetch(e.request).then(r=>{cache.put(e.request,r.clone());return r;}).catch(()=>caches.match(e.request))));",
         "});"
       ].join('\n');
@@ -2249,6 +2250,49 @@ setInterval(async () => { if (_refreshToken) await _refreshSession(); }, 50 * 60
     });
   });
 })();
+// ─── v13.95: VERSION WATCH ─────────────────────────────────────────
+// A tab left open for days keeps running old code while the site moves on (21.10: a COD order was closed from a v13.88
+// tab two versions later, without the cash step). Every 5 minutes the tab fetches the first 4 KB of index.html from the
+// site (Range request, no cache, not intercepted by the service worker) and compares <meta name="mycrm-version"> with
+// its own. Different → a bar at the top that cannot be dismissed: reload. Nothing else is downloaded.
+const VERSION_CHECK_MS = 5 * 60 * 1000;
+function _ownVersionMeta() { const m = document.querySelector('meta[name="mycrm-version"]'); return m ? m.getAttribute('content') : null; }
+function _versionFromHtml(text) { const m = /<meta\s+name="mycrm-version"\s+content="([^"]+)"/.exec(text || ''); return m ? m[1] : null; }
+async function _siteVersion() {
+  const url = location.pathname.replace(/\/[^\/]*$/, '/') + 'index.html?vcheck=' + Date.now();
+  const r = await fetch(url, { method: 'GET', cache: 'no-store', headers: { 'Range': 'bytes=0-4095' } });
+  if (!r.ok && r.status !== 206) throw new Error('HTTP ' + r.status);
+  return _versionFromHtml(await r.text());
+}
+function _showVersionBar(siteV) {
+  let bar = document.getElementById('version-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'version-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100000;background:#d64545;color:#fff;font-family:var(--mono,monospace);font-size:13px;font-weight:700;padding:10px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 12px rgba(0,0,0,.4)';
+    bar.innerHTML = '<span id="version-bar-text"></span><button id="version-bar-reload" type="button" style="margin-left:auto;background:#fff;color:#d64545;border:none;border-radius:8px;padding:8px 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">🔄 Reload now</button>';
+    document.body.appendChild(bar);
+    bar.querySelector('#version-bar-reload').onclick = () => location.reload();
+  }
+  bar.querySelector('#version-bar-text').textContent = 'MyCRM ' + siteV + ' is on the site — this tab still runs ' + (_ownVersionMeta() || APP_VERSION) + '. Reload to get the current version.';
+}
+let _versionWatchTimer = null;
+async function checkSiteVersion() {
+  const own = _ownVersionMeta();
+  if (!own) return null;                      // a page without the meta cannot compare itself
+  let site = null;
+  try { site = await _siteVersion(); } catch (e) { return null; }   // offline / proxy — try again later
+  if (site && site !== own) { _showVersionBar(site); return site; }
+  return site;
+}
+function startVersionWatch() {
+  if (_versionWatchTimer || location.protocol === 'file:') return;
+  setTimeout(() => { checkSiteVersion(); }, 20 * 1000);
+  _versionWatchTimer = setInterval(() => { if (!document.hidden) checkSiteVersion(); }, VERSION_CHECK_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSiteVersion(); });
+}
+startVersionWatch();
+
 (async function initAuth() {
   const stored = sessionStorage.getItem('sb_session');
   if (stored) {
@@ -4782,16 +4826,48 @@ function _whInfoLines(o, forLabel) {
 }
 
 // v13.94: 🖨 — the same block as ⧉ plus a QR with the order number (digits only), on a 3 × 2 in label (76.2 × 50.8 mm,
-// Phomemo PM-241-BT). Rendered and printed by stickers.js (printLabels: one page = the label, @page 76.2 × 50.8 mm, no
-// margins); the layout uses the engine's own fields: seller = order number, product = the lines, qr + sqty = the digits.
+// Phomemo PM-241-BT). v13.94.1: the page is built here (own markup), the QR is a PNG <img> drawn on a canvas from the
+// matrix that stickers.js computes (vector SVG did not come out on the Phomemo), and everything sits inside a safe area
+// (3 mm left, 5 mm right, 2.5 mm top) so a driver offset does not cut the QR. One label = one page, no margins.
 const WH_LABEL = { w: 76.2, h: 50.8 };
-function _whLabelLayout() {
-  return { w: WH_LABEL.w, h: WH_LABEL.h, tape: WH_LABEL.w, fields: {
-    seller:  { on: true, x: 2,  y: 2,    w: 44, size: 14, bold: true,  align: 'left' },
-    product: { on: true, x: 2,  y: 9.5,  w: 44, size: 9,  bold: false, align: 'left' },
-    qr:      { on: true, x: 48, y: 3,    size: 26 },
-    sqty:    { on: true, x: 48, y: 30.5, w: 26, size: 9,  bold: true,  align: 'center' }
-  } };
+// the QR matrix for the digits, via the label engine's own QR field → [{x, y}] dark modules + the module count
+function _whQrMatrix(S, digits) {
+  try {
+    const html = S.labelHtml({ w: 30, h: 30, tape: 30, fields: { qr: { on: true, x: 0, y: 0, size: 26 } } }, { qr: digits });
+    const vb = html.match(/viewBox="0 0 (\d+) (\d+)"/);
+    const n = vb ? parseInt(vb[1]) : 0;
+    const dark = [];
+    const re = /<rect x="(\d+)" y="(\d+)" width="1" height="1"\/>/g;
+    let m;
+    while ((m = re.exec(html))) dark.push([parseInt(m[1]), parseInt(m[2])]);
+    return (n > 0 && dark.length) ? { n, dark, svg: (html.match(/<svg[\s\S]*?<\/svg>/) || [''])[0] } : null;
+  } catch (e) { return null; }
+}
+// the QR as a PNG data URL: k px per module, a quiet zone of 4 modules all round, nothing anti-aliased
+function _whQrPng(q, pxPerModule, quiet) {
+  const k = Math.max(1, pxPerModule | 0), qz = quiet == null ? 4 : quiet, size = k * (q.n + 2 * qz);
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+  q.dark.forEach(([x, y]) => ctx.fillRect((x + qz) * k, (y + qz) * k, k, k));
+  return c.toDataURL('image/png');
+}
+function _whLabelHtml(o, lines, digits, qrImg, qrSvg) {
+  const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const qr = qrImg ? `<img class="qr" src="${qrImg}" alt="">` : `<div class="qr">${qrSvg || ''}</div>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Label ${esc(digits)}</title><style>
+    @page{size:${WH_LABEL.w}mm ${WH_LABEL.h}mm;margin:0}
+    html,body{margin:0;padding:0;background:#fff}
+    .lbl{position:relative;width:${WH_LABEL.w}mm;height:${WH_LABEL.h}mm;overflow:hidden;box-sizing:border-box;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;page-break-after:auto}
+    .num{position:absolute;left:3mm;top:2.5mm;width:40mm;font-size:14pt;font-weight:700;line-height:1.15;white-space:nowrap}
+    .txt{position:absolute;left:3mm;top:10mm;width:40mm;font-size:9pt;line-height:1.15;white-space:pre-wrap;word-wrap:break-word}
+    .qr{position:absolute;left:45mm;top:2.5mm;width:26mm;height:26mm;display:block}
+    .qr svg{width:26mm;height:26mm;display:block}
+    .dig{position:absolute;left:45mm;top:29mm;width:26mm;text-align:center;font-size:9pt;font-weight:700;line-height:1.15}
+  </style></head><body><div class="lbl"><div class="num">${esc(lines[0] || o.order_num)}</div><div class="txt">${esc(lines.slice(1).join('\n'))}</div>${qr}<div class="dig">${esc(digits)}</div></div><script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`;
 }
 async function whPrintLabel(orderId, btn) {
   const o = orders.find(x => x.id === orderId);
@@ -4803,10 +4879,13 @@ async function whPrintLabel(orderId, btn) {
   try { win.document.write('<!doctype html><title>Label ' + digits + '</title><body style="font-family:Arial;color:#666;padding:20px">Preparing the label…</body>'); } catch (e) {}
   let S;
   try { S = await loadStickers(); } catch (e) { try { win.close(); } catch (_) {} toast('🖨 ' + e.message, true); return; }
+  const q = _whQrMatrix(S, digits);
+  if (!q) { try { win.close(); } catch (_) {} toast('🖨 Could not build the QR code', true); return; }
+  const png = _whQrPng(q, 8, 4);
   const lines = _whInfoLines(o, true);
-  const data = { seller: lines[0] || o.order_num, product: lines.slice(1).join('\n'), qr: digits, sqty: digits };
-  S.printLabels(_whLabelLayout(), [data], win);
-  logEvent('LABEL_PRINT', 'order', orderId, { order_num: o.order_num, action: 'wh_label_print', qr: digits, size: WH_LABEL.w + 'x' + WH_LABEL.h, station: 'warehouse' });
+  const html = _whLabelHtml(o, lines, digits, png, q.svg);
+  win.document.open(); win.document.write(html); win.document.close();
+  logEvent('LABEL_PRINT', 'order', orderId, { order_num: o.order_num, action: 'wh_label_print', qr: digits, size: WH_LABEL.w + 'x' + WH_LABEL.h, qr_img: png ? 'png' : 'svg', station: 'warehouse' });
   if (btn) {
     const origHTML = btn.innerHTML, origColor = btn.style.color, origOpacity = btn.style.opacity;
     btn.innerHTML = '✓'; btn.style.color = '#00ee88'; btn.style.opacity = '1';
@@ -5695,6 +5774,16 @@ async function saveOrder(){
     const _nowD = payload.delivery_status === 'Delivered';
     if (_nowD && !_prevD) payload.delivered_at = new Date().toISOString();
     else if (!_nowD && _prevD) payload.delivered_at = null;
+    // v13.95: closing a Cash on delivery order here (admin) asks for the cash taken, like the dispatcher's ✓ Delivered
+    if (_nowD && !_prevD && editId) {
+      const _eo = orders.find(x => x.id === editId);
+      if (_cashReady(_eo) && _isCashOnDelivery(payload.payment_status)) {
+        const _due = _cashDue({ delivery_charge: payload.delivery_charge, discount: payload.discount, total: _eo.total, subtotal: _eo.subtotal }, orderItems[editId] || []);
+        const _c = await cashAskDialog(_eo.order_num + ' · ' + (payload.client_name || _eo.client_name || ''), _due, 'Mark as delivered');
+        if (_c === null) { btn.disabled = false; btn.textContent = 'Save Order'; return; }   // cancelled — nothing saved
+        payload.cash_received = _c;
+      }
+    }
   }
   // On create: order_num is intentionally omitted — DB trigger assigns it
   let orderId=editId;
@@ -11615,7 +11704,10 @@ async function _renderCashBody() {
     const d = r.driver_name;
     const open = _cashOpen.has(d);
     const miss = n(r.missing_orders) > 0 ? `<div style="color:var(--yellow,#e0b341);font-size:10px" title="Closed without an amount (old app / old core / SQL) — counted at due in Due, not in Taken">⚠ ${n(r.missing_orders)} without amount · ${_aed(r.missing_due)}</div>` : '';
-    const carry = Math.abs(n(r.carried_in)) > 0.004 ? `<div style="color:var(--muted);font-size:10px">incl. ${_aed(r.carried_in)} from earlier days</div>` : '';
+    // v13.95: with nothing on hand the carry-over was all handed over today — say that, not "incl. … from earlier days"
+    const carry = Math.abs(n(r.carried_in)) <= 0.004 ? ''
+      : Math.abs(n(r.on_hand)) <= 0.004 ? `<div style="color:var(--muted);font-size:10px">carried in ${_aed(r.carried_in)} — handed over today</div>`
+      : `<div style="color:var(--muted);font-size:10px">incl. ${_aed(r.carried_in)} from earlier days</div>`;
     const onHandColor = n(r.on_hand) > 0.004 ? 'var(--accent)' : (n(r.on_hand) < -0.004 ? 'var(--red)' : 'var(--muted)');
     html += `<tr data-drv="${escAttr(d)}" class="cash-row" style="cursor:pointer">` +
       td(`<span style="color:var(--muted)">${open ? '▾' : '▸'}</span> <b>${escHtml(d)}</b>`) +
@@ -11667,7 +11759,7 @@ async function _renderCashDetails(driver) {
       <span>due ${_aed(o.due)}</span>
       ${o.received != null
         ? `<span>taken <b>${_aed(o.received)}</b></span>${over > 0.004 ? `<b style="color:var(--accent)">+${_aed(over)}</b>` : ''}<span style="color:var(--muted)">${escHtml(o.by || '')}${src ? ' · ' + escHtml(src) : ''}</span>`
-        : `<span style="color:var(--yellow,#e0b341)">⚠ closed without amount</span>`}
+        : `<span style="color:var(--yellow,#e0b341)">⚠ closed without amount</span>${currentRole === 'admin' ? ` <a href="#" class="cash-enter" data-id="${escAttr(o.id)}" data-num="${escAttr(o.order_num || '')}" data-due="${Number(o.due || 0)}" style="color:var(--blue)">enter amount</a>` : ''}`}
     </div>`;
   });
   h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">Handed over (${hos.filter(x => !x.voided_at).length})</div>`;
@@ -11684,6 +11776,10 @@ async function _renderCashDetails(driver) {
     </div>`;
   });
   el.innerHTML = h;
+  el.querySelectorAll('.cash-enter').forEach(a => a.addEventListener('click', ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    cashEnterAmount(a.getAttribute('data-id'), a.getAttribute('data-num'), parseFloat(a.getAttribute('data-due')) || 0);
+  }));
   el.querySelectorAll('.cash-void').forEach(a => a.addEventListener('click', async ev => {
     ev.preventDefault();
     const reason = (prompt('Cancel this handover? Write why (it stays in the history):') || '').trim();
@@ -11693,6 +11789,99 @@ async function _renderCashDetails(driver) {
     toast('Handover cancelled');
     _renderCashBody();
   }));
+}
+
+// v13.95: "cash taken from the client" as its own dialog — the admin's order modal (Delivered) and the Cash panel's
+// "enter amount" use it; same rules as the dispatcher's ✓ Delivered: Exactly / Other, less than due refused, big over → tick.
+function cashAskDialog(title, due, okLabel) {
+  return new Promise(resolve => {
+    const ex = document.getElementById('cash-ask-overlay');
+    if (ex) ex.remove();
+    const ov = document.createElement('div');
+    ov.id = 'cash-ask-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:2200;display:flex;align-items:center;justify-content:center;padding:16px';
+    const _btn = 'padding:8px 12px;font-family:var(--mono);font-size:12px;border-radius:8px;cursor:pointer';
+    ov.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:400px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">💵 Cash taken from the client</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:700;margin-top:2px">${escHtml(title || '')}</div>
+        </div>
+        <div style="padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.6">
+          <div style="font-size:13px;margin-bottom:8px">Due <b style="font-size:15px;color:var(--accent)">${_aed(due)}</b></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="cask-exact" style="${_btn};background:transparent;color:var(--green);border:1px solid var(--green);font-weight:700">✓ Exactly ${_aed(due)}</button>
+            <button type="button" id="cask-other" style="${_btn};background:transparent;color:var(--text);border:1px solid var(--border)">Other amount</button>
+          </div>
+          <div id="cask-other-wrap" style="display:none;margin-top:8px">
+            <input id="cask-amount" inputmode="decimal" autocomplete="off" placeholder="Cash taken, AED" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:var(--mono);font-size:14px;color:var(--text)">
+            <div id="cask-msg" style="min-height:16px;font-size:11px;margin-top:4px"></div>
+            <label id="cask-sure-wrap" style="display:none;font-size:12px;margin-top:4px;cursor:pointer"><input type="checkbox" id="cask-sure"> <span id="cask-sure-text"></span></label>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px">What the driver kept after giving change. Less than due is not accepted — change the order first (discount), then close.</div>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;background:var(--surface2);border-radius:0 0 12px 12px">
+          <button type="button" id="cask-cancel" style="padding:8px 14px;font-family:var(--mono);font-size:12px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+          <button type="button" id="cask-ok" disabled style="padding:8px 16px;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--green);color:#000;border:none;border-radius:8px;cursor:not-allowed;opacity:.4">${escHtml(okLabel || 'Save')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    let mode = null, done = false;
+    const q = id => ov.querySelector('#' + id);
+    const finish = v => { if (done) return; done = true; document.removeEventListener('keydown', onKey); ov.remove(); resolve(v); };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); finish(null); } };
+    document.addEventListener('keydown', onKey);
+    const chosen = () => {
+      if (mode === 'exact') return _r2(due);
+      if (mode !== 'other') return null;
+      const v = _parseCash(q('cask-amount').value);
+      if (v === null) return null;
+      const c = _checkCash(v, due);
+      return (!c.canSave || (c.kind === 'big_over' && !q('cask-sure').checked)) ? null : c.received;
+    };
+    const refresh = () => {
+      q('cask-exact').style.background = mode === 'exact' ? 'var(--green)' : 'transparent';
+      q('cask-exact').style.color = mode === 'exact' ? '#000' : 'var(--green)';
+      q('cask-other').style.borderColor = mode === 'other' ? 'var(--accent)' : 'var(--border)';
+      q('cask-other-wrap').style.display = mode === 'other' ? '' : 'none';
+      if (mode === 'other') {
+        const raw = q('cask-amount').value.trim(), v = _parseCash(raw), c = v === null ? null : _checkCash(v, due);
+        q('cask-sure-wrap').style.display = c && c.kind === 'big_over' ? '' : 'none';
+        if (c && c.kind === 'big_over') q('cask-sure-text').textContent = 'Yes, the client gave ' + _aed(c.received);
+        q('cask-msg').innerHTML = !raw ? '' : v === null ? '<span style="color:var(--red)">Numbers only — e.g. 900 or 900.50</span>'
+          : c.kind === 'less' ? `<span style="color:var(--red);font-weight:700">Less than ${_aed(due)} is not allowed — change the order first</span>`
+          : c.kind === 'too_much' ? '<span style="color:var(--red);font-weight:700">Too much for this order — check the number</span>'
+          : c.kind === 'exact' ? '<span style="color:var(--muted)">Same as due</span>'
+          : `<span style="color:var(--accent);font-weight:700">+${_aed(c.over)} over due — the driver hands over all of it</span>`;
+      }
+      const v = chosen();
+      const ok = q('cask-ok');
+      ok.disabled = v === null; ok.style.opacity = v === null ? .4 : 1; ok.style.cursor = v === null ? 'not-allowed' : 'pointer';
+      ok.textContent = (okLabel || 'Save') + (v === null ? '' : ' · ' + _aed(v));
+    };
+    q('cask-exact').onclick = () => { mode = 'exact'; refresh(); };
+    q('cask-other').onclick = () => { mode = 'other'; refresh(); setTimeout(() => q('cask-amount').focus(), 0); };
+    q('cask-amount').addEventListener('input', () => { q('cask-sure').checked = false; refresh(); });
+    q('cask-sure').addEventListener('change', refresh);
+    q('cask-cancel').onclick = () => finish(null);
+    q('cask-ok').onclick = () => { const v = chosen(); if (v !== null) finish(v); };
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(null); });
+    refresh();
+  });
+}
+
+// v13.95: the admin enters the amount for a Delivered COD order that was closed without one (old tab, SQL, order modal)
+async function cashEnterAmount(orderId, orderNum, due) {
+  if (currentRole !== 'admin') { toast('🔒 Only the admin can enter the amount afterwards', true); return; }
+  const v = await cashAskDialog(orderNum, due, 'Save amount');
+  if (v === null) return;
+  const { error } = await sb.from('orders').update({ cash_received: v }).eq('id', orderId).eq('delivery_status', 'Delivered');
+  if (error) { toast('💵 ' + ((error && error.message) || 'Could not save'), true); return; }
+  const o = orders.find(x => x.id === orderId);
+  if (o) { o.cash_received = v; o.cash_due = _r2(due); }
+  logEvent('UPDATE', 'order', orderId, { order_num: orderNum, action: 'cash_amount_entered', cash_received: v, cash_due: _r2(due) });
+  toast('💵 ' + orderNum + ' — ' + _aed(v) + ' saved');
+  _renderCashBody();
 }
 
 function cashAcceptDialog(driver, onHand) {
