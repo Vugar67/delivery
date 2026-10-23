@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.96"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.97"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1896,7 +1896,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.96';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.97';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11002,39 +11002,66 @@ function _refreshDeliveredCounts() {
 }
 
 // ── 📅 Drivers day (admin) ──────────────────────────────────────────────────
-let _ddDay = null, _ddRows = null;
-const _DD_COLS = ['#', 'Driver', 'Order', 'Date', 'Emirate', 'City', 'District', 'Villa', 'Assigned', 'Delivered', 'Closed by', 'Closed via'];
+// v13.97: a date range (From … To, both = today by default, ≤ 31 days — one drivers_day call per day), a driver filter,
+// and full date + time in the Assigned / Delivered columns (admin's request, 23.10). Rows go by delivery time.
+let _ddFrom = null, _ddTo = null, _ddDriver = '', _ddRowsAll = null, _ddRows = null, _ddLoadSeq = 0;
+const DD_MAX_DAYS = 31;
+const _DD_COLS = ['#', 'Driver', 'Order', 'Date', 'Emirate', 'City', 'District', 'Villa', 'Assigned date', 'Delivered date', 'Closed by', 'Closed via'];
 
+// "20.10.2026 13:14" (Dubai)
+function _ddDateTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso);
+  if (isNaN(t)) return '';
+  return t.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }).replace(/\//g, '.').replace(',', '');
+}
 function _ddRow(r, i) {
   return [i + 1, r.driver_name || '', r.order_num || '', _tripFmtDay(r.order_date), r.emirate || '', r.city || '', r.district || '', r.villa || '',
-          _tripTime(r.assigned_at), _tripTime(r.delivered_at), r.closed_by || '', r.closed_via || ''];
+          _ddDateTime(r.assigned_at), _ddDateTime(r.delivered_at), r.closed_by || '', r.closed_via || ''];
+}
+function _ddDays(from, to) { const out = []; let d = from; while (d <= to && out.length < DD_MAX_DAYS) { out.push(d); d = _tripShift(d, 1); } return out; }
+function _ddPeriodText() { return _ddFrom === _ddTo ? _tripFmtDay(_ddFrom) : _tripFmtDay(_ddFrom) + ' – ' + _tripFmtDay(_ddTo); }
+function _ddApplyFilter() {
+  const all = _ddRowsAll || [];
+  _ddRows = _ddDriver ? all.filter(r => r.driver_name === _ddDriver) : all.slice();
 }
 
-async function openDriversDay(day) {
+async function openDriversDay(from, to) {
   if (currentRole !== 'admin') { toast('🔒 Drivers day — admins only', true); return; }
-  _ddDay = day || _ddDay || _dubaiToday();
+  _ddFrom = from || _ddFrom || _dubaiToday();
+  _ddTo = to || (from ? from : (_ddTo || _ddFrom));
+  if (_ddTo < _ddFrom) { const t = _ddFrom; _ddFrom = _ddTo; _ddTo = t; }
+  if (_ddDays(_ddFrom, _ddTo).length >= DD_MAX_DAYS && _tripShift(_ddFrom, DD_MAX_DAYS - 1) < _ddTo) {
+    _ddTo = _tripShift(_ddFrom, DD_MAX_DAYS - 1);
+    toast('At most ' + DD_MAX_DAYS + ' days at a time — To set to ' + _tripFmtDay(_ddTo), true);
+  }
   let ov = document.getElementById('dd-overlay');
   if (!ov) {
     ov = document.createElement('div');
     ov.id = 'dd-overlay';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto';
+    const inp = 'background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)';
     ov.innerHTML = `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1280px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1320px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
         <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent)">📅 Drivers — day</div>
           <div style="flex:1"></div>
-          <button type="button" id="dd-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
-          <input type="date" id="dd-day" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
-          <button type="button" id="dd-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+          <label style="font-family:var(--mono);font-size:11px;color:var(--muted)">From</label>
+          <input type="date" id="dd-from" style="${inp}">
+          <label style="font-family:var(--mono);font-size:11px;color:var(--muted)">To</label>
+          <input type="date" id="dd-to" style="${inp}">
+          <button type="button" id="dd-prev" class="btn btn-ghost" style="padding:4px 10px" title="Previous day">‹</button>
+          <button type="button" id="dd-next" class="btn btn-ghost" style="padding:4px 10px" title="Next day">›</button>
           <button type="button" id="dd-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+          <select id="dd-driver" style="${inp};min-width:150px"><option value="">All drivers</option></select>
           <button type="button" id="dd-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">⬇ Excel</button>
           <button type="button" id="dd-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
           <span id="dd-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
         </div>
         <div id="dd-body" style="padding:10px 16px;font-family:var(--mono);font-size:12px;overflow-x:auto">Loading…</div>
         <div style="padding:4px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
-          Orders delivered that day (Dubai) by own drivers, order number ascending. <b>Assigned</b> = when the dispatcher sent the order to this driver;
-          <b>Delivered</b> = when the order was closed; <b>Closed by</b> = who closed it and how (Driver app / Dispatcher / Aramex / order form / SQL). Filter in Excel.
+          Orders delivered in the period (Dubai days) by own drivers, by delivery time. <b>Assigned date</b> = when the dispatcher sent the order to this driver;
+          <b>Delivered date</b> = when the order was closed; <b>Closed by</b> = who closed it and how (Driver app / Dispatcher / Aramex / order form / SQL). Excel exports what is shown.
         </div>
       </div>`;
     document.body.appendChild(ov);
@@ -11043,28 +11070,50 @@ async function openDriversDay(day) {
     document.addEventListener('keydown', onKey);
     ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
     ov.querySelector('#dd-x').onclick = close;
-    ov.querySelector('#dd-prev').onclick = () => openDriversDay(_tripShift(_ddDay, -1));
-    ov.querySelector('#dd-next').onclick = () => openDriversDay(_tripShift(_ddDay, 1));
-    ov.querySelector('#dd-today').onclick = () => openDriversDay(_dubaiToday());
-    ov.querySelector('#dd-refresh').onclick = () => openDriversDay(_ddDay);
-    ov.querySelector('#dd-day').onchange = ev => { if (ev.target.value) openDriversDay(ev.target.value); };
+    ov.querySelector('#dd-prev').onclick = () => openDriversDay(_tripShift(_ddFrom, -1), _tripShift(_ddTo, -1));
+    ov.querySelector('#dd-next').onclick = () => openDriversDay(_tripShift(_ddFrom, 1), _tripShift(_ddTo, 1));
+    ov.querySelector('#dd-today').onclick = () => openDriversDay(_dubaiToday(), _dubaiToday());
+    ov.querySelector('#dd-refresh').onclick = () => openDriversDay(_ddFrom, _ddTo);
+    ov.querySelector('#dd-from').onchange = ev => { if (ev.target.value) openDriversDay(ev.target.value, ov.querySelector('#dd-to').value || ev.target.value); };
+    ov.querySelector('#dd-to').onchange = ev => { if (ev.target.value) openDriversDay(ov.querySelector('#dd-from').value || ev.target.value, ev.target.value); };
+    ov.querySelector('#dd-driver').onchange = ev => { _ddDriver = ev.target.value; _ddApplyFilter(); _ddRenderTable(); };
     ov.querySelector('#dd-xlsx').onclick = exportDriversDay;
   }
-  ov.querySelector('#dd-day').value = _ddDay;
-  ov.querySelector('#dd-next').disabled = _ddDay >= _dubaiToday();
+  ov.querySelector('#dd-from').value = _ddFrom;
+  ov.querySelector('#dd-to').value = _ddTo;
+  ov.querySelector('#dd-next').disabled = _ddTo >= _dubaiToday();
   const body = ov.querySelector('#dd-body');
   body.innerHTML = 'Loading…';
-  const dd = _ddDay;
-  const { data, error } = await sb.rpc('drivers_day', { p_day: dd });
-  if (dd !== _ddDay || !document.getElementById('dd-body')) return;
-  if (error) { _ddRows = null; body.innerHTML = `<div style="color:var(--red);padding:10px 0">${escHtml(_tripErrText(error))}</div>`; return; }
-  _ddRows = Array.isArray(data) ? data : [];
-  if (!_ddRows.length) { body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No deliveries by own drivers on ${escHtml(_tripFmtDay(dd))}.</div>`; return; }
+  const seq = ++_ddLoadSeq;
+  const days = _ddDays(_ddFrom, _ddTo);
+  const results = await Promise.all(days.map(d => sb.rpc('drivers_day', { p_day: d })));
+  if (seq !== _ddLoadSeq || !document.getElementById('dd-body')) return;   // a newer period was requested meanwhile
+  const failed = results.find(r => r.error);
+  if (failed) { _ddRowsAll = null; _ddRows = null; body.innerHTML = `<div style="color:var(--red);padding:10px 0">${escHtml(_tripErrText(failed.error))}</div>`; return; }
+  _ddRowsAll = results.flatMap(r => Array.isArray(r.data) ? r.data : [])
+    .sort((a, b) => String(a.delivered_at || '').localeCompare(String(b.delivered_at || '')) || String(a.order_num || '').localeCompare(String(b.order_num || '')));
+  // driver list of the period; keep the chosen driver when he is still there
+  const sel = ov.querySelector('#dd-driver');
+  const names = Array.from(new Set(_ddRowsAll.map(r => r.driver_name).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  if (_ddDriver && !names.includes(_ddDriver)) _ddDriver = '';
+  sel.innerHTML = '<option value="">All drivers</option>' + names.map(n => `<option value="${escAttr(n)}"${n === _ddDriver ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+  _ddApplyFilter();
+  _ddRenderTable();
+}
+
+function _ddRenderTable() {
+  const body = document.getElementById('dd-body');
+  if (!body) return;
+  const rows = _ddRows || [];
+  if (!rows.length) {
+    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No deliveries by own drivers${_ddDriver ? ' for ' + escHtml(_ddDriver) : ''} on ${escHtml(_ddPeriodText())}.</div>`;
+    return;
+  }
   const th = t => `<th style="padding:5px 6px;text-align:left;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
   const td = (h, extra) => `<td style="padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap${extra ? ';' + extra : ''}">${h}</td>`;
-  let h = `<div style="color:var(--muted);font-size:11px;margin:0 0 6px">${_ddRows.length} deliveries · ${new Set(_ddRows.map(r => r.driver_name)).size} drivers</div>`;
+  let h = `<div style="color:var(--muted);font-size:11px;margin:0 0 6px">${rows.length} deliveries · ${new Set(rows.map(r => r.driver_name)).size} driver${new Set(rows.map(r => r.driver_name)).size === 1 ? '' : 's'} · ${escHtml(_ddPeriodText())}${_ddDriver ? ' · ' + escHtml(_ddDriver) : ''}</div>`;
   h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${_DD_COLS.map(th).join('')}</tr></thead><tbody>`;
-  _ddRows.forEach((r, i) => {
+  rows.forEach((r, i) => {
     const c = _ddRow(r, i);
     h += `<tr>${td(c[0], 'color:var(--muted)')}${td('<b>' + escHtml(c[1]) + '</b>')}${td('<b style="color:var(--accent)">' + escHtml(c[2]) + '</b>')}${td(escHtml(c[3]))}${td(escHtml(c[4]))}${td(escHtml(c[5]))}${td(escHtml(c[6]))}${td(escHtml(c[7]))}${td(escHtml(c[8]))}${td('<b>' + escHtml(c[9]) + '</b>')}${td(escHtml(c[10]))}${td(escHtml(c[11]), 'color:var(--muted)')}</tr>`;
   });
@@ -11076,14 +11125,16 @@ async function exportDriversDay() {
   if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
   if (!_ddRows || !_ddRows.length) { toast('Nothing to export', true); return; }
   const XL = await _loadXLSX();
-  const aoa = [['DRIVERS / DAY ' + _tripFmtDay(_ddDay)], _DD_COLS, ..._ddRows.map((r, i) => _ddRow(r, i))];
+  const title = 'DRIVERS / ' + _ddPeriodText() + (_ddDriver ? ' · ' + _ddDriver : '');
+  const aoa = [[title], _DD_COLS, ..._ddRows.map((r, i) => _ddRow(r, i))];
   const ws = XL.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 4 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 9 }, { wch: 9 }, { wch: 18 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 4 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 17 }, { wch: 17 }, { wch: 18 }, { wch: 20 }];
   const wb = XL.utils.book_new();
-  XL.utils.book_append_sheet(wb, ws, _ddDay);
-  const fn = 'drivers_day_' + _ddDay + '.xlsx';
+  const tag = _ddFrom === _ddTo ? _ddFrom : _ddFrom + '_' + _ddTo;
+  XL.utils.book_append_sheet(wb, ws, tag.slice(0, 31));
+  const fn = (_ddFrom === _ddTo ? 'drivers_day_' : 'drivers_') + tag + (_ddDriver ? '_' + _ddDriver.replace(/[^A-Za-z0-9]+/g, '_') : '') + '.xlsx';
   XL.writeFile(wb, fn);
-  logEvent('EXPORT', 'report', 'drivers_day', { action: 'drivers_day_export', day: _ddDay, rows: _ddRows.length });
+  logEvent('EXPORT', 'report', 'drivers_day', { action: 'drivers_day_export', from: _ddFrom, to: _ddTo, driver: _ddDriver || null, rows: _ddRows.length });
   toast('⬇ ' + fn);
 }
 
