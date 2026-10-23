@@ -550,7 +550,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div class="toolbar">
         <div class="search-wrap" style="max-width:220px">
           <span class="s-ico">&#9906;</span>
-          <input type="text" id="search-input" placeholder="Search order#, client, city..." oninput="renderTable()">
+          <input type="text" id="search-input" placeholder="Search order#, client, city… (full phone / order # searches all history)" oninput="onSearchInput()">
         </div>
         <select class="filter-sel" id="filter-emirate" onchange="renderTable()"><option value="">All Emirates</option></select>
         <div style="position:relative" id="filter-delivery-wrap">
@@ -589,10 +589,10 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button id="aramex-sync-btn" onclick="aramexSyncUndelivered(true)" title="Refresh Aramex tracking for all undelivered AWBs now (auto-runs hourly)" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--accent);font-family:var(--mono);font-size:12px;cursor:pointer;white-space:nowrap">⟳ Aramex</button>
         <div style="display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px">
           <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">FROM</span>
-          <input type="date" id="filter-date-from" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+          <input type="date" id="filter-date-from" oninput="onDateFilterChange()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
           <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">TO</span>
-          <input type="date" id="filter-date-to" oninput="renderTable()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
-          <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';renderTable()" title="Clear dates" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">✕</button>
+          <input type="date" id="filter-date-to" oninput="onDateFilterChange()" style="background:none;border:none;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:120px">
+          <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';onDateFilterChange()" title="Clear dates" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">✕</button>
         </div>
         <select class="filter-sel" id="sort-select" onchange="renderTable()" style="min-width:160px">
           <option value="date_desc">🔢 Newest First</option>
@@ -609,6 +609,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-ghost" id="cash-btn" onclick="openCashPanel()" title="Cash taken by the drivers, handovers (v13.89)">💵 Cash</button>
         <button class="btn btn-ghost" id="trips-btn" onclick="openTripsPanel()" title="Staff pick-up / drop-off and driver tasks (v13.92)">🚐 Trips</button>
         <button class="btn btn-ghost" id="dw-btn" onclick="openDriversWeek()" title="Weekly drivers report, Excel (admin, v13.92)">📊 Drivers week</button>
+        <button class="btn btn-ghost" id="dd-btn" onclick="openDriversDay()" title="Daily drivers report: deliveries with times, Excel (admin, v13.93)">📅 Drivers day</button>
         <button class="btn btn-ghost" id="orders-export-btn" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
@@ -1891,7 +1892,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.92';
+const APP_VERSION = 'v13.93';
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2530,7 +2531,7 @@ async function initApp(){
   if(!CASH_ROLES.includes(currentRole)){ ['cash-btn','dispatch-cash-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
   // v13.92: 🚐 Trips — admin and dispatcher; 📊 Drivers week — admin only
   if(!TRIP_ROLES.includes(currentRole)){ ['trips-btn','dispatch-trips-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
-  if(currentRole!=='admin'){ const _dw=document.getElementById('dw-btn'); if(_dw) _dw.style.display='none'; }
+  if(currentRole!=='admin'){ ['dw-btn','dd-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
@@ -2572,26 +2573,21 @@ async function loadRefs(){
   data.forEach(r=>{if(refs[r.category]!==undefined)refs[r.category].push({id:r.id,value:r.value});});
 }
 async function loadOrders(){
-  // Full load — fetches all orders in batches of 1000.
-  // Called on initial app load and after any write (save/delete).
-  // Records _lastFetchAt so the incremental poller knows where to start from.
-  let allOrders = [];
-  let offset = 0;
-  const batchSize = 1000;
+  // v13.93: the working set = every OPEN order (any age) + Delivered / Cancelled ones created or updated in the
+  // last WINDOW_DAYS days. Called on initial app load and after any write (save/delete). Older orders fetched on
+  // demand earlier in the session (_histOrders) are kept. Records _lastFetchAt for the incremental poller.
   // Capture timestamp BEFORE fetching so we don't miss concurrent updates
   const fetchStart = new Date().toISOString();
-  while(true) {
-    const _url = SUPABASE_URL + '/rest/v1/orders?select=*&deleted=is.null&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
-    const _res = await fetch(_url, {
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
-    });
-    const _text = await _res.text();
-    const batch = _text ? JSON.parse(_text) : [];
-    if (!Array.isArray(batch) || batch.length === 0) break;
-    allOrders = allOrders.concat(batch);
-    if (batch.length < batchSize) break;
-    offset += batchSize;
-  }
+  const since = _windowSinceIso();
+  const [openList, recentList] = await Promise.all([
+    _fetchOrders('or=(delivery_status.is.null,delivery_status.not.in.(Delivered,Cancelled))'),
+    _fetchOrders('delivery_status=in.(Delivered,Cancelled)&or=(created_at.gte.' + since + ',updated_at.gte.' + since + ')')
+  ]);
+  const seen = new Set();
+  const allOrders = [];
+  openList.concat(recentList).forEach(o => { if (o && o.id && !seen.has(o.id)) { seen.add(o.id); allOrders.push(o); } });
+  _histOrders.forEach((o, id) => { if (!seen.has(id)) { seen.add(id); allOrders.push(o); } });   // a fresher copy from the window wins
+  allOrders.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));   // newest first, as the single query did
   orders = allOrders;
   // Use the most recent updated_at from the dataset as the baseline;
   // fall back to fetch start time so we never miss updates.
@@ -2857,6 +2853,7 @@ function getFiltered(){
     }
     if(dateFrom&&(o.order_date||'')<dateFrom)return false;
     if(dateTo&&(o.order_date||'')>dateTo)return false;
+    if(q){const _qd=q.replace(/\D/g,'');if(_qd.length>=9&&String(o.client_number||'').replace(/\D/g,'').endsWith(_qd.slice(-9)))return true;}   // v13.93: full phone, any format
     if(q){const hay=[o.order_num,o.client_number,o.client_name,o.city,o.apt,o.villa,o.notes,o.driver_note,o.driver,o.seller_name,o.created_by,o.payment_status,o.delivery_status,o.invoice_number,o.po_number,(o.po_number?'PO'+o.po_number:''),o.emirate,o.confirmed,o.order_date,o.aramex_awb].join(' ').toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
@@ -2938,7 +2935,8 @@ function renderStats(){
     const col = statusColors[s] || 'muted';
 
     if(s === 'Delivered'){
-      const dn = delivCount(delivPeriod);
+      _refreshDeliveredCounts();   // v13.93
+      const dn = (_dcounts && delivPeriod in _dcounts) ? _dcounts[delivPeriod] : delivCount(delivPeriod);
       return `<div class="stat" style="position:relative;cursor:default">
         <div style="display:flex;align-items:center;gap:6px">
           <div class="stat-label">Delivered</div>
@@ -2951,13 +2949,14 @@ function renderStats(){
       </div>`;
     }
 
+    const _wt = s === 'Cancelled' ? ` title="Cancelled in the last ${WINDOW_DAYS} days (older ones are not loaded)"` : '';   // v13.93
     if(n === 0) {
-      return `<div class="stat" style="opacity:.35;padding:10px 12px;min-width:unset">
+      return `<div class="stat"${_wt} style="opacity:.35;padding:10px 12px;min-width:unset">
         <div class="stat-label" style="font-size:9px">${s}</div>
         <div class="stat-val ${col}" style="font-size:14px">0</div>
       </div>`;
     }
-    return `<div class="stat"><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
+    return `<div class="stat"${_wt}><div class="stat-label">${s}</div><div class="stat-val ${col}">${n}</div></div>`;
   }).join('');
 
   document.getElementById('stats-row').innerHTML = statusHtml;
@@ -5055,7 +5054,8 @@ async function openNewOrder(){
 }
 
 async function editOrder(id){
-  const o=orders.find(x=>x.id===id);if(!o)return;
+  let o=orders.find(x=>x.id===id);
+  if(!o){ o=await _fetchOrderById(id); if(!o){ toast('Order not found', true); return; } }   // v13.93: older than the window
   // Prevent double-open
   if(document.getElementById('order-modal').classList.contains('open') && editId === id) return;
   editId=id;
@@ -7069,7 +7069,7 @@ async function openStockMoves(productId) {
   let batchNo = {};
   if (batchIds.length) { const { data: bs } = await sb.from('lab_batches').select('id,batch_no').in('id', batchIds); (bs || []).forEach(b => batchNo[b.id] = b.batch_no); }
   const lotOf = {}; { const { data: ls } = await sb.from('stock_lots').select('id,made_on,source').eq('product_id', productId); (ls || []).forEach(l => lotOf[l.id] = l); }   // v13.75
-  const orderNum = {}; rows.forEach(r => { if (r.order_id) { const o = orders.find(x => x.id === r.order_id); if (o) orderNum[r.order_id] = o.order_num; } });
+  const orderNum = await _orderNumsFor([...new Set(rows.map(r => r.order_id).filter(Boolean))]);   // v13.93: also outside the window
   const label = { lab_qa_in: 'QA accepted', pack_out: 'Packed (order)', adjust: 'Adjustment', receive: 'Received', return: 'Returned', count: 'Count' };
   body.innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">WHEN</th><th style="text-align:right;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">QTY</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">REASON</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">REF</th><th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--muted)">BY</th></tr></thead>
@@ -10688,6 +10688,258 @@ function _cashModalRow(o) {
          ` · ${escHtml(o.cash_received_by || '')}${src ? ' (' + escHtml(src) + ')' : ''} · ${escHtml(_podTime(o.cash_received_at))}</div>`;
 }
 
+// ── v13.93: start-up window + history on demand ─────────────────────────────
+// Start-up loads the OPEN orders of any age (everything that is not Delivered / Cancelled) plus the closed ones of
+// the last WINDOW_DAYS days. Older orders are fetched on demand — a date filter before the window, a full phone
+// number or a full order number in the search box, an order opened from a report — and kept in _histOrders so the
+// reload after a save does not drop them. Everything that works on open orders (Dispatch, the warehouse board,
+// Aramex sync, the duplicate check, stock commitments) is unchanged: the open orders are all there.
+const WINDOW_DAYS = 3;
+const _histOrders = new Map();        // id → order fetched from history this session
+let _histRanges = [];                 // [from, to] order_date ranges already fetched
+let _histBusy = null;
+let _searchTimer = null;
+const _searchKeys = new Set();        // server searches already made this session
+
+function _windowSinceDate() { return _tripShift(_dubaiToday(), -WINDOW_DAYS); }                 // YYYY-MM-DD, Dubai
+function _windowSinceIso()  { return new Date(_windowSinceDate() + 'T00:00:00+04:00').toISOString(); }
+
+// every row of a PostgREST filter on orders, 1000 at a time (never deleted ones — as loadOrders always did)
+async function _fetchOrders(params) {
+  let all = [];
+  let offset = 0;
+  const batchSize = 1000;
+  while (true) {
+    const _url = SUPABASE_URL + '/rest/v1/orders?select=*&deleted=is.null&' + params + '&order=created_at.desc&limit=' + batchSize + '&offset=' + offset;
+    const _res = await fetch(_url, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken } });
+    const _text = await _res.text();
+    const batch = _text ? JSON.parse(_text) : [];
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all = all.concat(batch);
+    if (batch.length < batchSize) break;
+    offset += batchSize;
+  }
+  return all;
+}
+
+async function _loadItemsFor(ids) {
+  const BATCH = 200;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const batch = ids.slice(i, i + BATCH);
+    const { data } = await sb.from('order_items').select('*').in('order_id', batch);
+    batch.forEach(id => { orderItems[id] = []; });
+    (data || []).forEach(item => {
+      if (!orderItems[item.order_id]) orderItems[item.order_id] = [];
+      orderItems[item.order_id].push(item);
+    });
+  }
+}
+
+// orders fetched from history → into the working set (+ their items); returns how many were not loaded before
+async function _mergeHistory(list) {
+  const have = new Set(orders.map(o => o.id));
+  const fresh = [];
+  (list || []).forEach(o => {
+    if (!o || !o.id) return;
+    _histOrders.set(o.id, o);
+    if (!have.has(o.id)) { have.add(o.id); orders.push(o); fresh.push(o.id); }
+  });
+  if (fresh.length) await _loadItemsFor(fresh);
+  return fresh.length;
+}
+
+// an order that is not in the working set (older than the window) — fetched by id, e.g. opened from a report
+async function _fetchOrderById(id) {
+  const found = orders.find(x => x.id === id);
+  if (found) return found;
+  try {
+    const list = await _fetchOrders('id=eq.' + encodeURIComponent(id));
+    await _mergeHistory(list);
+  } catch (e) { console.log('history by id:', e); }
+  return orders.find(x => x.id === id) || null;
+}
+
+// order numbers for ids that may be outside the window (journals)
+async function _orderNumsFor(ids) {
+  const out = {};
+  const missing = [];
+  ids.forEach(id => { const o = orders.find(x => x.id === id); if (o) out[id] = o.order_num; else missing.push(id); });
+  for (let i = 0; i < missing.length; i += 100) {
+    const { data } = await sb.from('orders').select('id,order_num').in('id', missing.slice(i, i + 100));
+    (data || []).forEach(o => { out[o.id] = o.order_num; });
+  }
+  return out;
+}
+
+// FROM / TO before the window → that order_date range comes from the server
+function onDateFilterChange() {
+  renderTable();
+  clearTimeout(onDateFilterChange._t);
+  onDateFilterChange._t = setTimeout(() => {
+    const from = document.getElementById('filter-date-from')?.value || '';
+    const to = document.getElementById('filter-date-to')?.value || '';
+    _ensureHistoryDates(from, to);
+  }, 300);
+}
+
+async function _ensureHistoryDates(from, to) {
+  const winFrom = _windowSinceDate();
+  if (!from || from >= winFrom) return;                       // the window already has these days
+  const end = (to && to < winFrom) ? to : _tripShift(winFrom, -1);
+  if (end < from) return;
+  if (_histRanges.some(r => r[0] <= from && r[1] >= end)) return;
+  const key = from + '..' + end;
+  if (_histBusy === key) return;
+  _histBusy = key;
+  try {
+    const list = await _fetchOrders('order_date=gte.' + from + '&order_date=lte.' + end);
+    _histRanges.push([from, end]);
+    const n = await _mergeHistory(list);
+    if (n) { renderTable(); toast('📂 ' + n + ' older order' + (n === 1 ? '' : 's') + ' loaded (' + _tripFmtDay(from) + ' – ' + _tripFmtDay(end) + ')'); }
+  } catch (e) {
+    toast('History: ' + (e.message || 'could not load'), true);
+  } finally {
+    if (_histBusy === key) _histBusy = null;
+  }
+}
+
+// the search box: local as before, plus a server search over the whole history for a FULL phone number
+// (9+ digits, any format — 050…, 971…, +971 …) or a FULL order number (ORD-123483 / 123483)
+function onSearchInput() {
+  renderTable();
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(_searchHistory, 400);
+}
+
+function _searchKey(raw) {
+  const s = (raw || '').trim();
+  const m = s.match(/^(?:ord[-\s]*)?([1-9]\d{4,6})$/i);   // order numbers never start with 0 — a phone being typed is not one
+  if (m) return { key: 'num:' + m[1], params: 'order_num=eq.ORD-' + m[1], what: 'ORD-' + m[1] };
+  const digits = s.replace(/\D/g, '');
+  if (digits.length >= 9) { const tail = digits.slice(-9); return { key: 'tel:' + tail, params: 'client_number=ilike.*' + tail, what: 'phone …' + tail }; }
+  return null;
+}
+
+async function _searchHistory() {
+  const raw = (document.getElementById('search-input')?.value || '').trim();
+  const k = _searchKey(raw);
+  if (!k || _searchKeys.has(k.key)) return;
+  _searchKeys.add(k.key);
+  try {
+    const list = await _fetchOrders(k.params);
+    const n = await _mergeHistory(list);
+    if (!n) return;
+    renderTable();
+    if ((document.getElementById('search-input')?.value || '').trim() === raw) toast('📂 ' + n + ' older order' + (n === 1 ? '' : 's') + ' loaded from history for ' + k.what);
+  } catch (e) {
+    _searchKeys.delete(k.key);
+  }
+}
+
+// Delivered counters for the stats row: today / yesterday are counted locally (the window has them, same formula as
+// before); week / month / year / all come from the server (delivered_counts, add_reports_day.sql) — refreshed at most
+// once a minute. Without the migration the local numbers stay (they then cover the window only).
+let _dcounts = null, _dcountsAt = 0, _dcountsBusy = false;
+function _refreshDeliveredCounts() {
+  if (_dcountsBusy || Date.now() - _dcountsAt < 60000 || !_authToken) return;
+  _dcountsBusy = true;
+  sb.rpc('delivered_counts').then(({ data, error }) => {
+    _dcountsBusy = false;
+    _dcountsAt = Date.now();
+    if (error || !data) return;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return;
+    const next = { week: +row.week, month: +row.month, year: +row.year, all: +row.total };
+    if (JSON.stringify(next) !== JSON.stringify(_dcounts)) { _dcounts = next; if (typeof renderStats === 'function' && document.getElementById('stats-row')) renderStats(); }
+  }).catch(() => { _dcountsBusy = false; _dcountsAt = Date.now(); });
+}
+
+// ── 📅 Drivers day (admin) ──────────────────────────────────────────────────
+let _ddDay = null, _ddRows = null;
+const _DD_COLS = ['#', 'Driver', 'Order', 'Date', 'Emirate', 'City', 'District', 'Villa', 'Assigned', 'Delivered', 'Closed by', 'Closed via'];
+
+function _ddRow(r, i) {
+  return [i + 1, r.driver_name || '', r.order_num || '', _tripFmtDay(r.order_date), r.emirate || '', r.city || '', r.district || '', r.villa || '',
+          _tripTime(r.assigned_at), _tripTime(r.delivered_at), r.closed_by || '', r.closed_via || ''];
+}
+
+async function openDriversDay(day) {
+  if (currentRole !== 'admin') { toast('🔒 Drivers day — admins only', true); return; }
+  _ddDay = day || _ddDay || _dubaiToday();
+  let ov = document.getElementById('dd-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'dd-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto';
+    ov.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:1280px;max-width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent)">📅 Drivers — day</div>
+          <div style="flex:1"></div>
+          <button type="button" id="dd-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
+          <input type="date" id="dd-day" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+          <button type="button" id="dd-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+          <button type="button" id="dd-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+          <button type="button" id="dd-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">⬇ Excel</button>
+          <button type="button" id="dd-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
+          <span id="dd-x" style="cursor:pointer;color:var(--muted);font-size:16px;padding:2px 6px">✕</span>
+        </div>
+        <div id="dd-body" style="padding:10px 16px;font-family:var(--mono);font-size:12px;overflow-x:auto">Loading…</div>
+        <div style="padding:4px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
+          Orders delivered that day (Dubai) by own drivers, order number ascending. <b>Assigned</b> = when the dispatcher sent the order to this driver;
+          <b>Delivered</b> = when the order was closed; <b>Closed by</b> = who closed it and how (Driver app / Dispatcher / Aramex / order form / SQL). Filter in Excel.
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+    const onKey = ev => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
+    ov.querySelector('#dd-x').onclick = close;
+    ov.querySelector('#dd-prev').onclick = () => openDriversDay(_tripShift(_ddDay, -1));
+    ov.querySelector('#dd-next').onclick = () => openDriversDay(_tripShift(_ddDay, 1));
+    ov.querySelector('#dd-today').onclick = () => openDriversDay(_dubaiToday());
+    ov.querySelector('#dd-refresh').onclick = () => openDriversDay(_ddDay);
+    ov.querySelector('#dd-day').onchange = ev => { if (ev.target.value) openDriversDay(ev.target.value); };
+    ov.querySelector('#dd-xlsx').onclick = exportDriversDay;
+  }
+  ov.querySelector('#dd-day').value = _ddDay;
+  ov.querySelector('#dd-next').disabled = _ddDay >= _dubaiToday();
+  const body = ov.querySelector('#dd-body');
+  body.innerHTML = 'Loading…';
+  const dd = _ddDay;
+  const { data, error } = await sb.rpc('drivers_day', { p_day: dd });
+  if (dd !== _ddDay || !document.getElementById('dd-body')) return;
+  if (error) { _ddRows = null; body.innerHTML = `<div style="color:var(--red);padding:10px 0">${escHtml(_tripErrText(error))}</div>`; return; }
+  _ddRows = Array.isArray(data) ? data : [];
+  if (!_ddRows.length) { body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No deliveries by own drivers on ${escHtml(_tripFmtDay(dd))}.</div>`; return; }
+  const th = t => `<th style="padding:5px 6px;text-align:left;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
+  const td = (h, extra) => `<td style="padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap${extra ? ';' + extra : ''}">${h}</td>`;
+  let h = `<div style="color:var(--muted);font-size:11px;margin:0 0 6px">${_ddRows.length} deliveries · ${new Set(_ddRows.map(r => r.driver_name)).size} drivers</div>`;
+  h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${_DD_COLS.map(th).join('')}</tr></thead><tbody>`;
+  _ddRows.forEach((r, i) => {
+    const c = _ddRow(r, i);
+    h += `<tr>${td(c[0], 'color:var(--muted)')}${td('<b>' + escHtml(c[1]) + '</b>')}${td('<b style="color:var(--accent)">' + escHtml(c[2]) + '</b>')}${td(escHtml(c[3]))}${td(escHtml(c[4]))}${td(escHtml(c[5]))}${td(escHtml(c[6]))}${td(escHtml(c[7]))}${td(escHtml(c[8]))}${td('<b>' + escHtml(c[9]) + '</b>')}${td(escHtml(c[10]))}${td(escHtml(c[11]), 'color:var(--muted)')}</tr>`;
+  });
+  h += '</tbody></table>';
+  body.innerHTML = h;
+}
+
+async function exportDriversDay() {
+  if (currentRole !== 'admin') { toast('🔒 Admins only', true); return; }
+  if (!_ddRows || !_ddRows.length) { toast('Nothing to export', true); return; }
+  const XL = await _loadXLSX();
+  const aoa = [['DRIVERS / DAY ' + _tripFmtDay(_ddDay)], _DD_COLS, ..._ddRows.map((r, i) => _ddRow(r, i))];
+  const ws = XL.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 4 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 9 }, { wch: 9 }, { wch: 18 }, { wch: 20 }];
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, _ddDay);
+  const fn = 'drivers_day_' + _ddDay + '.xlsx';
+  XL.writeFile(wb, fn);
+  logEvent('EXPORT', 'report', 'drivers_day', { action: 'drivers_day_export', day: _ddDay, rows: _ddRows.length });
+  toast('⬇ ' + fn);
+}
+
 // ── v13.92: 🚐 Trips (staff pick-up / drop-off, tasks) + 📊 Drivers week (admin) ─────────────────────
 // A trip is not an order: the driver brings staff from home (Pick up), takes them home (Drop off) or goes on a
 // task. Admin and dispatcher build it from two libraries (locations, staff): driver + date (+ time) + stops
@@ -10704,6 +10956,8 @@ let _tripDay = null, _tripTab = 'trips', _tripLocs = [], _tripStaff = [], _tripE
 
 function _tripErrText(error) {
   const m = (error && (error.message || error.hint)) || String(error || '');
+  if (/Could not find the function public\.(drivers_day|delivered_counts)/i.test(m))
+    return 'The day report is not set up yet — run add_reports_day.sql in Supabase';
   if (/trip_locations|trip_stops|relation .*trips|Could not find the function public\.(trip|driver_my_trips|drivers_week)|schema cache/i.test(m))
     return 'Trips are not set up yet — run add_trips.sql in Supabase';
   return m || 'Something went wrong';
