@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.97"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.98"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1896,7 +1896,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.97';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.98';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11151,6 +11151,9 @@ const TRIP_KINDS = {
   task:    { label: 'Task',     hint: 'send the driver on a task', color: 'var(--accent)' }
 };
 let _tripDay = null, _tripTab = 'trips', _tripLocs = [], _tripStaff = [], _tripEdit = null, _tripLibEdit = null;
+// v13.98: a period instead of one day (From … To, today by default, ≤ 31 days); _tripDay stays = From (new trips default to it)
+let _tripFrom = null, _tripTo = null, _tripListed = null, _tripListedStops = null;
+const TRIP_MAX_DAYS = 31;
 
 function _tripErrText(error) {
   const m = (error && (error.message || error.hint)) || String(error || '');
@@ -11182,9 +11185,21 @@ const _tripLocName = id => (_tripLocs.find(l => l.id === id) || {}).name || '—
 const _tripStaffName = id => (_tripStaff.find(s => s.id === id) || {}).name || ('#' + id);
 
 // ── the panel ──────────────────────────────────────────────────────────
-async function openTripsPanel(day, tab) {
+async function openTripsPanel(day, tab, to) {
   if (!TRIP_ROLES.includes(currentRole)) { toast('🔒 Trips — dispatchers and admins only', true); return; }
-  _tripDay = day || _tripDay || _dubaiToday();
+  if (day) {
+    _tripFrom = day;
+    _tripTo = to || ((_tripTo && _tripTo >= day) ? _tripTo : day);   // a bare day keeps the period's end when it still makes sense
+  } else {
+    _tripFrom = _tripFrom || _tripDay || _dubaiToday();
+    _tripTo = to || _tripTo || _tripFrom;
+  }
+  if (_tripTo < _tripFrom) { const t = _tripFrom; _tripFrom = _tripTo; _tripTo = t; }
+  if (_tripShift(_tripFrom, TRIP_MAX_DAYS - 1) < _tripTo) {
+    _tripTo = _tripShift(_tripFrom, TRIP_MAX_DAYS - 1);
+    toast('At most ' + TRIP_MAX_DAYS + ' days at a time — To set to ' + _tripFmtDay(_tripTo), true);
+  }
+  _tripDay = _tripFrom;
   if (tab) _tripTab = tab;
   let ov = document.getElementById('trips-overlay');
   if (!ov) {
@@ -11199,11 +11214,15 @@ async function openTripsPanel(day, tab) {
           <button type="button" class="btn btn-ghost trip-tab" data-tab="locations" style="padding:4px 10px;font-size:11px">📍 Locations</button>
           <button type="button" class="btn btn-ghost trip-tab" data-tab="staff" style="padding:4px 10px;font-size:11px">👥 Staff</button>
           <div style="flex:1"></div>
-          <span id="trip-daybar" style="display:flex;gap:6px;align-items:center">
-            <button type="button" id="trip-prev" class="btn btn-ghost" style="padding:4px 10px">‹</button>
-            <input type="date" id="trip-day" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
-            <button type="button" id="trip-next" class="btn btn-ghost" style="padding:4px 10px">›</button>
+          <span id="trip-daybar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <label style="font-family:var(--mono);font-size:11px;color:var(--muted)">From</label>
+            <input type="date" id="trip-from" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+            <label style="font-family:var(--mono);font-size:11px;color:var(--muted)">To</label>
+            <input type="date" id="trip-to" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+            <button type="button" id="trip-prev" class="btn btn-ghost" style="padding:4px 10px" title="Previous day">‹</button>
+            <button type="button" id="trip-next" class="btn btn-ghost" style="padding:4px 10px" title="Next day">›</button>
             <button type="button" id="trip-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+            <button type="button" id="trip-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" title="Done trips of the period: Driver · Kind · Emirate · District · Person">⬇ Excel</button>
             <button type="button" id="trip-new" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:6px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">+ Trip</button>
           </span>
           <button type="button" id="trip-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
@@ -11217,15 +11236,18 @@ async function openTripsPanel(day, tab) {
     document.addEventListener('keydown', onKey);
     ov.addEventListener('click', ev => { if (ev.target === ov) close(); });
     ov.querySelector('#trip-x').onclick = close;
-    ov.querySelector('#trip-prev').onclick = () => openTripsPanel(_tripShift(_tripDay, -1));
-    ov.querySelector('#trip-next').onclick = () => openTripsPanel(_tripShift(_tripDay, 1));
-    ov.querySelector('#trip-today').onclick = () => openTripsPanel(_dubaiToday());
-    ov.querySelector('#trip-refresh').onclick = () => openTripsPanel(_tripDay);
-    ov.querySelector('#trip-day').onchange = ev => { if (ev.target.value) openTripsPanel(ev.target.value); };
+    ov.querySelector('#trip-prev').onclick = () => openTripsPanel(_tripShift(_tripFrom, -1), null, _tripShift(_tripTo, -1));
+    ov.querySelector('#trip-next').onclick = () => openTripsPanel(_tripShift(_tripFrom, 1), null, _tripShift(_tripTo, 1));
+    ov.querySelector('#trip-today').onclick = () => openTripsPanel(_dubaiToday(), null, _dubaiToday());
+    ov.querySelector('#trip-refresh').onclick = () => openTripsPanel(_tripFrom, null, _tripTo);
+    ov.querySelector('#trip-from').onchange = ev => { if (ev.target.value) openTripsPanel(ev.target.value, null, ov.querySelector('#trip-to').value || ev.target.value); };
+    ov.querySelector('#trip-to').onchange = ev => { if (ev.target.value) openTripsPanel(ov.querySelector('#trip-from').value || ev.target.value, null, ev.target.value); };
+    ov.querySelector('#trip-xlsx').onclick = exportTrips;
     ov.querySelector('#trip-new').onclick = () => tripEditDialog(null);
     ov.querySelectorAll('.trip-tab').forEach(b => b.onclick = () => { _tripLibEdit = null; openTripsPanel(_tripDay, b.getAttribute('data-tab')); });
   }
-  ov.querySelector('#trip-day').value = _tripDay;
+  ov.querySelector('#trip-from').value = _tripFrom;
+  ov.querySelector('#trip-to').value = _tripTo;
   ov.querySelector('#trip-daybar').style.display = _tripTab === 'trips' ? 'flex' : 'none';
   ov.querySelectorAll('.trip-tab').forEach(b => {
     const on = b.getAttribute('data-tab') === _tripTab;
@@ -11242,31 +11264,43 @@ async function openTripsPanel(day, tab) {
 async function _renderTripList() {
   const body = document.getElementById('trip-body');
   if (!body) return;
-  const day = _tripDay, isToday = day === _dubaiToday();
-  const reqs = [sb.from('trips').select('*').eq('trip_date', day).order('trip_time', { ascending: true }).order('id', { ascending: true })];
-  if (isToday) reqs.push(sb.from('trips').select('*').lt('trip_date', day).eq('status', 'planned').order('trip_date', { ascending: true }));
+  const from = _tripFrom, to = _tripTo, today = _dubaiToday();
+  const isToday = from <= today && today <= to;   // the period includes today → overdue planned trips are shown too
+  const day = from;
+  const reqs = [sb.from('trips').select('*').gte('trip_date', from).lte('trip_date', to).order('trip_date', { ascending: true }).order('trip_time', { ascending: true }).order('id', { ascending: true })];
+  if (isToday) reqs.push(sb.from('trips').select('*').lt('trip_date', from).eq('status', 'planned').order('trip_date', { ascending: true }));
   const res = await Promise.all(reqs);
-  if (day !== _tripDay || !document.getElementById('trip-body')) return;
+  if (from !== _tripFrom || to !== _tripTo || !document.getElementById('trip-body')) return;
   const bad = res.find(r => r.error);
   if (bad) { body.innerHTML = `<div style="color:var(--red);padding:12px 0">${escHtml(_tripErrText(bad.error))}</div>`; return; }
   const late = (res[1] && res[1].data) || [];
   const trips = [...late, ...(res[0].data || [])];
+  _tripListed = trips;
   let stops = [];
   if (trips.length) {
     const r = await sb.from('trip_stops').select('*').in('trip_id', trips.map(t => t.id)).order('sort', { ascending: true });
     if (r.error) { body.innerHTML = `<div style="color:var(--red)">${escHtml(_tripErrText(r.error))}</div>`; return; }
     stops = r.data || [];
   }
+  _tripListedStops = stops;
+  const periodText = from === to ? (from === today ? 'today' : 'on ' + _tripFmtDay(from)) : 'on ' + _tripFmtDay(from) + ' – ' + _tripFmtDay(to);
   if (!trips.length) {
-    body.innerHTML = `<div style="color:var(--muted);padding:16px 0">No trips ${isToday ? 'today' : 'on ' + escHtml(_tripFmtDay(day))}. <b>+ Trip</b> — pick up / drop off staff or send a driver on a task.${!_tripLocs.length ? '<br>First add the places in <b>📍 Locations</b> and the people in <b>👥 Staff</b>.' : ''}</div>`;
+    body.innerHTML = `<div style="color:var(--muted);padding:16px 0">No trips ${escHtml(periodText)}. <b>+ Trip</b> — pick up / drop off staff or send a driver on a task.${!_tripLocs.length ? '<br>First add the places in <b>📍 Locations</b> and the people in <b>👥 Staff</b>.' : ''}</div>`;
     return;
   }
   const cnt = { planned: 0, done: 0, cancelled: 0 };
   trips.forEach(t => { cnt[t.status] = (cnt[t.status] || 0) + 1; });
-  let h = `<div style="color:var(--muted);font-size:11px;margin:4px 0 8px">${trips.length} trip${trips.length > 1 ? 's' : ''} · ${cnt.planned} planned · ${cnt.done} done${cnt.cancelled ? ' · ' + cnt.cancelled + ' cancelled' : ''}</div>`;
+  let h = `<div style="color:var(--muted);font-size:11px;margin:4px 0 8px">${trips.length} trip${trips.length > 1 ? 's' : ''} · ${cnt.planned} planned · ${cnt.done} done${cnt.cancelled ? ' · ' + cnt.cancelled + ' cancelled' : ''}${from !== to ? ' · ' + escHtml(_tripFmtDay(from) + ' – ' + _tripFmtDay(to)) : ''}</div>`;
+  let lastGroup = null;
   trips.forEach(t => {
     const ts = stops.filter(s => s.trip_id === t.id);
-    const overdue = t.trip_date < day;
+    const overdue = t.trip_date < from;
+    // v13.98: a day heading per date when the period spans several days (overdue ones first, under their own heading)
+    const group = overdue ? 'overdue' : t.trip_date;
+    if (from !== to && group !== lastGroup) {
+      h += `<div style="font-family:var(--mono);font-size:11px;font-weight:700;color:${overdue ? 'var(--red)' : 'var(--accent)'};margin:${lastGroup ? '12px' : '4px'} 0 6px;padding-bottom:3px;border-bottom:1px solid var(--border)">${overdue ? '⚠ Overdue' : escHtml(_tripFmtDay(t.trip_date))}</div>`;
+      lastGroup = group;
+    }
     const st = t.status === 'done'
       ? `<span style="color:var(--green);font-weight:700">✓ done ${escHtml(_tripTime(t.done_at))}</span> <span style="color:var(--muted)">${t.done_source === 'app' ? '📱 app' : escHtml(t.done_by || '')}</span>`
       : t.status === 'cancelled'
@@ -11300,6 +11334,42 @@ async function _renderTripList() {
     else if (act === 'cancel') tripSetStatus(t, 'cancelled');
     else if (act === 'reopen') tripSetStatus(t, 'planned');
   }));
+}
+
+// v13.98: ⬇ Excel — the DONE trips of the period, one row per trip as it was created, no dates (Vugar, 23.10):
+// Driver · Pick up / Drop off / Task · Emirate (from the locations library) · District (the place names) · Person.
+// Sorted by date, time, driver.
+function _tripExportRows(trips, stops) {
+  const locEm = {}; _tripLocs.forEach(l => { locEm[l.id] = l.emirate || ''; });
+  const uniq = arr => Array.from(new Set(arr.filter(Boolean)));
+  return trips.filter(t => t.status === 'done')
+    .slice().sort((a, b) => String(a.trip_date).localeCompare(String(b.trip_date)) || String(a.trip_time || '').localeCompare(String(b.trip_time || '')) || String(a.driver_name).localeCompare(String(b.driver_name)) || (a.id - b.id))
+    .map(t => {
+      const ts = stops.filter(s => s.trip_id === t.id).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+      return [
+        t.driver_name || '',
+        (TRIP_KINDS[t.kind] || {}).label || t.kind || '',
+        uniq(ts.map(s => s.location_id != null ? locEm[s.location_id] : '')).join(', '),
+        uniq(ts.map(s => s.place_name)).join(', '),
+        uniq(ts.flatMap(s => String(s.staff_names || '').split(',').map(x => x.trim()))).join(', ')
+      ];
+    });
+}
+async function exportTrips() {
+  if (!TRIP_ROLES.includes(currentRole)) { toast('🔒 Trips — dispatchers and admins only', true); return; }
+  if (_tripTab !== 'trips' || !_tripListed) { toast('Open the Trips tab first', true); return; }
+  const rows = _tripExportRows(_tripListed.filter(t => t.trip_date >= _tripFrom && t.trip_date <= _tripTo), _tripListedStops || []);
+  if (!rows.length) { toast('No done trips in this period', true); return; }
+  const XL = await _loadXLSX();
+  const aoa = [['Driver', 'Pick up / Drop off / Task', 'Emirate', 'District', 'Person'], ...rows];
+  const ws = XL.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 36 }];
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, 'Trips');
+  const fn = (_tripFrom === _tripTo ? 'trips_' + _tripFrom : 'trips_' + _tripFrom + '_' + _tripTo) + '.xlsx';
+  XL.writeFile(wb, fn);
+  logEvent('EXPORT', 'report', 'trips', { action: 'trips_export', from: _tripFrom, to: _tripTo, rows: rows.length });
+  toast('⬇ ' + fn);
 }
 
 async function tripSetStatus(t, status) {
@@ -11453,7 +11523,9 @@ async function saveTripEdit() {
   const day = e.date;
   const ov = document.getElementById('trip-edit-overlay'); if (ov) ov.remove();
   _tripEdit = null;
-  openTripsPanel(day, 'trips');
+  // v13.98: stay on the current period when the trip falls inside it, otherwise jump to its day
+  const inside = _tripFrom && _tripTo && day >= _tripFrom && day <= _tripTo;
+  openTripsPanel(inside ? _tripFrom : day, 'trips', inside ? _tripTo : day);
 }
 
 // ── libraries: locations, staff ──────────────────────────────────────────
