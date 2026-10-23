@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.95"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.96"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -490,6 +490,8 @@ select option{background:#1a1d27;color:#f0f2ff}
 .dsent-num{font-size:13px;font-weight:700;color:var(--green)}
 .dsent-seq{display:inline-block;min-width:22px;padding:1px 6px;border-radius:10px;background:var(--green);color:#000;font-size:11px;font-weight:700;text-align:center}
 .dsent-seq.off{background:transparent;color:var(--muted);border:1px dashed var(--border)}
+.dsent-pick{display:inline-block;padding:1px 6px;border-radius:10px;background:rgba(46,158,91,.15);color:var(--green);font-size:11px;font-weight:700;white-space:nowrap}
+.dsent-pick.off{background:transparent;color:var(--muted);border:1px dashed var(--border);font-weight:400}
 .dsent-drv{color:var(--accent);font-weight:700}
 .dsent-em{color:var(--text);font-weight:700}
 .dsent-ph{color:var(--text)}
@@ -1894,7 +1896,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.95';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.96';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -10709,6 +10711,18 @@ function _routePositions(driver) {
   placed.forEach((o, i) => { pos[o.id] = i + 1; });
   return pos;
 }
+// ── v13.96: "picked up" — the driver scanned the bag label (orders.picked_up_at, add_driver_pickup.sql) ──
+function _pickupReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'picked_up_at'); }
+function _pickupBadge(o) {
+  if (!_pickupReady(o) || o.delivery_status !== 'En Route') return '';
+  if (o.picked_up_at) return `<span class="dsent-pick" title="Bag scanned by ${escAttr(o.picked_up_by || o.driver || '')} — picked up from the warehouse">📦 ${escHtml(_podTime(o.picked_up_at).replace(/^\S+ /, ''))}</span>`;
+  return _driverHasApp(o.driver) ? '<span class="dsent-pick off" title="The driver has not scanned the bag yet">📦 —</span>' : '';
+}
+function _pickupModalRow(o) {
+  if (!o || !_pickupReady(o) || !o.picked_up_at) return '';
+  return `<div>📦 <b>Picked up</b> · ${escHtml(o.picked_up_by || o.driver || '')} · ${escHtml(_podTime(o.picked_up_at))} <span style="color:var(--muted)">(bag label scanned in the Driver app)</span></div>`;
+}
+
 function _routeModalRow(o) {
   if (!o || !_routeReady(o) || o.route_seq == null || o.delivery_status !== 'En Route' || !o.driver) return '';
   const pos = _routePositions(o.driver)[o.id];
@@ -10722,6 +10736,8 @@ function _renderPodInModal(o) {
   const rows = [];
   const _routeRow = _routeModalRow(o);   // v13.91
   if (_routeRow) rows.push(_routeRow);
+  const _pickRow = _pickupModalRow(o);   // v13.96
+  if (_pickRow) rows.push(_pickRow);
   const _cashRow = _cashModalRow(o);   // v13.89
   if (_cashRow) rows.push(_cashRow);
   if (o && o.delivery_photo) {
@@ -12398,7 +12414,7 @@ function renderDispatchSent() {
         ].filter(Boolean).join('<span class="dsent-sep">·</span>');
         const isOwn = (o.driver || '') !== ARAMEX_DRIVER;
         return `<div class="dsent-card">
-          <div class="dsent-head">${seq}${head}<span class="dsent-ago">${sentAgo}</span></div>
+          <div class="dsent-head">${seq}${head}${_pickupBadge(o)}<span class="dsent-ago">${sentAgo}</span></div>
           ${o.driver_note && String(o.driver_note).trim() ? `<div class="dsent-note" title="${escAttr(o.driver_note.trim())}">📝 ${escAttr(o.driver_note.trim())}</div>` : ''}
           <div class="dsent-btns">
             ${isOwn ? `<button class="dbtn dbtn-ok" onclick="event.stopPropagation();dispatchMarkDelivered('${o.id}')" title="Driver delivered this order — close it">✓ Delivered</button>
