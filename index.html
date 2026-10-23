@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.98"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.99"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1896,7 +1896,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.98';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.99';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -10654,13 +10654,14 @@ function _podTime(iso) {
 
 async function podOpen(orderId, kind) {
   const o = orders.find(x => x.id === orderId) || {};
-  const path = kind === 'failed' ? o.last_fail_photo : o.delivery_photo;
+  // v13.99: kind 'payment' = the client's screen with the payment confirmation (Link on delivery), taken right before the door photo
+  const path = kind === 'failed' ? o.last_fail_photo : kind === 'payment' ? o.payment_photo : o.delivery_photo;
   if (!path) { toast('No photo for this order', true); return; }
   const old = document.getElementById('pod-overlay'); if (old) old.remove();
   const ov = document.createElement('div');
   ov.id = 'pod-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2100;display:flex;align-items:center;justify-content:center;padding:16px';
-  const title = (kind === 'failed' ? '↩ Failed attempt · ' : '📷 Delivered · ') + escHtml(o.order_num || '');
+  const title = (kind === 'failed' ? '↩ Failed attempt · ' : kind === 'payment' ? '💳 Payment confirmation · ' : '📷 Delivered · ') + escHtml(o.order_num || '');
   ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:min(720px,100%);max-height:94vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
         <div style="font-family:var(--mono);font-weight:700;color:var(--accent)">${title}</div>
@@ -10693,7 +10694,7 @@ async function podOpen(orderId, kind) {
   try {
     const url = await _podSignedUrl(path);
     if (!document.body.contains(ov)) return;
-    ov.querySelector('#pod-body').innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener" title="Open full size"><img src="${escAttr(url)}" alt="Delivery photo" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto"></a>`;
+    ov.querySelector('#pod-body').innerHTML = `<a href="${escAttr(url)}" target="_blank" rel="noopener" title="Open full size"><img src="${escAttr(url)}" alt="${kind === 'payment' ? 'Payment confirmation photo' : 'Delivery photo'}" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto"></a>`;
   } catch (e) {
     if (!document.body.contains(ov)) return;
     ov.querySelector('#pod-body').innerHTML = `<span style="color:var(--red)">Could not open the photo: ${escHtml(e.message || String(e))}</span>`;
@@ -10745,6 +10746,12 @@ function _renderPodInModal(o) {
   } else if (o && o.delivery_photo_skip) {
     rows.push(`<div style="color:var(--yellow,#e0b341)">⚠ Delivered without photo · ${escHtml(o.driver || '')}: ${escHtml(o.delivery_photo_skip)}</div>`);
   }
+  // v13.99: Link on delivery — the client's screen with the payment confirmation (add_driver_payment_photo.sql)
+  if (o && o.payment_photo) {
+    rows.push(`<div>💳 <b>Payment confirmation</b> · ${escHtml(o.driver || '')} · ${escHtml(_podTime(o.delivered_at))} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','payment')" style="color:var(--blue)">open</a></div>`);
+  } else if (o && o.payment_photo_skip) {
+    rows.push(`<div style="color:var(--yellow,#e0b341)">⚠ No payment photo · ${escHtml(o.driver || '')}: ${escHtml(o.payment_photo_skip)}</div>`);
+  }
   if (o && o.last_fail_photo) {
     rows.push(`<div>↩ Failed attempt photo · ${escHtml(o.last_fail_by || '')} · ${escHtml(_podTime(o.last_fail_at))}${o.last_fail_reason ? ' · ' + escHtml(o.last_fail_reason) : ''} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','failed')" style="color:var(--blue)">open</a></div>`);
   }
@@ -10764,8 +10771,14 @@ function _podClosedTodayHtml() {
     const proof = o.delivery_photo
       ? `<a href="#" onclick="event.preventDefault();podOpen('${o.id}','delivered')" style="text-decoration:none" title="Delivery photo">📷</a>`
       : `<span title="${escAttr(o.delivery_photo_skip || '')}" style="color:var(--yellow,#e0b341)">⚠ no photo: ${escHtml(o.delivery_photo_skip || '')}</span>`;
+    // v13.99: Link on delivery — 💳 the client's payment confirmation, or why it was not taken
+    const pay = o.payment_photo
+      ? `<a href="#" onclick="event.preventDefault();podOpen('${o.id}','payment')" style="text-decoration:none;margin-right:6px" title="Payment confirmation photo">💳</a>`
+      : o.payment_photo_skip
+        ? `<span title="${escAttr(o.payment_photo_skip)}" style="color:var(--yellow,#e0b341);margin-right:6px">⚠ no payment photo</span>`
+        : '';
     return `<div style="display:flex;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px">
-      <span style="color:var(--green);font-weight:700">${escHtml(o.order_num)}</span><span>${escHtml(o.driver || '')}</span><span style="color:var(--muted)">${t}</span><span style="margin-left:auto">${proof}</span></div>`;
+      <span style="color:var(--green);font-weight:700">${escHtml(o.order_num)}</span><span>${escHtml(o.driver || '')}</span><span style="color:var(--muted)">${t}</span><span style="margin-left:auto">${pay}${proof}</span></div>`;
   }).join('');
   return `<details style="margin-top:10px" open><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--green);font-weight:700;padding:4px 8px">✓ Closed in the Driver app today (${list.length})</summary>${rows}</details>`;
 }
