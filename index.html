@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.99"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.99.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1896,7 +1896,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.99';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.99.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11349,17 +11349,21 @@ async function _renderTripList() {
   }));
 }
 
-// v13.98: ⬇ Excel — the DONE trips of the period, one row per trip as it was created, no dates (Vugar, 23.10):
-// Driver · Pick up / Drop off / Task · Emirate (from the locations library) · District (the place names) · Person.
-// Sorted by date, time, driver.
+// v13.98: ⬇ Excel — the DONE trips of the period, one row per trip as it was created (Vugar, 23.10):
+// Driver · Service (Pick up / Drop off / Task) · Emirate (from the locations library) · District (the place names) · Person.
+// v13.99.1 (admin's request, 24.10): the first column is the date + time the trip was marked done (done_at, Dubai,
+// dd.mm.yyyy HH:MM); rows in that order (the planned date / time break the tie); header "Service" instead of
+// "Pick up / Drop off / Task".
 function _tripExportRows(trips, stops) {
   const locEm = {}; _tripLocs.forEach(l => { locEm[l.id] = l.emirate || ''; });
   const uniq = arr => Array.from(new Set(arr.filter(Boolean)));
+  const doneKey = t => { const d = t.done_at ? new Date(t.done_at) : null; return d && !isNaN(d) ? d.toISOString() : '9999'; };
   return trips.filter(t => t.status === 'done')
-    .slice().sort((a, b) => String(a.trip_date).localeCompare(String(b.trip_date)) || String(a.trip_time || '').localeCompare(String(b.trip_time || '')) || String(a.driver_name).localeCompare(String(b.driver_name)) || (a.id - b.id))
+    .slice().sort((a, b) => doneKey(a).localeCompare(doneKey(b)) || String(a.trip_date).localeCompare(String(b.trip_date)) || String(a.trip_time || '').localeCompare(String(b.trip_time || '')) || String(a.driver_name).localeCompare(String(b.driver_name)) || (a.id - b.id))
     .map(t => {
       const ts = stops.filter(s => s.trip_id === t.id).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
       return [
+        _ddDateTime(t.done_at),
         t.driver_name || '',
         (TRIP_KINDS[t.kind] || {}).label || t.kind || '',
         uniq(ts.map(s => s.location_id != null ? locEm[s.location_id] : '')).join(', '),
@@ -11374,9 +11378,9 @@ async function exportTrips() {
   const rows = _tripExportRows(_tripListed.filter(t => t.trip_date >= _tripFrom && t.trip_date <= _tripTo), _tripListedStops || []);
   if (!rows.length) { toast('No done trips in this period', true); return; }
   const XL = await _loadXLSX();
-  const aoa = [['Driver', 'Pick up / Drop off / Task', 'Emirate', 'District', 'Person'], ...rows];
+  const aoa = [['Done date', 'Driver', 'Service', 'Emirate', 'District', 'Person'], ...rows];
   const ws = XL.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 36 }];
+  ws['!cols'] = [{ wch: 17 }, { wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 30 }, { wch: 36 }];
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Trips');
   const fn = (_tripFrom === _tripTo ? 'trips_' + _tripFrom : 'trips_' + _tripFrom + '_' + _tripTo) + '.xlsx';
