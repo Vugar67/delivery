@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.99.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.100"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1425,6 +1425,10 @@ select option{background:#1a1d27;color:#f0f2ff}
         <input type="checkbox" id="inv-vat-included" onchange="updateInvoiceTotal()" style="width:16px;height:16px;cursor:pointer">
         <span style="font-size:11px;color:#888">off = +5% on top · on = 5% shown from within</span>
       </div>
+      <!-- v13.100: FROM address variant — short (default) / full; panel only, the choice is printed in the FROM block -->
+      <button type="button" class="btn btn-ghost" id="inv-from-toggle" onclick="toggleInvFromAddress()"
+        style="display:none;margin-left:auto;color:#000;border-color:#ddd;background:#fff;font-weight:700;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 2px 6px rgba(0,0,0,.12)"
+        title="Switch the FROM block between the short and the full company address">Show full address</button>
       <!-- v13.73.1: where the BILL TO TRN came from — panel only, never printed -->
       <div id="inv-trn-hint" style="display:none"></div>
     </div>
@@ -1896,7 +1900,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.99.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.100';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -8748,6 +8752,38 @@ let ctxOrderId = null;
 let ctxSeller = null;
 let ctxInvNum = null;        // v13.58: number currently shown in the invoice modal
 let _invForceNew = false;    // v13.58: set by Re-issue — next generateInvoice takes a NEW number
+// v13.100: FROM address variant on the invoice. 'short' = "Dubai, UAE" (as before), 'full' = street address.
+// Chosen with the SHOW FULL / SHORT ADDRESS button above the preview; saved in invoices.from_variant when the
+// number is issued, so VIEW mode reopens the invoice with the address that was printed. Only sellers listed in
+// INV_FROM_ADDRESSES with a 'full' entry get the button (APEX has no full address on file → short only).
+const INV_FROM_ADDRESSES = {
+  ppl: { short: 'Dubai, UAE', full: 'Al Warqa 2, Street 19b, 34\nDubai, UAE' },
+  apex: { short: 'Dubai, UAE' }
+};
+let _invFromVariant = 'short';
+let _invLastRender = null;   // { order, items, seller, invNum } — for a redraw without touching the DB
+function invFromAddress(seller, variant) {
+  const a = INV_FROM_ADDRESSES[seller] || INV_FROM_ADDRESSES.ppl;
+  return a[variant] || a.short;
+}
+function _syncInvFromUI() {
+  const b = document.getElementById('inv-from-toggle');
+  if (!b) return;
+  const a = INV_FROM_ADDRESSES[ctxSeller] || {};
+  b.style.display = a.full ? 'inline-block' : 'none';
+  b.textContent = _invFromVariant === 'full' ? 'Show short address' : 'Show full address';
+}
+async function toggleInvFromAddress() {
+  _invFromVariant = _invFromVariant === 'full' ? 'short' : 'full';
+  _syncInvFromUI();
+  if (_invLastRender) renderInvoiceContent(_invLastRender.order, _invLastRender.items, _invLastRender.seller, _invLastRender.invNum);
+  // Viewing a saved invoice: remember the variant on its journal row (same as Delivery / VAT edits persist in view mode).
+  const o = orders.find(x => x.id === ctxOrderId);
+  if (o && o.invoice_number && ctxInvNum === o.invoice_number) {
+    const { error } = await sb.from('invoices').update({ from_variant: _invFromVariant }).eq('invoice_number', o.invoice_number);
+    if (error) console.warn('invoices.from_variant not saved (run add_invoice_from.sql?):', error.message);
+  }
+}
 let invoiceCounter = 1111000000;
 
 // Get the next invoice number ATOMICALLY from the DB sequence via RPC.
@@ -8797,17 +8833,20 @@ async function ctxInvoice() {
   const o = orders.find(x => x.id === ctxOrderId);
   // v13.58: order already has an invoice → reopen it (same number, original letterhead).
   if (o && o.invoice_number) {
-    const { data: inv } = await sb.from('invoices').select('seller').eq('invoice_number', o.invoice_number).limit(1);
+    const { data: inv } = await sb.from('invoices').select('*').eq('invoice_number', o.invoice_number).limit(1);
     const seller = inv && inv[0] && inv[0].seller;
+    _invFromVariant = (inv && inv[0] && inv[0].from_variant === 'full') ? 'full' : 'short';   // v13.100: as printed
     if (seller) { generateInvoice(seller); return; }
     // legacy: number saved but no journal row — pick the letterhead, number is still reused
   }
+  _invFromVariant = 'short';   // v13.100: new invoice (or legacy row) starts with the short address
   document.getElementById('seller-modal').classList.add('open');
 }
 
 // v13.58: Re-issue — deliberately burn a new number (order changed, old paper is void)
 function reissueInvoice() {
   _invForceNew = true;
+  _invFromVariant = 'short';   // v13.100: a re-issue starts from the default again
   closeModal('invoice-modal');
   document.getElementById('seller-modal').classList.add('open');
 }
@@ -8854,14 +8893,16 @@ async function generateInvoice(seller) {
   if (vatChk) vatChk.checked = false;
   _syncInvVatUI();
   
+  if (!(INV_FROM_ADDRESSES[seller] || {}).full) _invFromVariant = 'short';   // v13.100: seller without a full address
   renderInvoiceContent(order, items, seller, invNum);
   _syncInvViewUI(isView);
+  _syncInvFromUI();
   document.getElementById('invoice-modal').classList.add('open');
 
   if (isView) return;   // v13.58: viewing — no journal row, no order update, counter untouched
 
   // Save invoice to DB
-  await sb.from('invoices').insert({
+  const _invRow = {
     invoice_number: invNum,
     order_id: order.id,
     seller: seller,
@@ -8870,7 +8911,14 @@ async function generateInvoice(seller) {
     bill_to_phone: order.client_number || '',
     delivery_charge: 0,
     discount: 0
-  });
+  };
+  // v13.100: from_variant column comes with add_invoice_from.sql; if the migration is not in yet, the journal
+  // row must still be written — retry without the column rather than lose the row.
+  const { error: _invErr } = await sb.from('invoices').insert({ ..._invRow, from_variant: _invFromVariant });
+  if (_invErr && /from_variant/i.test(_invErr.message || '')) {
+    console.warn('invoices.from_variant missing — run add_invoice_from.sql; journal row saved without it');
+    await sb.from('invoices').insert(_invRow);
+  }
   // Update order with invoice number and financial summary.
   // Processing fee removed (v13.50, business decision) — system total stays NET.
   const subtotal0 = items.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
@@ -8888,6 +8936,7 @@ async function generateInvoice(seller) {
     client_trn: (_invLastTrn && _invLastTrn.trn) || undefined,          // v13.73.1: what BILL TO printed
     client_trn_by: (_invLastTrn && _invLastTrn.how) || undefined,       // 'name' | 'phone'
     client_trn_reason: (_invLastTrn && _invLastTrn.reason !== 'ok') ? _invLastTrn.reason : undefined,
+    from_address: _invFromVariant,                                      // v13.100: 'short' | 'full' as printed in FROM
     prev_invoice_number: (forceNew && order.invoice_number) ? order.invoice_number : undefined
   });
   await loadOrders(); renderTable();
@@ -9009,6 +9058,8 @@ function _syncInvTrnHint(res, order) {
 
 function renderInvoiceContent(order, items, seller, invNum) {
   const si = getSellerInfo(seller);
+  si.address = invFromAddress(seller, _invFromVariant);   // v13.100: short / full FROM address
+  _invLastRender = { order, items, seller, invNum };
   const delivery = parseFloat(document.getElementById('inv-delivery').value) || 0;
   const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
   // v13.53: VAT only when the Apply-VAT checkbox is on (defaults by vatDefaultFor:
