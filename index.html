@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.100"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.101"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1900,7 +1900,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.100';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.101';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -8762,6 +8762,34 @@ const INV_FROM_ADDRESSES = {
 };
 let _invFromVariant = 'short';
 let _invLastRender = null;   // { order, items, seller, invNum } — for a redraw without touching the DB
+// v13.101: BILL TO block lines (Vugar's sample 28.10): name (bold) / Villa-Apt line / district, city, emirate, UAE / phone / TRN / PO.
+// City is printed only when it differs from the emirate (no more "Dubai, Dubai, Umm Hurair"); "UAE" only for UAE emirates.
+function invBillToAddressLines(order) {
+  const em = String(order.emirate || '').trim();
+  const city = String(order.city || '').trim();
+  const intl = em.toLowerCase() === 'international';
+  const area = [
+    String(order.apt || '').trim(),                                         // district
+    (city && city.toLowerCase() !== em.toLowerCase()) ? city : '',          // city, when it is not the emirate itself
+    intl ? '' : em,
+    intl ? '' : (em ? 'UAE' : '')
+  ].filter(Boolean).join(', ');
+  return [String(order.villa || '').trim(), area].filter(Boolean);
+}
+// v13.101: phone as people write it in the UAE — +971 5X XXX XXXX → "05X XXX XXXX"; other countries print as stored.
+function invBillToPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  const s = String(raw || '').trim();
+  let r = null;                                   // local part after the trunk 0
+  if (d.startsWith('971')) r = d.slice(3);
+  else if (!s.startsWith('+') && d.startsWith('0')) r = d.slice(1);               // legacy local "05X…" / "04…"
+  else if (!s.startsWith('+') && d.startsWith('5') && d.length === 9) r = d;     // legacy bare mobile
+  if (r === null) return s;
+  if (r.length === 9) return '0' + r.slice(0, 2) + ' ' + r.slice(2, 5) + ' ' + r.slice(5);
+  if (r.length === 8) return '0' + r.slice(0, 1) + ' ' + r.slice(1, 4) + ' ' + r.slice(4);
+  return '0' + r;
+}
 function invFromAddress(seller, variant) {
   const a = INV_FROM_ADDRESSES[seller] || INV_FROM_ADDRESSES.ppl;
   return a[variant] || a.short;
@@ -8907,7 +8935,7 @@ async function generateInvoice(seller) {
     order_id: order.id,
     seller: seller,
     bill_to_name: order.client_name || order.client_number || '',
-    bill_to_address: [order.emirate, order.city, order.apt].filter(Boolean).join(', '),
+    bill_to_address: invBillToAddressLines(order).join(', '),   // v13.101: as printed
     bill_to_phone: order.client_number || '',
     delivery_charge: 0,
     discount: 0
@@ -9076,7 +9104,8 @@ function renderInvoiceContent(order, items, seller, invNum) {
   const balanceDue = (!vatApplied || vatIncluded) ? net : net + vat;
   const today = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
   const orderDate = order.order_date ? new Date(order.order_date).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'}) : today;
-  const billAddress = [order.emirate, order.city, order.apt].filter(Boolean).join(', ');
+  const billLines = invBillToAddressLines(order);                 // v13.101
+  const billPhone = invBillToPhone(order.client_number);
 
   document.getElementById('invoice-content').innerHTML = `
     <div class="invoice-wrap" id="invoice-printable">
@@ -9095,8 +9124,9 @@ function renderInvoiceContent(order, items, seller, invNum) {
         <div>
           <div class="invoice-label">BILL TO:</div>
           <div style="margin-top:4px">
-            <div>${escHtml(order.client_name || order.client_number || '—')}</div>
-            <div>${billAddress}</div>
+            <div><b>${escHtml(order.client_name || billPhone || '—')}</b></div>
+            ${billLines.map(l => `<div>${escHtml(l)}</div>`).join('')}
+            ${(billPhone && order.client_name) ? `<div>${escHtml(billPhone)}</div>` : ''}   <!-- no name → the phone is already the first line -->
             ${(() => {
               // v13.69: corporate billing block — client's own TRN (live from the
               // Clients card, matched by phone) + the PO number saved on the order.
@@ -9105,8 +9135,8 @@ function renderInvoiceContent(order, items, seller, invNum) {
               _invLastTrn = resolveClientTrn(order);
               const _trn = _invLastTrn.trn;
               const _po = String(order.po_number || '').replace(/\D/g, '');   // v13.70: digits stored, PO prefix added here
-              return (_trn ? `<div style="margin-top:6px"><b>TRN:</b> ${escHtml(_trn)}</div>` : '') +
-                     (_po ? `<div${_trn ? '' : ' style="margin-top:6px"'}><b>PO</b>${escHtml(_po)}</div>` : '');
+              return (_trn ? `<div><b>TRN:</b> ${escHtml(_trn)}</div>` : '') +
+                     (_po ? `<div><b>PO</b>${escHtml(_po)}</div>` : '');   // v13.101: same line spacing as the address
             })()}
           </div>
         </div>
