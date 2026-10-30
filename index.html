@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.103"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.104"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1900,7 +1900,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.103';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.104';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11908,6 +11908,7 @@ async function openCashPanel(day) {
         <div style="padding:8px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
           Cash on delivery / Cash to Collect orders delivered that day (Dubai). <b>Taken</b> = what the driver (or the dispatcher) entered at Delivered; <b>Over</b> = taken above due.
           <b>On hand</b> = all cash taken − all cash handed over, at the end of the day (today: now) — cash not handed over carries over to the next day.
+          <b>Picked up</b> = cash orders the driver took by scanning the bag that day and has not delivered yet — amount to collect, not in Due / Taken / On hand (v13.104).
           Click a driver for the orders and handovers.
         </div>
       </div>`;
@@ -11939,14 +11940,16 @@ async function _renderCashBody() {
   const rows = Array.isArray(data) ? data : [];
   const isToday = day === _dubaiToday();
   if (!rows.length) {
-    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No Cash on delivery / Cash to Collect orders delivered ${isToday ? 'today' : 'on ' + escHtml(day)} and no cash on hand.</div>`;
+    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No Cash on delivery / Cash to Collect orders picked up or delivered ${isToday ? 'today' : 'on ' + escHtml(day)} and no cash on hand.</div>`;
     return;
   }
   const n = v => Number(v || 0);
-  const tot = rows.reduce((t, r) => ({ cod: t.cod + n(r.cod_orders), due: t.due + n(r.due_sum), rec: t.rec + n(r.received_sum), over: t.over + n(r.over_sum), hand: t.hand + n(r.handed_sum), on: t.on + n(r.on_hand) }), { cod: 0, due: 0, rec: 0, over: 0, hand: 0, on: 0 });
+  const tot = rows.reduce((t, r) => ({ pk: t.pk + n(r.picked_orders), pkd: t.pkd + n(r.picked_due), cod: t.cod + n(r.cod_orders), due: t.due + n(r.due_sum), rec: t.rec + n(r.received_sum), over: t.over + n(r.over_sum), hand: t.hand + n(r.handed_sum), on: t.on + n(r.on_hand) }), { pk: 0, pkd: 0, cod: 0, due: 0, rec: 0, over: 0, hand: 0, on: 0 });
+  // v13.104: "Picked up" = scanned by the driver that day, not delivered yet (add_cash_picked_up.sql; absent before it → —)
+  const pkCell = (cnt, due) => n(cnt) > 0 ? `${n(cnt)} · <span style="color:var(--blue)">${_aed(due)}</span>` : '<span style="color:var(--muted)">—</span>';
   const th = (t, right) => `<th style="padding:6px 8px;text-align:${right ? 'right' : 'left'};font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">${t}</th>`;
   const td = (h, right, extra) => `<td style="padding:7px 8px;text-align:${right ? 'right' : 'left'};border-bottom:1px solid var(--border);vertical-align:top${extra ? ';' + extra : ''}">${h}</td>`;
-  let html = `<table style="width:100%;border-collapse:collapse"><thead><tr>${th('Driver')}${th('COD', 1)}${th('Due', 1)}${th('Taken', 1)}${th('Over', 1)}${th('Handed over', 1)}${th(isToday ? 'On hand now' : 'On hand end of day', 1)}${th('')}</tr></thead><tbody>`;
+  let html = `<table style="width:100%;border-collapse:collapse"><thead><tr>${th('Driver')}${th('COD', 1)}${th('Due', 1)}${th('Taken', 1)}${th('Over', 1)}${th('Handed over', 1)}${th(isToday ? 'On hand now' : 'On hand end of day', 1)}${th('<span title="Scanned by the driver (bag taken) that day, not delivered yet — to collect">📦 Picked up</span>', 1)}${th('')}</tr></thead><tbody>`;
   rows.forEach(r => {
     const d = r.driver_name;
     const open = _cashOpen.has(d);
@@ -11964,11 +11967,12 @@ async function _renderCashBody() {
       td(n(r.over_sum) > 0.004 ? `<b style="color:var(--accent)">+${_aed(r.over_sum)}</b>` : '<span style="color:var(--muted)">—</span>', 1) +
       td(n(r.handed_sum) > 0.004 ? _aed(r.handed_sum) : '<span style="color:var(--muted)">—</span>', 1) +
       td(`<b style="color:${onHandColor};font-size:13px">${_aed(r.on_hand)}</b>${carry}`, 1) +
+      td(pkCell(r.picked_orders, r.picked_due), 1) +
       td(isToday ? `<button type="button" class="cash-accept" data-drv="${escAttr(d)}" data-onhand="${n(r.on_hand)}" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">💵 Accept cash</button>` : '', 1, 'white-space:nowrap') +
       `</tr>`;
-    if (open) html += `<tr><td colspan="8" id="cash-det-${escAttr(d).replace(/[^A-Za-z0-9_-]/g, '_')}" style="padding:4px 8px 12px 24px;border-bottom:1px solid var(--border);background:var(--surface2)">Loading…</td></tr>`;
+    if (open) html += `<tr><td colspan="9" id="cash-det-${escAttr(d).replace(/[^A-Za-z0-9_-]/g, '_')}" style="padding:4px 8px 12px 24px;border-bottom:1px solid var(--border);background:var(--surface2)">Loading…</td></tr>`;
   });
-  html += `<tr style="font-weight:700">${td('Total')}${td(tot.cod, 1)}${td(_aed(tot.due), 1)}${td(_aed(tot.rec), 1)}${td(tot.over > 0.004 ? '+' + _aed(tot.over) : '—', 1)}${td(tot.hand > 0.004 ? _aed(tot.hand) : '—', 1)}${td(_aed(tot.on), 1)}${td('')}</tr></tbody></table>`;
+  html += `<tr style="font-weight:700">${td('Total')}${td(tot.cod, 1)}${td(_aed(tot.due), 1)}${td(_aed(tot.rec), 1)}${td(tot.over > 0.004 ? '+' + _aed(tot.over) : '—', 1)}${td(tot.hand > 0.004 ? _aed(tot.hand) : '—', 1)}${td(_aed(tot.on), 1)}${td(pkCell(tot.pk, tot.pkd), 1)}${td('')}</tr></tbody></table>`;
   if (!isToday) html += `<div style="color:var(--muted);font-size:11px;padding:6px 0">Cash is accepted on today's page only.</div>`;
   body.innerHTML = html;
   body.querySelectorAll('.cash-row').forEach(tr => tr.addEventListener('click', ev => {
@@ -11993,8 +11997,22 @@ async function _renderCashDetails(driver) {
   if (error) { el.innerHTML = `<span style="color:var(--red)">${escHtml(_cashErrText(error))}</span>`; return; }
   const ords = (data && data.orders) || [];
   const hos = (data && data.handovers) || [];
+  const pks = (data && Array.isArray(data.picked)) ? data.picked : null;   // v13.104 (add_cash_picked_up.sql)
   const t = iso => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }) : '';
-  let h = `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:4px 0">Orders (${ords.length})</div>`;
+  let h = '';
+  if (pks && pks.length) {
+    h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:4px 0">📦 Picked up, not delivered (${pks.length}) · to collect ${_aed(pks.reduce((s, o) => s + Number(o.due || 0), 0))}</div>`;
+    pks.forEach(o => {
+      h += `<div class="cash-picked" style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
+      <span style="color:var(--muted);min-width:40px" title="scanned">${t(o.picked_up_at)}</span>
+      <a href="#" onclick="event.preventDefault();editOrder('${escAttr(o.id)}')" style="color:var(--green);font-weight:700;text-decoration:none">${escHtml(o.order_num || '')}</a>
+      <span style="min-width:120px">${escHtml(o.client_name || '')}</span>
+      <span>to collect <b style="color:var(--blue)">${_aed(o.due)}</b></span>
+      <span style="color:var(--muted)">${escHtml(o.status || '')}</span>
+    </div>`;
+    });
+  }
+  h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:${h ? '10px' : '4px'} 0 4px">Orders (${ords.length})</div>`;
   if (!ords.length) h += `<div style="color:var(--muted)">—</div>`;
   ords.forEach(o => {
     const over = o.received != null ? _r2(o.received - o.due) : 0;
