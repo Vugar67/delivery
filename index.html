@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.102"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.103"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1418,7 +1418,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333">
         <label style="font-weight:600">Apply 5% VAT:</label>
         <input type="checkbox" id="inv-vat-apply" onchange="onInvVatApplyChange()" style="width:16px;height:16px;cursor:pointer">
-        <span style="font-size:11px;color:#888">auto: off for International / COD / Paid Cash</span>
+        <span style="font-size:11px;color:#888">auto: off for International / COD / Cash to Collect / Paid Cash</span>
       </div>
       <div id="inv-vat-mode-wrap" style="display:none;align-items:center;gap:8px;font-size:13px;color:#333">
         <label style="font-weight:600">VAT included in prices:</label>
@@ -1900,7 +1900,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.102';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.103';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2819,6 +2819,7 @@ function populateFormRefs(o){
 // BADGES
 function payBadge(v){
   if(v && v.toLowerCase()==='cash on delivery')return`<span class="badge badge-cash">Cash on Delivery</span>`;
+  if(_isCashToCollect(v))return`<span class="badge badge-cash">${escHtml(v)}</span>`;   // v13.103
   if(v==='Paid via Link')return`<span class="badge badge-link">${v}</span>`;
   if(v==='Pending')return`<span class="badge badge-pending">${v}</span>`;
   if(v==='Crypto')return`<span class="badge" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3)">${v}</span>`;
@@ -4218,7 +4219,7 @@ function vatDefaultFor(emirate, payment){
   const em = (emirate||'').trim().toLowerCase();
   const ps = (payment||'').trim().toLowerCase();
   if (em === 'international') return false;
-  if (ps === 'cash on delivery' || ps === 'paid cash') return false;
+  if (ps === 'cash on delivery' || ps === 'paid cash' || _isCashToCollect(ps)) return false;   // v13.103: Cash to Collect = COD
   return true;
 }
 // Re-apply the rule when Emirate / Payment Status changes in the order form
@@ -4824,7 +4825,7 @@ function _whInfoLines(o, forLabel) {
   const emB = o.emirate ? (forLabel ? String(o.emirate).toUpperCase() : '*' + o.emirate + '*') : '';
   const loc = [o.apt, o.villa, emB].filter(Boolean).join(', ');
   if (loc) lines.push(loc);
-  if (o.payment_status && o.payment_status.toLowerCase() === 'cash on delivery' && o.total) lines.push('COD: ' + o.total + ' AED');
+  if (o.payment_status && (o.payment_status.toLowerCase() === 'cash on delivery' || _isCashToCollect(o.payment_status)) && o.total) lines.push('COD: ' + o.total + ' AED');   // v13.103
   if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + o.total + ' AED');
   if (o.driver_note && o.driver_note.trim()) lines.push('Note: ' + o.driver_note.trim());
   return lines;
@@ -6030,7 +6031,7 @@ function copyOrderDetails(orderId){
   if(!o) return;
   const items = (orderItems[orderId]||[]).map(i=>`· ${i.product_name} x${i.quantity}`).join('\n');
   const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
-  const isCOD = (o.payment_status||'').toLowerCase().includes('cash');
+  const isCOD = _isCashOnDelivery(o.payment_status);   // v13.103: same rule as the cash module (was includes('cash') — "Paid cash" got a CASH TO COLLECT line)
   const waItems = orderItems[orderId]||[];
   const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0) - parseFloat(o.discount||0); // v13.51: discount is deducted from cash to collect
   const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
@@ -9354,7 +9355,7 @@ async function sendToDriver(orderId) {
   const waItems = freshWaItems || orderItems[orderId] || [];
   const items = waItems.map(i => `• ${i.product_name} x${i.quantity} — ${parseFloat(i.price||0).toFixed(2)} AED`).join('\n');
   const address = [o.emirate, o.city, o.apt, o.villa].filter(Boolean).join(', ');
-  const needsCollect = (o.payment_status||'').toLowerCase().includes('on delivery');
+  const needsCollect = _collectAtDoor(o.payment_status);   // v13.103: + Cash to Collect
   const itemsSubtotal = waItems.reduce((s,i) => s + parseFloat(i.price||0)*parseFloat(i.quantity||1), 0);
   const totalAmount = itemsSubtotal + (o.delivery_charge||0) - (parseFloat(o.discount)||0); // v13.51: discount is deducted from cash to collect
   const showItems = o.wa_show_items === true;
@@ -10129,8 +10130,8 @@ async function dispatchAramexOne(id) {
     } catch (e) {}
     if (!confirm('⚠️ ' + o.order_num + ' ALREADY has Aramex AWB ' + o.aramex_awb + '.\nLive Aramex status: ' + live + '.\n\nA new waybill will SUPERSEDE it. The old waybill keeps being tracked until its final status — but the parcel must NOT be shipped twice.\n\nIssue a NEW waybill anyway?')) return false;
   }
-  if ((o.payment_status || '').toLowerCase().includes('on delivery')) {
-    const ok = confirm('⚠️ ' + o.order_num + ' is CASH ON DELIVERY.\n\nCOD via Aramex is NOT set up yet — Aramex will NOT collect cash from the client.\n\nSend anyway?');
+  if (_collectAtDoor(o.payment_status)) {   // v13.103: + Cash to Collect
+    const ok = confirm('⚠️ ' + o.order_num + ' is ' + String(o.payment_status || '').toUpperCase() + '.\n\nCOD via Aramex is NOT set up yet — Aramex will NOT collect cash from the client.\n\nSend anyway?');
     if (!ok) return false;
   }
   let ship;
@@ -10874,8 +10875,15 @@ const CASH_ROLES = ['admin', 'dispatcher'];
 function _cashReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'cash_received'); }
 function _isCashOnDelivery(s) {
   const t = String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  return (t.includes('on delivery') && !t.includes('link on delivery')) || t === 'cod' || t === 'cash';
+  return (t.includes('on delivery') && !t.includes('link on delivery')) || t === 'cod' || t === 'cash' || _isCashToCollect(t);
 }
+// v13.103 (Vugar 30.10.2026): payment "Cash to Collect" works EXACTLY like Cash on delivery — cash due frozen at
+// Delivered, the amount taken is asked (driver app / ✓ Delivered / admin), 💵 Cash summary + handovers, the
+// "CASH TO COLLECT" line of the driver messages, no VAT by default, COD line on the warehouse label, Aramex warning.
+// Same rule in the DB (_is_cod, add_cash_to_collect.sql) and in the Driver app v1.8.0 (Rules.paymentMode).
+function _isCashToCollect(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').includes('cash to collect'); }
+// collected at the door — cash (incl. Cash to Collect) or Link on delivery: the "CASH TO COLLECT" line of the driver messages
+function _collectAtDoor(s) { return String(s || '').toLowerCase().includes('on delivery') || _isCashToCollect(s); }
 function _r2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
 function _numOrNull(v) { if (v === null || v === undefined || v === '') return null; const n = parseFloat(v); return isFinite(n) ? n : null; }
 // same rule as order_cash_due() in the DB: Σ(price × qty) + delivery − discount; no items → total
@@ -11898,7 +11906,7 @@ async function openCashPanel(day) {
         </div>
         <div id="cash-body" style="padding:8px 16px 4px;font-family:var(--mono);font-size:12px">Loading…</div>
         <div style="padding:8px 16px 14px;font-size:11px;color:var(--muted);line-height:1.5">
-          Cash on delivery orders delivered that day (Dubai). <b>Taken</b> = what the driver (or the dispatcher) entered at Delivered; <b>Over</b> = taken above due.
+          Cash on delivery / Cash to Collect orders delivered that day (Dubai). <b>Taken</b> = what the driver (or the dispatcher) entered at Delivered; <b>Over</b> = taken above due.
           <b>On hand</b> = all cash taken − all cash handed over, at the end of the day (today: now) — cash not handed over carries over to the next day.
           Click a driver for the orders and handovers.
         </div>
@@ -11931,7 +11939,7 @@ async function _renderCashBody() {
   const rows = Array.isArray(data) ? data : [];
   const isToday = day === _dubaiToday();
   if (!rows.length) {
-    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No Cash on delivery orders delivered ${isToday ? 'today' : 'on ' + escHtml(day)} and no cash on hand.</div>`;
+    body.innerHTML = `<div style="color:var(--muted);padding:14px 0">No Cash on delivery / Cash to Collect orders delivered ${isToday ? 'today' : 'on ' + escHtml(day)} and no cash on hand.</div>`;
     return;
   }
   const n = v => Number(v || 0);
@@ -12357,7 +12365,7 @@ function confirmDeliveredDialog(o, items) {
 
     const address = [o.emirate, o.city, o.apt, o.villa].filter(x => x && String(x).trim()).map(x => String(x).trim());
     const phoneDigits = String(o.client_number || '').replace(/\D/g, '');
-    const needsCollect = (o.payment_status || '').toLowerCase().includes('on delivery');
+    const needsCollect = _collectAtDoor(o.payment_status);   // v13.103: + Cash to Collect
     const itemsSubtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.quantity) || 1), 0);
     const cashToCollect = itemsSubtotal + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0); // same rule as the driver WhatsApp message (v13.51)
     const askCash = _cashReady(o) && _isCashOnDelivery(o.payment_status);   // v13.89
