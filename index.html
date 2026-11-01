@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.104"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.105"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1900,7 +1900,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.104';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.105';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4825,8 +4825,8 @@ function _whInfoLines(o, forLabel) {
   const emB = o.emirate ? (forLabel ? String(o.emirate).toUpperCase() : '*' + o.emirate + '*') : '';
   const loc = [o.apt, o.villa, emB].filter(Boolean).join(', ');
   if (loc) lines.push(loc);
-  if (o.payment_status && (o.payment_status.toLowerCase() === 'cash on delivery' || _isCashToCollect(o.payment_status)) && o.total) lines.push('COD: ' + o.total + ' AED');   // v13.103
-  if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + o.total + ' AED');
+  if (o.payment_status && (o.payment_status.toLowerCase() === 'cash on delivery' || _isCashToCollect(o.payment_status)) && o.total) lines.push('COD: ' + _cashGross(o.total, o).toFixed(2) + ' AED');   // v13.105: + VAT
+  if (o.payment_status && o.payment_status.toLowerCase() === 'link on delivery' && o.total) lines.push('LOD: ' + _cashGross(o.total, o).toFixed(2) + ' AED');
   if (o.driver_note && o.driver_note.trim()) lines.push('Note: ' + o.driver_note.trim());
   return lines;
 }
@@ -5787,8 +5787,8 @@ async function saveOrder(){
     if (_nowD && !_prevD && editId) {
       const _eo = orders.find(x => x.id === editId);
       if (_cashReady(_eo) && _isCashOnDelivery(payload.payment_status)) {
-        const _due = _cashDue({ delivery_charge: payload.delivery_charge, discount: payload.discount, total: _eo.total, subtotal: _eo.subtotal }, orderItems[editId] || []);
-        const _c = await cashAskDialog(_eo.order_num + ' · ' + (payload.client_name || _eo.client_name || ''), _due, 'Mark as delivered');
+        const _due = _cashDue({ delivery_charge: payload.delivery_charge, discount: payload.discount, total: _eo.total, subtotal: _eo.subtotal, vat_applied: payload.vat_applied }, orderItems[editId] || []);   // v13.105: + VAT
+        const _c = await cashAskDialog(_eo.order_num + ' · ' + (payload.client_name || _eo.client_name || ''), _due, 'Mark as delivered', payload.vat_applied === true ? 'incl. 5% VAT' : '');
         if (_c === null) { btn.disabled = false; btn.textContent = 'Save Order'; return; }   // cancelled — nothing saved
         payload.cash_received = _c;
       }
@@ -6034,7 +6034,7 @@ function copyOrderDetails(orderId){
   const isCOD = _isCashOnDelivery(o.payment_status);   // v13.103: same rule as the cash module (was includes('cash') — "Paid cash" got a CASH TO COLLECT line)
   const waItems = orderItems[orderId]||[];
   const totalAmount = waItems.reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.quantity||1),0) + parseFloat(o.delivery_charge||0) - parseFloat(o.discount||0); // v13.51: discount is deducted from cash to collect
-  const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${totalAmount.toFixed(2)} AED` : '';
+  const codLine = isCOD ? `\n\n💵 CASH TO COLLECT: ${_cashGross(totalAmount, o).toFixed(2)} AED${_cashVatNote(o)}` : '';   // v13.105: + VAT
   const internalLine = (o.notes && o.notes.trim()) ? `\n\n📋 Internal Note: ${o.notes.trim()}` : '';
   const driverLine = (o.driver_note && o.driver_note.trim()) ? `\n\n📝 Driver Note: ${o.driver_note.trim()}` : '';
   const schedLine = fmtSched(o) ? `\n\n🕒 Scheduled: ${fmtSched(o)}` : '';
@@ -9367,7 +9367,7 @@ async function sendToDriver(orderId) {
   if (fmtSched(o)) lines.push(`🕒 *Scheduled:* ${fmtSched(o)}`);
   if (showItems && items) lines.push(`📦 *Items:*\n${items}`);
   lines.push(`💰 *Payment:* ${o.payment_status||'—'}`);
-  if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${totalAmount.toFixed(2)} AED*`);
+  if (needsCollect) lines.push(`💵 *CASH TO COLLECT: ${_cashGross(totalAmount, o).toFixed(2)} AED*${_cashVatNote(o)}`);   // v13.105: + VAT
   if (o.driver_note) lines.push(`📝 *Note:* ${o.driver_note}`);
   if (driver.profile_id) lines.push(`📱 *Open in app:* https://mycrm.center/driver/o/${o.order_num}`);   // v13.85: Driver app
   const msg = lines.join('\n');
@@ -10885,8 +10885,16 @@ function _isCashToCollect(s) { return String(s || '').trim().toLowerCase().repla
 // collected at the door — cash (incl. Cash to Collect) or Link on delivery: the "CASH TO COLLECT" line of the driver messages
 function _collectAtDoor(s) { return String(s || '').toLowerCase().includes('on delivery') || _isCashToCollect(s); }
 function _r2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+// v13.105 (Vugar 01.11.2026): the amount at the door = the invoice's Balance Due. When the order has the "5% VAT"
+// box ticked (orders.vat_applied === true) 5% is added ON TOP: VAT = round2(net × 0.05), due = net + VAT — the same
+// two-step rounding as the cart / invoice (Mode A). null / false → net, as before. Same rule in the DB
+// (order_cash_due, add_cash_vat.sql) and in the Driver app v1.9.0 (Rules.withVat). The invoice itself is unchanged.
+const CASH_VAT_RATE = 0.05;
+function _cashVatOn(o) { return !!o && o.vat_applied === true; }
+function _cashGross(net, o) { const n = Math.max(Number(net) || 0, 0); return _cashVatOn(o) ? _r2(n + _r2(n * CASH_VAT_RATE)) : _r2(n); }
+function _cashVatNote(o) { return _cashVatOn(o) ? ' (incl. 5% VAT)' : ''; }
 function _numOrNull(v) { if (v === null || v === undefined || v === '') return null; const n = parseFloat(v); return isFinite(n) ? n : null; }
-// same rule as order_cash_due() in the DB: Σ(price × qty) + delivery − discount; no items → total
+// same rule as order_cash_due() in the DB: Σ(price × qty) + delivery − discount (+ 5% VAT when vat_applied, v13.105); no items → total
 function _cashDue(o, items) {
   let v;
   if (Array.isArray(items) && items.length) {
@@ -10897,7 +10905,7 @@ function _cashDue(o, items) {
   } else {
     v = (parseFloat(o.subtotal) || 0) + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0);
   }
-  return _r2(Math.max(v, 0));
+  return _cashGross(v, o);   // v13.105: + 5% VAT when the order has it
 }
 // "880" "880.5" "880,50" "1 200" "1,200.50" → number (≤ 2 decimals); anything else → null (same as the Driver app)
 function _parseCash(s) {
@@ -12058,7 +12066,7 @@ async function _renderCashDetails(driver) {
 
 // v13.95: "cash taken from the client" as its own dialog — the admin's order modal (Delivered) and the Cash panel's
 // "enter amount" use it; same rules as the dispatcher's ✓ Delivered: Exactly / Other, less than due refused, big over → tick.
-function cashAskDialog(title, due, okLabel) {
+function cashAskDialog(title, due, okLabel, note) {
   return new Promise(resolve => {
     const ex = document.getElementById('cash-ask-overlay');
     if (ex) ex.remove();
@@ -12073,7 +12081,7 @@ function cashAskDialog(title, due, okLabel) {
           <div style="font-family:var(--mono);font-size:13px;font-weight:700;margin-top:2px">${escHtml(title || '')}</div>
         </div>
         <div style="padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.6">
-          <div style="font-size:13px;margin-bottom:8px">Due <b style="font-size:15px;color:var(--accent)">${_aed(due)}</b></div>
+          <div style="font-size:13px;margin-bottom:8px">Due <b style="font-size:15px;color:var(--accent)">${_aed(due)}</b>${note ? ` <span style="color:var(--muted);font-size:11px">${escHtml(note)}</span>` : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button type="button" id="cask-exact" style="${_btn};background:transparent;color:var(--green);border:1px solid var(--green);font-weight:700">✓ Exactly ${_aed(due)}</button>
             <button type="button" id="cask-other" style="${_btn};background:transparent;color:var(--text);border:1px solid var(--border)">Other amount</button>
@@ -12385,7 +12393,7 @@ function confirmDeliveredDialog(o, items) {
     const phoneDigits = String(o.client_number || '').replace(/\D/g, '');
     const needsCollect = _collectAtDoor(o.payment_status);   // v13.103: + Cash to Collect
     const itemsSubtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.quantity) || 1), 0);
-    const cashToCollect = itemsSubtotal + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0); // same rule as the driver WhatsApp message (v13.51)
+    const cashToCollect = _cashGross(itemsSubtotal + (parseFloat(o.delivery_charge) || 0) - (parseFloat(o.discount) || 0), o); // same rule as the driver WhatsApp message (v13.51; v13.105: + VAT)
     const askCash = _cashReady(o) && _isCashOnDelivery(o.payment_status);   // v13.89
     const cashDue = askCash ? _cashDue(o, items) : 0;
     const sentAgo = o.wa_sent_at ? (() => { const m = Math.floor((Date.now() - new Date(o.wa_sent_at)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min ago'; })() : '';
@@ -12417,7 +12425,7 @@ function confirmDeliveredDialog(o, items) {
         : '<span style="color:var(--muted)">— no items —</span>') +
       row('Payment', `${e(o.payment_status) || '—'}`) +
       (askCash ? '' : needsCollect
-        ? row('Cash', `<b style="font-family:var(--mono);font-size:15px;color:var(--accent)">💵 ${cashToCollect.toFixed(2)} AED</b> <span style="color:var(--muted);font-size:11px">to collect</span>`, { hl: true })
+        ? row('Cash', `<b style="font-family:var(--mono);font-size:15px;color:var(--accent)">💵 ${cashToCollect.toFixed(2)} AED</b> <span style="color:var(--muted);font-size:11px">to collect${_cashVatOn(o) ? ' · incl. 5% VAT' : ''}</span>`, { hl: true })
         : row('Total', `<span style="font-family:var(--mono)">${(parseFloat(o.total) || cashToCollect).toFixed(2)} AED</span> <span style="color:var(--muted);font-size:11px">· nothing to collect</span>`)) +
       row('Driver note', o.driver_note && String(o.driver_note).trim() ? `<div style="white-space:pre-wrap;color:var(--accent)">📝 ${e(String(o.driver_note).trim())}</div>` : '') +
       row('Notes', o.notes && String(o.notes).trim() ? `<div style="white-space:pre-wrap">${e(String(o.notes).trim())}</div>` : '');
@@ -12427,7 +12435,7 @@ function confirmDeliveredDialog(o, items) {
     const cashBlock = askCash ? `
       <div id="cdd-cash" style="margin:10px -16px 0;padding:10px 16px;background:rgba(245,166,35,.07);border-top:1px solid var(--border)">
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">💵 Cash taken from the client</div>
-        <div style="font-size:13px;margin:2px 0 8px">Due <b style="font-family:var(--mono);font-size:15px;color:var(--accent)">${_aed(cashDue)}</b></div>
+        <div style="font-size:13px;margin:2px 0 8px">Due <b style="font-family:var(--mono);font-size:15px;color:var(--accent)">${_aed(cashDue)}</b>${_cashVatOn(o) ? ' <span style="color:var(--muted);font-size:11px">incl. 5% VAT</span>' : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" id="cdd-exact" style="${_btn};background:transparent;color:var(--green);border:1px solid var(--green);font-weight:700">✓ Exactly ${_aed(cashDue)}</button>
           <button type="button" id="cdd-other" style="${_btn};background:transparent;color:var(--text);border:1px solid var(--border)">Other amount</button>
