@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.107"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.108"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1908,7 +1908,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.107';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.108';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -12311,8 +12311,23 @@ function cashAcceptDialog(driver, onHand) {
     const v = check();
     if (v === null) return;
     ok.disabled = true;
-    const { data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: ov.querySelector('#cash-acc-note').value.trim() || null });
-    if (error) { ok.disabled = false; toast(_cashErrText(error), true); return; }
+    // v13.108: send the on-hand this dialog showed — the DB refuses if it changed meanwhile (another dispatcher already
+    // accepted this cash: HANIF MD, 02.11 12:00:02 + 12:00:13, 1,312.50 twice). Before fix_cash_handover_dup.sql the
+    // function has no such parameter → retry once without it (old behaviour).
+    const note = ov.querySelector('#cash-acc-note').value.trim() || null;
+    let { data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: note, p_expected_on_hand: _r2(onHand) });
+    if (error && /p_expected_on_hand|schema cache|Could not find the function/i.test(error.message || '')) {
+      ({ data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: note }));
+    }
+    if (error) {
+      if (/on hand .*changed|duplicate/i.test(error.message || '')) {
+        close();
+        toast(error.message, true);
+        _renderCashBody();
+        return;
+      }
+      ok.disabled = false; toast(_cashErrText(error), true); return;
+    }
     close();
     toast('💵 ' + _aed(v) + ' received from ' + driver + ' · on hand ' + _aed(data && data.on_hand));
     _renderCashBody();
