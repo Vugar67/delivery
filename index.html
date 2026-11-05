@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.106"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.107"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -141,6 +141,14 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent);background:var(--bg)}
 .form-group textarea{resize:vertical;min-height:60px}
 .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+/* v13.107: "Order Details" review shown on Save Order, before anything is written (users' request 05.11.2026) */
+.orv-row{display:grid;grid-template-columns:26px 92px 1fr;gap:8px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:6px 10px;min-height:38px;background:var(--bg)}
+.orv-ico{width:26px;height:26px;border-radius:7px;background:rgba(96,165,250,.14);display:flex;align-items:center;justify-content:center;font-size:14px}
+.orv-lbl{font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.2}
+.orv-val{font-size:13px;font-weight:600;word-break:break-word;line-height:1.35;white-space:pre-wrap}
+.orv-val.orv-empty{color:var(--muted);font-weight:400}
+.orv-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:600px){.orv-grid{grid-template-columns:1fr}}
 /* LOG HISTORY SIDE PANEL */
 .loghist-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1400;display:none}
 .loghist-backdrop.open{display:block}
@@ -1900,7 +1908,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.106';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.107';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5676,6 +5684,93 @@ function _normPhone(s){
   return d;
 }
 
+// ── v13.107: "Order Details" review before the save (users' request, 05.11.2026) ─────────────────────────
+// On Save Order (new order AND edit, every role that can save) a review window shows what is about to be written:
+// order number (or NEW ORDER), reseller, client, contact, emirate, city, district, villa / apt, pin location, payment,
+// the items, the amount due (same math as the cart: items − discount + delivery, + 5% VAT when the box is on),
+// internal note, driver note. Save → the save goes on exactly as before; Cancel / ✕ / Esc / click outside → nothing is
+// written, the form stays as it is so the operator can correct it. Enter does not save (no default button).
+// Built to fit a laptop screen without scrolling: short fields in two columns; the item list is the only part that
+// scrolls inside the window if an order has many lines.
+function _reviewCartLines() {
+  const sId = window._selectedSellerId || '';
+  return (cart || []).filter(i => (i.is_custom ? (i.quantity || 0) : (i.qty || 0)) > 0).map(i => {
+    const qty = i.is_custom ? (parseFloat(i.quantity) || 0) : (parseFloat(i.qty) || 0);
+    const price = i.is_custom ? (parseFloat(i.price) || 0)
+                : (parseFloat(i.customPrice !== undefined ? i.customPrice : i.product.price) || 0);
+    const name = i.is_custom ? i.product_name : (i.nameOverride || (sId ? getAlias(sId, i.product.id) : null) || i.product.name);   // same as the saved line name
+    return { name: String(name || ''), qty, price, sum: price * qty };
+  });
+}
+function orderReviewDialog(payload, isNew, orderNum) {
+  return new Promise(resolve => {
+    const ex = document.getElementById('order-review-overlay');
+    if (ex) ex.remove();
+    const lines = _reviewCartLines();
+    const subtotal = lines.reduce((s, l) => s + l.sum, 0);
+    const dc = parseFloat(payload.delivery_charge) || 0, disc = parseFloat(payload.discount) || 0;
+    const vatOn = payload.vat_applied === true;
+    const net = subtotal - disc + dc;
+    const vat = vatOn ? parseFloat((net * 0.05).toFixed(2)) : 0;   // same math as updateCartTotals / the invoice (VAT on top)
+    const v = x => { const t = (x == null ? '' : String(x)).trim(); return t ? escHtml(t) : '<span class="orv-val orv-empty">—</span>'; };
+    const row = (ico, label, valueHtml, extra) => `<div class="orv-row"${extra ? ' ' + extra : ''}><div class="orv-ico">${ico}</div><div class="orv-lbl">${label}</div><div class="orv-val">${valueHtml}</div></div>`;
+    const pin = (payload.location_url || '').trim();
+    const pinHtml = pin ? `<a href="${escAttr(pin)}" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none;word-break:break-all" title="${escAttr(pin)}">${escHtml(pin.length > 46 ? pin.slice(0, 44) + '…' : pin)}</a>` : v('');
+    const itemsHtml = lines.length
+      ? `<div style="max-height:150px;overflow-y:auto;font-family:var(--mono);font-size:12px;font-weight:400;line-height:1.5">${lines.map(l =>
+          `<div style="display:flex;justify-content:space-between;gap:10px"><span>• ${escHtml(l.name)} <b>×${l.qty}</b></span><span style="white-space:nowrap;color:var(--muted)">${_aed(l.sum)}</span></div>`).join('')}</div>`
+      : '<span class="orv-val orv-empty">— no items</span>';
+    const amountHtml = `<span style="font-family:var(--mono);font-size:15px;color:var(--accent)">${_aed(net + vat)}</span>` +
+      ` <span style="font-size:11px;color:${vatOn ? 'var(--green)' : 'var(--muted)'};font-weight:600">${vatOn ? 'incl. 5% VAT' : 'no VAT'}</span>` +
+      `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;margin-top:2px">items ${_aed(subtotal)} · delivery ${_aed(dc)}${disc > 0 ? ' · discount −' + _aed(disc) : ''}${vatOn ? ' · VAT ' + _aed(vat) : ''}</div>`;
+    const ov = document.createElement('div');
+    ov.id = 'order-review-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:2200;display:flex;align-items:center;justify-content:center;padding:12px';
+    ov.innerHTML = `
+      <div id="order-review-box" role="dialog" aria-label="Order Details" tabindex="-1" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:660px;max-width:100%;max-height:96vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5);outline:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)">
+          <div style="font-size:16px;font-weight:700">📋 Order Details</div>
+          <button type="button" id="orv-x" class="close-btn" title="Back to the form — nothing saved">&#10005;</button>
+        </div>
+        <div style="padding:10px 18px 12px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+          <div>
+            <div style="font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em">${isNew ? 'NEW ORDER <span style="color:var(--muted);font-weight:400">· number is assigned on save</span>' : 'ORDER ' + escHtml(orderNum || '')}</div>
+            <div class="orv-lbl" style="margin-top:4px">Reseller</div>
+            <div style="font-size:19px;font-weight:700;line-height:1.2">${v(payload.seller_name)}</div>
+          </div>
+          <div class="orv-grid">
+            ${row('👤', 'Client', v(payload.client_name))}
+            ${row('📞', 'Contact', payload.client_number ? `<span style="color:var(--green);font-family:var(--mono)">${escHtml(payload.client_number)}</span>` : v(''))}
+            ${row('🏙️', 'Emirate', v(payload.emirate))}
+            ${row('🏘️', 'City', v(payload.city))}
+            ${row('📍', 'District', v(payload.apt))}
+            ${row('🏠', 'Villa / Apt', v(payload.villa))}
+            ${row('🗺️', 'Pin location', pinHtml)}
+            ${row('💳', 'Payment', v(payload.payment_status))}
+          </div>
+          ${row('📦', 'Items (' + lines.length + ')', itemsHtml)}
+          ${row('💰', 'Amount due', amountHtml)}
+          ${row('📄', 'Internal note', v(payload.notes))}
+          ${row('📝', 'Driver note', v(payload.driver_note))}
+        </div>
+        <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;background:var(--surface2);border-radius:0 0 14px 14px">
+          <button type="button" id="orv-cancel" class="btn btn-ghost" title="Back to the form — nothing saved">Cancel</button>
+          <button type="button" id="orv-save" class="btn btn-primary">${isNew ? 'Save' : 'Save changes'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    let done = false;
+    const finish = val => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(val); };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); } };   // Enter is NOT a shortcut — nothing is saved by accident
+    document.addEventListener('keydown', onKey, true);
+    ov.querySelector('#orv-x').onclick = () => finish(false);
+    ov.querySelector('#orv-cancel').onclick = () => finish(false);
+    ov.querySelector('#orv-save').onclick = () => finish(true);
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(false); });
+    try { ov.querySelector('#order-review-box').focus(); } catch (e) {}
+  });
+}
+
 async function saveOrder(){
   // ── Duplicate-order guard ──────────────────────────────────────────
   // On save (new OR edit), if this phone already has an order CREATED in the
@@ -5773,6 +5868,7 @@ async function saveOrder(){
     const _lockedTo = ['Delivered', 'En Route', 'Ready for Pick-up', 'Ready in Lab', 'In the Warehouse', 'Delivery fail/reschedule'];
     if (_os && payload.delivery_status !== (_os.delivery_status || '') && _lockedTo.includes(payload.delivery_status)) {
       toast('🔒 Delivery status "' + payload.delivery_status + '" is set by the process (warehouse / dispatch / Aramex) or an admin', true);
+      btn.disabled = false; btn.textContent = 'Save Order';   // v13.107: the button used to stay a spinner here
       return;
     }
   }
@@ -5787,6 +5883,8 @@ async function saveOrder(){
     const existingOrder = orders.find(x => x.id === editId);
     payload.order_num = existingOrder?.order_num || get('f-num');
   }
+  // v13.107: "Order Details" review — the last look before anything is written. Cancel → form stays, nothing saved.
+  if (!(await orderReviewDialog(payload, !editId, payload.order_num))) { btn.disabled = false; btn.textContent = 'Save Order'; return; }
   // v13.70.5: stamp the physical delivery moment on a manual close, clear it on
   // a reopen — Reports (admin app) build "delivered per period" from this field.
   {
