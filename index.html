@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.108"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.109"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1908,7 +1908,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.108';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.109';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11039,10 +11039,17 @@ function _checkCash(rec, due) {
   return { kind, received: r, due: d, over: _r2(r - d), canSave: kind === 'exact' || kind === 'over' || kind === 'big_over' };
 }
 function _aed(x) { return Number(x || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' AED'; }
+function _cashRpcMissing(error) { return !!error && /Could not find the function|schema cache|PGRST202/i.test(error.message || '') ; }   // v13.109: migration not run yet
+function _cashDayTime(iso) {   // v13.109: 'dd.mm HH:MM' (Dubai) for lists that span several days
+  if (!iso) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
+  return `${p.day}.${p.month} ${p.hour}:${p.minute}`;
+}
 function _dubaiToday() { return new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10); }
 function _cashErrText(error) {
   const m = (error && error.message) || String(error || '');
   if (/cash_day_summary|cash_driver_day|cash_handover_add|cash_handover_void/.test(m) && /(find|exist|schema cache)/i.test(m)) return 'Cash is not set up yet — run add_driver_cash.sql in Supabase first.';
+  if (/cash_driver_open/.test(m) && /(find|exist|schema cache)/i.test(m)) return 'On hand by order is not set up yet — run add_cash_open.sql in Supabase first.';
   return m || 'Something went wrong';
 }
 
@@ -12026,7 +12033,9 @@ async function openCashPanel(day) {
           Cash on delivery / Cash to Collect orders delivered that day (Dubai). <b>Taken</b> = what the driver (or the dispatcher) entered at Delivered; <b>Over</b> = taken above due.
           <b>On hand</b> = all cash taken − all cash handed over, at the end of the day (today: now) — cash not handed over carries over to the next day.
           <b>Picked up</b> = cash orders the driver took by scanning the bag that day and has not delivered yet — amount to collect, not in Due / Taken / On hand (v13.104).
-          Click a driver for the orders and handovers.
+          Click a driver for the orders and handovers. Today: also <b>On hand by order</b> — which orders' cash is still with the driver (handovers settle the oldest cash first);
+          a negative balance shows the handovers not covered by any order and the usual reasons (v13.109).
+          A dispatcher cannot accept more than on hand; the admin can, with a reason.
         </div>
       </div>`;
     document.body.appendChild(ov);
@@ -12072,7 +12081,8 @@ async function _renderCashBody() {
     const open = _cashOpen.has(d);
     const miss = n(r.missing_orders) > 0 ? `<div style="color:var(--yellow,#e0b341);font-size:10px" title="Closed without an amount (old app / old core / SQL) — counted at due in Due, not in Taken">⚠ ${n(r.missing_orders)} without amount · ${_aed(r.missing_due)}</div>` : '';
     // v13.95: with nothing on hand the carry-over was all handed over today — say that, not "incl. … from earlier days"
-    const carry = Math.abs(n(r.carried_in)) <= 0.004 ? ''
+    const carry = n(r.on_hand) < -0.004 ? `<div style="color:var(--red);font-size:10px">handed over more than recorded — open the driver</div>`   // v13.109
+      : Math.abs(n(r.carried_in)) <= 0.004 ? ''
       : Math.abs(n(r.on_hand)) <= 0.004 ? `<div style="color:var(--muted);font-size:10px">carried in ${_aed(r.carried_in)} — handed over today</div>`
       : `<div style="color:var(--muted);font-size:10px">incl. ${_aed(r.carried_in)} from earlier days</div>`;
     const onHandColor = n(r.on_hand) > 0.004 ? 'var(--accent)' : (n(r.on_hand) < -0.004 ? 'var(--red)' : 'var(--muted)');
@@ -12108,35 +12118,46 @@ async function _renderCashBody() {
 async function _renderCashDetails(driver) {
   const id = 'cash-det-' + escAttr(driver).replace(/[^A-Za-z0-9_-]/g, '_');
   const day = _cashDay;
-  const { data, error } = await sb.rpc('cash_driver_day', { p_driver: driver, p_day: day });
+  const isToday = day === _dubaiToday();
+  // v13.109: on today's page also ask what is still on hand, by order (add_cash_open.sql; missing → the block is hidden)
+  const [dayRes, openRes] = await Promise.all([
+    sb.rpc('cash_driver_day', { p_driver: driver, p_day: day }),
+    isToday ? sb.rpc('cash_driver_open', { p_driver: driver }) : Promise.resolve({ data: null, error: null }),
+  ]);
+  const { data, error } = dayRes;
   const el = document.getElementById(id);
   if (!el || day !== _cashDay) return;
   if (error) { el.innerHTML = `<span style="color:var(--red)">${escHtml(_cashErrText(error))}</span>`; return; }
+  const open = openRes && !openRes.error && openRes.data && typeof openRes.data === 'object' && !Array.isArray(openRes.data) ? openRes.data : null;
+  const openErr = openRes && openRes.error && !_cashRpcMissing(openRes.error) ? _cashErrText(openRes.error) : '';
   const ords = (data && data.orders) || [];
   const hos = (data && data.handovers) || [];
   const pks = (data && Array.isArray(data.picked)) ? data.picked : null;   // v13.104 (add_cash_picked_up.sql)
   const t = iso => iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }) : '';
+  const head = (txt, color, top) => `<div style="font-size:10px;color:${color || 'var(--muted)'};text-transform:uppercase;letter-spacing:.06em;margin:${top || '10px'} 0 4px">${txt}</div>`;
+  const row = (inner, cls) => `<div class="${cls || 'cash-det-row'}" style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">${inner}</div>`;
+  const olink = (oid, num, color) => `<a href="#" onclick="event.preventDefault();editOrder('${escAttr(oid)}')" style="color:${color || 'var(--green)'};font-weight:700;text-decoration:none">${escHtml(num || '')}</a>`;
   let h = '';
   if (pks && pks.length) {
-    h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:4px 0">📦 Picked up, not delivered (${pks.length}) · to collect ${_aed(pks.reduce((s, o) => s + Number(o.due || 0), 0))}</div>`;
+    h += head(`📦 Picked up, not delivered (${pks.length}) · to collect ${_aed(pks.reduce((s, o) => s + Number(o.due || 0), 0))}`, null, '4px');
     pks.forEach(o => {
       h += `<div class="cash-picked" style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
       <span style="color:var(--muted);min-width:40px" title="scanned">${t(o.picked_up_at)}</span>
-      <a href="#" onclick="event.preventDefault();editOrder('${escAttr(o.id)}')" style="color:var(--green);font-weight:700;text-decoration:none">${escHtml(o.order_num || '')}</a>
+      ${olink(o.id, o.order_num)}
       <span style="min-width:120px">${escHtml(o.client_name || '')}</span>
       <span>to collect <b style="color:var(--blue)">${_aed(o.due)}</b></span>
       <span style="color:var(--muted)">${escHtml(o.status || '')}</span>
     </div>`;
     });
   }
-  h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:${h ? '10px' : '4px'} 0 4px">Orders (${ords.length})</div>`;
+  h += head(`Orders (${ords.length})`, null, h ? '10px' : '4px');
   if (!ords.length) h += `<div style="color:var(--muted)">—</div>`;
   ords.forEach(o => {
     const over = o.received != null ? _r2(o.received - o.due) : 0;
     const src = o.source === 'app' ? '📱 app' : (o.source || '');
     h += `<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
       <span style="color:var(--muted);min-width:40px">${t(o.delivered_at)}</span>
-      <a href="#" onclick="event.preventDefault();editOrder('${escAttr(o.id)}')" style="color:var(--green);font-weight:700;text-decoration:none">${escHtml(o.order_num || '')}</a>
+      ${olink(o.id, o.order_num)}
       <span style="min-width:120px">${escHtml(o.client_name || '')}</span>
       <span>due ${_aed(o.due)}</span>
       ${o.received != null
@@ -12144,10 +12165,17 @@ async function _renderCashDetails(driver) {
         : `<span style="color:var(--yellow,#e0b341)">⚠ closed without amount</span>${currentRole === 'admin' ? ` <a href="#" class="cash-enter" data-id="${escAttr(o.id)}" data-num="${escAttr(o.order_num || '')}" data-due="${Number(o.due || 0)}" style="color:var(--blue)">enter amount</a>` : ''}`}
     </div>`;
   });
-  h += `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">Handed over (${hos.filter(x => !x.voided_at).length})</div>`;
+  // v13.109: what each handover covered / what it did not (from cash_driver_open, matched by id)
+  const hoInfo = new Map(((open && Array.isArray(open.handovers)) ? open.handovers : []).map(x => [String(x.id), x]));
+  h += head(`Handed over (${hos.filter(x => !x.voided_at).length})`);
   if (!hos.length) h += `<div style="color:var(--muted)">—</div>`;
   hos.forEach(x => {
     const voided = !!x.voided_at;
+    const info = voided ? null : hoInfo.get(String(x.id));
+    const covers = info && Array.isArray(info.covers) && info.covers.length
+      ? `<span class="cash-covers" style="color:var(--muted);font-size:11px;flex-basis:100%">covers ${info.covers.map(c => `${olink(c.id, c.order_num, 'var(--muted)')} ${_aed(c.amount)}`).join(' · ')}</span>` : '';
+    const unc = info && Number(info.uncovered) > 0.004 ? `<span class="cash-uncovered" style="color:var(--red);font-size:11px;flex-basis:100%">⚠ ${_aed(info.uncovered)} not covered by any order</span>` : '';
+    const why = info && info.over_reason ? `<span class="cash-over-reason" style="color:var(--yellow,#e0b341);font-size:11px;flex-basis:100%">⚠ accepted over on hand: “${escHtml(info.over_reason)}”</span>` : '';
     h += `<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap;${voided ? 'opacity:.55' : ''}">
       <span style="color:var(--muted);min-width:40px">${t(x.at)}</span>
       <b style="${voided ? 'text-decoration:line-through' : ''}">${_aed(x.amount)}</b>
@@ -12155,8 +12183,64 @@ async function _renderCashDetails(driver) {
       ${x.note ? `<span>“${escHtml(x.note)}”</span>` : ''}
       ${voided ? `<span style="color:var(--red)">cancelled by ${escHtml(x.voided_by || '')}: ${escHtml(x.void_reason || '')}</span>`
                : (currentRole === 'admin' ? `<a href="#" class="cash-void" data-id="${x.id}" style="color:var(--red);margin-left:auto">cancel</a>` : '')}
+      ${covers}${unc}${why}
     </div>`;
   });
+  // v13.109: on hand by order — today only (the balance is "now")
+  if (open) {
+    const onHand = Number(open.on_hand || 0);
+    const ops = (Array.isArray(open.open) ? open.open.slice() : []).sort((a, b) => String(a.cash_at || a.delivered_at || '').localeCompare(String(b.cash_at || b.delivered_at || '')));   // oldest first
+    const unc = Array.isArray(open.uncovered) ? open.uncovered : [];
+    const hints = open.hints && typeof open.hints === 'object' ? open.hints : {};
+    const noAmt = Array.isArray(hints.no_amount) ? hints.no_amount : [];
+    const reop = Array.isArray(hints.reopened) ? hints.reopened : [];
+    const drvCh = Array.isArray(hints.driver_changed) ? hints.driver_changed : [];
+    const days = Number(open.days || 30);
+    const noAmtRows = () => noAmt.map(o => row(`<span style="color:var(--muted);min-width:76px">${_cashDayTime(o.delivered_at)}</span>${olink(o.id, o.order_num)}<span style="min-width:120px">${escHtml(o.client_name || '')}</span><span>due ${_aed(o.due)}</span><span style="color:var(--muted)">${escHtml(o.payment_status || '')}</span>${currentRole === 'admin' ? `<a href="#" class="cash-enter" data-id="${escAttr(o.id)}" data-num="${escAttr(o.order_num || '')}" data-due="${Number(o.due || 0)}" style="color:var(--blue)">enter amount</a>` : ''}`, 'cash-noamt-row')).join('');
+    h += `<div class="cash-onhand" style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)">`;
+    if (onHand > 0.004) {
+      h += head(`💰 On hand now — not handed over yet (${ops.length} order${ops.length === 1 ? '' : 's'} · ${_aed(onHand)})`, 'var(--accent)', '0');
+      ops.forEach(o => {
+        h += row(`<span style="color:var(--muted);min-width:76px" title="cash recorded">${_cashDayTime(o.cash_at || o.delivered_at)}</span>${olink(o.id, o.order_num)}<span style="min-width:120px">${escHtml(o.client_name || '')}</span>` +
+                 (o.partial ? `<b>${_aed(o.remaining)}</b><span style="color:var(--muted)">of ${_aed(o.received)} — the rest was handed over</span>` : `<b>${_aed(o.remaining)}</b>`), 'cash-open-row');
+      });
+      h += `<div style="color:var(--muted);font-size:10px;margin-top:4px">Handovers settle the oldest cash first — these are the orders whose cash has not come back yet.</div>`;
+      if (noAmt.length) {
+        h += head(`⚠ ${noAmt.length} order${noAmt.length === 1 ? '' : 's'} closed without an amount in the last ${days} days — that cash is not in the list above`, 'var(--yellow,#e0b341)');
+        h += noAmtRows();
+      }
+    } else if (onHand < -0.004) {
+      h += head(`⚠ Handed over ${_aed(-onHand)} more than recorded — not covered by any order:`, 'var(--red)', '0');
+      unc.forEach(u => {
+        const part = Math.abs(Number(u.uncovered) - Number(u.amount)) > 0.004;
+        h += row(`<span style="color:var(--muted);min-width:76px">${_cashDayTime(u.at)}</span><b style="color:var(--red)">${_aed(u.uncovered)}</b>${part ? `<span style="color:var(--muted)">of ${_aed(u.amount)}</span>` : ''}<span style="color:var(--muted)">accepted by ${escHtml(u.by || '—')}</span>${u.note ? `<span>“${escHtml(u.note)}”</span>` : ''}${u.over_reason ? `<span style="color:var(--yellow,#e0b341)">reason: “${escHtml(u.over_reason)}”</span>` : ''}`, 'cash-uncovered-row');
+      });
+      h += head(`Possible reasons (last ${days} days)`);
+      if (noAmt.length) {
+        h += `<div style="margin:4px 0 2px">${noAmt.length} order${noAmt.length === 1 ? '' : 's'} closed <b>without an amount</b> — the cash may have been handed over but was never recorded:</div>` + noAmtRows();
+      }
+      if (reop.length) {
+        h += `<div style="margin:8px 0 2px">${reop.length} order${reop.length === 1 ? '' : 's'} <b>left Delivered</b> after the cash was recorded (the cash record is erased with the status):</div>`;
+        reop.forEach(o => { h += row(`<span style="color:var(--muted);min-width:76px">${_cashDayTime(o.at)}</span>${olink(o.id, o.order_num)}<span style="color:var(--muted)">${escHtml(o.action || 'status changed')} · ${escHtml(o.by || '')}</span><span>now: ${escHtml(o.status_now || '')}${o.driver_now ? ' · ' + escHtml(o.driver_now) : ''}</span>`, 'cash-reopened-row'); });
+      }
+      if (drvCh.length) {
+        h += `<div style="margin:8px 0 2px">${drvCh.length} order${drvCh.length === 1 ? '' : 's'} <b>changed driver</b> after delivery:</div>`;
+        drvCh.forEach(o => { h += row(`<span style="color:var(--muted);min-width:76px">${_cashDayTime(o.at)}</span>${olink(o.id, o.order_num)}<span>${escHtml(o.from || '—')} → ${escHtml(o.to || '—')}</span>${o.received != null ? `<span style="color:var(--muted)">cash ${_aed(o.received)} is now on ${escHtml(o.driver_now || o.to || '')}</span>` : ''}<span style="color:var(--muted)">${escHtml(o.by || '')}</span>`, 'cash-drvchg-row'); });
+      }
+      if (!noAmt.length && !reop.length && !drvCh.length) {
+        h += `<div style="color:var(--muted)">No orders without an amount, no reopened orders, no driver changes in the last ${days} days — check for a duplicate handover or a handover recorded on the wrong driver.</div>`;
+      }
+    } else {
+      h += `<div class="cash-onhand-zero" style="color:var(--muted)">✓ All cash handed over — nothing on hand.</div>`;
+      if (noAmt.length) {
+        h += head(`⚠ ${noAmt.length} order${noAmt.length === 1 ? '' : 's'} closed without an amount in the last ${days} days`, 'var(--yellow,#e0b341)');
+        h += noAmtRows();
+      }
+    }
+    h += `</div>`;
+  } else if (openErr) {
+    h += `<div class="cash-onhand" style="margin-top:12px;color:var(--red);font-size:11px">${escHtml(openErr)}</div>`;
+  }
   el.innerHTML = h;
   el.querySelectorAll('.cash-enter').forEach(a => a.addEventListener('click', ev => {
     ev.preventDefault(); ev.stopPropagation();
@@ -12282,6 +12366,10 @@ function cashAcceptDialog(driver, onHand) {
         <div id="cash-acc-msg" style="min-height:18px;font-size:11px;margin-top:4px"></div>
         <label style="display:block;margin-top:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Note (optional)</label>
         <input id="cash-acc-note" maxlength="300" autocomplete="off" placeholder="e.g. part of today, rest tomorrow" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+        <div id="cash-acc-over" style="display:none;margin-top:8px">
+          <div style="font-size:11px;color:var(--yellow,#e0b341);line-height:1.4">⚠ More than on hand — this money is not recorded on any order. Write why you accept it (it stays in the history).</div>
+          <input id="cash-acc-reason" maxlength="300" autocomplete="off" placeholder="e.g. ORD-124307 closed without amount — cash counted" style="width:100%;box-sizing:border-box;margin-top:4px;background:var(--bg);border:1px solid var(--yellow,#e0b341);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12px;color:var(--text)">
+        </div>
       </div>
       <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;background:var(--surface2);border-radius:0 0 12px 12px">
         <button type="button" id="cash-acc-cancel" style="padding:8px 14px;font-family:var(--mono);font-size:12px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
@@ -12295,16 +12383,34 @@ function cashAcceptDialog(driver, onHand) {
   const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
   const onKey = ev => { if (ev.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
+  const overBox = ov.querySelector('#cash-acc-over');
+  const reasonEl = ov.querySelector('#cash-acc-reason');
+  const isAdmin = currentRole === 'admin';
+  const off = () => { ok.disabled = true; ok.style.opacity = .4; ok.textContent = '✓ Received'; };
+  // v13.109: more than on hand = money not recorded on any order. Dispatcher: refused (the admin enters the missing amounts
+  // first); admin: allowed with a mandatory reason. The DB (add_cash_open.sql) enforces the same rule.
   const check = () => {
     const v = _parseCash(amt.value);
-    if (amt.value.trim() === '') { msg.textContent = ''; ok.disabled = true; ok.style.opacity = .4; ok.textContent = '✓ Received'; return null; }
-    if (v === null || v <= 0) { msg.innerHTML = '<span style="color:var(--red)">Numbers only, more than 0 — e.g. 900 or 900.50</span>'; ok.disabled = true; ok.style.opacity = .4; ok.textContent = '✓ Received'; return null; }
-    msg.innerHTML = v > onHand + 0.004 ? `<span style="color:var(--yellow,#e0b341)">More than on hand (${_aed(onHand)}) — check before saving</span>`
-                  : (v < onHand - 0.004 ? `<span style="color:var(--muted)">${_aed(_r2(onHand - v))} stays on hand</span>` : '<span style="color:var(--green)">All cash on hand</span>');
+    if (amt.value.trim() === '') { msg.textContent = ''; overBox.style.display = 'none'; off(); return null; }
+    if (v === null || v <= 0) { msg.innerHTML = '<span style="color:var(--red)">Numbers only, more than 0 — e.g. 900 or 900.50</span>'; overBox.style.display = 'none'; off(); return null; }
+    const over = v > onHand + 0.004;
+    if (over && !isAdmin) {
+      msg.innerHTML = `<span style="color:var(--red)">More than on hand (${_aed(onHand)}) — only the admin can accept more. Ask the admin to enter the missing amounts on the orders closed without an amount, then accept.</span>`;
+      overBox.style.display = 'none'; off(); return null;
+    }
+    if (over) {
+      overBox.style.display = '';
+      msg.innerHTML = `<span style="color:var(--yellow,#e0b341)">${_aed(_r2(v - onHand))} more than on hand (${_aed(onHand)}) — reason required</span>`;
+      if (!reasonEl.value.trim()) { off(); return null; }
+    } else {
+      overBox.style.display = 'none';
+      msg.innerHTML = v < onHand - 0.004 ? `<span style="color:var(--muted)">${_aed(_r2(onHand - v))} stays on hand</span>` : '<span style="color:var(--green)">All cash on hand</span>';
+    }
     ok.disabled = false; ok.style.opacity = 1; ok.textContent = '✓ Received ' + _aed(v);
     return v;
   };
   amt.addEventListener('input', check);
+  reasonEl.addEventListener('input', check);
   check();
   ov.querySelector('#cash-acc-cancel').onclick = close;
   ok.onclick = async () => {
@@ -12315,9 +12421,17 @@ function cashAcceptDialog(driver, onHand) {
     // accepted this cash: HANIF MD, 02.11 12:00:02 + 12:00:13, 1,312.50 twice). Before fix_cash_handover_dup.sql the
     // function has no such parameter → retry once without it (old behaviour).
     const note = ov.querySelector('#cash-acc-note').value.trim() || null;
-    let { data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: note, p_expected_on_hand: _r2(onHand) });
-    if (error && /p_expected_on_hand|schema cache|Could not find the function/i.test(error.message || '')) {
-      ({ data, error } = await sb.rpc('cash_handover_add', { p_driver: driver, p_amount: v, p_note: note }));
+    const over = v > onHand + 0.004;
+    const reason = over ? (reasonEl.value.trim() || null) : null;
+    // v13.109: p_over_reason only when over; a DB without it (05.11) → retry without the parameter; a DB without
+    // p_expected_on_hand (19.10) → retry with the 3 original arguments.
+    const full = { p_driver: driver, p_amount: v, p_note: note, p_expected_on_hand: _r2(onHand) };
+    const attempts = over ? [{ ...full, p_over_reason: reason }, full] : [full];
+    attempts.push({ p_driver: driver, p_amount: v, p_note: note });
+    let data = null, error = null;
+    for (const args of attempts) {
+      ({ data, error } = await sb.rpc('cash_handover_add', args));
+      if (!error || !_cashRpcMissing(error)) break;
     }
     if (error) {
       if (/on hand .*changed|duplicate/i.test(error.message || '')) {
@@ -12326,7 +12440,11 @@ function cashAcceptDialog(driver, onHand) {
         _renderCashBody();
         return;
       }
-      ok.disabled = false; toast(_cashErrText(error), true); return;
+      if (/More than on hand|more than recorded on hand|Write the reason/i.test(error.message || '')) {
+        msg.innerHTML = `<span style="color:var(--red)">${escHtml(error.message)}</span>`;
+        ok.disabled = false; ok.style.opacity = 1; toast(error.message, true); return;
+      }
+      ok.disabled = false; ok.style.opacity = 1; toast(_cashErrText(error), true); return;
     }
     close();
     toast('💵 ' + _aed(v) + ' received from ' + driver + ' · on hand ' + _aed(data && data.on_hand));
