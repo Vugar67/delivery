@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.111"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.112"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -65,6 +65,7 @@ body.theme-light .overlay{background:rgba(43,36,22,.45)}
 .role-badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
 .role-admin{background:rgba(245,166,35,.2);color:var(--accent)}
 .role-operator{background:rgba(96,165,250,.2);color:var(--blue)}
+.role-badge.role-stock{background:rgba(74,222,128,.18);color:var(--green)}   /* v13.112: Stock Controller (badge only — .role-stock is also the body class) */
 .role-dispatcher{background:rgba(0,230,150,.2);color:var(--green)}
 .role-warehouse{background:rgba(255,165,0,.2);color:#ffaa00}
 @media(max-width:600px){
@@ -350,9 +351,23 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .role-admin #aramex-sync-btn{display:inline-block}
 #orders-export-btn{display:none}
 .role-admin #orders-export-btn{display:inline-flex}
-/* v13.63: Products/Clients are read-only for operators — no add/export/edit/delete */
-.role-operator #prod-export-btn,.role-operator #prod-add-btn,.role-operator #cl-export-btn,.role-operator #cl-add-btn{display:none!important}
-.role-operator #view-products .act-btn,.role-operator #view-clients .act-btn{display:none!important}
+/* v13.63: Products/Clients are read-only for operators — no add/export/edit/delete · v13.112: same for the stock role */
+.role-operator #prod-export-btn,.role-operator #prod-add-btn,.role-operator #cl-export-btn,.role-operator #cl-add-btn,
+.role-stock #prod-export-btn,.role-stock #prod-add-btn{display:none!important}
+.role-operator #view-products .act-btn,.role-operator #view-clients .act-btn,.role-stock #view-products .act-btn{display:none!important}
+/* v13.112: Stock Controller (role "stock") — Orders and the order card are VIEW ONLY: no New Order, no WhatsApp, no
+   save / delete, no cart or field changes; the card can still be opened and read, ⎘ copy stays. Lab: every station
+   visible, nothing clickable. Storage: full access (no rule here). */
+.role-stock #new-order-btn{display:none!important}
+.role-stock #order-tbody .act-btn.ro-hide{display:none!important}
+.role-stock #order-modal button:not(.ro-keep){display:none!important}
+.role-stock #order-modal [onclick]:not(.ro-keep),.role-stock #order-modal [onchange],.role-stock #order-modal [oninput]{pointer-events:none}
+.role-stock #order-modal input:not(#shop-search),.role-stock #order-modal select,.role-stock #order-modal textarea{pointer-events:none;opacity:.9}
+.role-stock #order-modal #shop-grid,.role-stock #order-modal #shop-kinds,.role-stock #order-modal #shop-cart-items,.role-stock #order-modal .shop-cart-item-controls{pointer-events:none}
+.role-stock #order-modal #custom-item-toggle,.role-stock #order-modal #custom-item-form{display:none!important}
+.role-stock #view-lab .lab-btn,.role-stock #view-lab .lab-tap,.role-stock #view-lab .lab-pick,.role-stock #view-lab button:not(.ro-keep){display:none!important}
+.role-stock #view-lab input,.role-stock #view-lab select{pointer-events:none;opacity:.7}
+.ro-note{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:8px}
 select option{background:#1a1d27;color:#f0f2ff}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:15px;font-weight:700}
@@ -616,7 +631,7 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="total_desc">💰 Highest Total</option>
           <option value="total_asc">💰 Lowest Total</option>
         </select>
-        <button class="btn btn-primary" onclick="openNewOrder()">+ New Order</button>
+        <button class="btn btn-primary" id="new-order-btn" onclick="openNewOrder()">+ New Order</button>
         <button class="btn" id="dispatch-btn" onclick="toggleDispatchMode()" style="background:var(--accent2);color:#000;font-weight:700">🚀 Dispatch</button>
         <button class="btn btn-ghost" id="cash-btn" onclick="openCashPanel()" title="Cash taken by the drivers, handovers (v13.89)">💵 Cash</button>
         <button class="btn btn-ghost" id="trips-btn" onclick="openTripsPanel()" title="Staff pick-up / drop-off and driver tasks (v13.92)">🚐 Trips</button>
@@ -896,7 +911,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         </div>
         <div class="lab-top-right">
           <span id="lab-sync" class="lab-sync" title="Last refresh"></span>
-          <button class="btn btn-ghost" onclick="loadLab(true)" style="padding:6px 12px;font-size:12px">⟳ Refresh</button>
+          <button class="btn btn-ghost ro-keep" onclick="loadLab(true)" style="padding:6px 12px;font-size:12px">⟳ Refresh</button>
         </div>
       </div>
       <div id="lab-cols" class="lab-cols">
@@ -1773,7 +1788,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       </div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal('order-modal')">Cancel</button>
+      <button class="btn btn-ghost ro-keep" onclick="closeModal('order-modal')">Cancel</button>
       <button id="modal-delete-order-btn" class="btn" onclick="deleteOrderWithPassword()" style="display:none;background:rgba(239,68,68,.15);border:1px solid var(--red);color:var(--red)">🗑 Delete</button>
       <button class="btn btn-primary" id="save-order-btn" onclick="saveOrder()">Save Order</button>
     </div>
@@ -1928,7 +1943,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.111';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.112';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2356,7 +2371,7 @@ let currentUser=null, currentRole=null;      // currentRole = BEHAVIOR base (adm
 let currentRoleName=null;                     // v13.64: the assigned role name as stored on the profile (may be custom)
 let currentStaffRole=null;                    // v13.74: profiles.staff_role — lab workstation (mixer / packer / qa)
 let systemRoles=[];                           // v13.64: custom roles from system_roles table
-const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse','lab'];   // v13.74: lab (mixer / packer / qa by staff_role)
+const BUILTIN_ROLES=['admin','operator','dispatcher','warehouse','lab','stock'];   // v13.74: lab (mixer / packer / qa by staff_role) · v13.112: stock = Stock Controller
 let orders=[], refs={emirates:[],drivers:[],paymentStatus:[],deliveryStatus:[],staffRoles:[],clientCategory:[],productType:[],productCategory:[],fridges:[]};  // v13.71.4: productCategory = registry kept by the admin app · v13.76: fridges = places inside HUB
 let products=[], orderItems={};
 let clients=[], editClientId=null;
@@ -2584,6 +2599,7 @@ async function initApp(){
   const isDispatcher = currentRole === 'dispatcher';
   const isWarehouse  = currentRole === 'warehouse';
   const isLab        = currentRole === 'lab';          // v13.74
+  const isStock      = currentRole === 'stock';        // v13.112: Stock Controller — Orders / Products / Lab read-only, Storage in full
 
   if(isLab){
     nav.innerHTML=`<button class="tab-btn active" onclick="showView('lab')">🧪 Lab</button>`;
@@ -2606,7 +2622,7 @@ async function initApp(){
 
   nav.innerHTML=`<a class="tab-btn active" href="#orders" onclick="showView('orders');return false;">Orders</a>`;
   // v13.70.2: Dispatch belongs to dispatchers and admins — operators lose the button
-  if(isOperator){ const _db=document.getElementById('dispatch-btn'); if(_db) _db.style.display='none'; }
+  if(isOperator || isStock){ const _db=document.getElementById('dispatch-btn'); if(_db) _db.style.display='none'; }
   // v13.89: 💵 Cash — admin and dispatcher only
   if(!CASH_ROLES.includes(currentRole)){ ['cash-btn','dispatch-cash-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
   // v13.92: 🚐 Trips — admin and dispatcher; 📊 Drivers week — admin only
@@ -2615,6 +2631,11 @@ async function initApp(){
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
+  }
+  if(isStock){   // v13.112: Products (read-only), Storage (full), Lab (read-only)
+    nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#storage" onclick="showView('storage');return false;">Storage</a>`;
+    nav.innerHTML+=`<a class="tab-btn" href="#lab" onclick="showView('lab');return false;">🧪 Lab</a>`;
   }
   if(isAdmin){
     nav.innerHTML+=`<a class="tab-btn" href="#directory" onclick="showView('directory');return false;">Directory</a>`;
@@ -2629,7 +2650,7 @@ async function initApp(){
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
-  const validViews = isAdmin ? ['orders','products','clients','directory','brands','storage','users','lab','logs'] : (isOperator ? ['orders','products','clients'] : ['orders']);   // v13.63
+  const validViews = isAdmin ? ['orders','products','clients','directory','brands','storage','users','lab','logs'] : (isOperator ? ['orders','products','clients'] : (isStock ? ['orders','products','storage','lab'] : ['orders']));   // v13.63 · v13.112
   const initView = validViews.includes(hash) ? hash : 'orders';
   if(!isDispatcher) renderTable();
   showView(initView);subscribeRealtime();
@@ -2699,9 +2720,10 @@ async function loadProducts(){
 
 function showView(v){
   const adminOnlyViews=['products','clients','directory','brands','storage','users','logs'];
-  if(adminOnlyViews.includes(v) && currentRole!=='admin') v=(currentRole==='warehouse')?'warehouse':(currentRole==='lab'?'lab':'orders');
+  const stockViews=['orders','products','storage','lab'];                                   // v13.112: Stock Controller
+  if(adminOnlyViews.includes(v) && currentRole!=='admin' && !(currentRole==='stock' && stockViews.includes(v))) v=(currentRole==='warehouse')?'warehouse':(currentRole==='lab'?'lab':'orders');
   if(currentRole==='lab') v='lab';                                                          // v13.74: the lab sees only its own screen
-  if(v==='lab' && !(currentRole==='admin'||currentRole==='lab')) v='orders';
+  if(v==='lab' && !(currentRole==='admin'||currentRole==='lab'||currentRole==='stock')) v='orders';
   ['orders','products','directory','users','clients','warehouse','brands','storage','lab','logs'].forEach(n=>{const el=document.getElementById('view-'+n);if(el)el.style.display=n===v?'block':'none';});
   if(v==='lab') initLabView(); else stopLabPolling();                                       // v13.74
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.getAttribute('href')==='#'+v||b.textContent.toLowerCase().startsWith(v)));
@@ -3099,13 +3121,13 @@ function renderTable(){
               const diffM = Math.floor(diffMs / 60000);
               const timeAgo = diffH > 0 ? diffH+'h ago' : diffM > 0 ? diffM+'m ago' : 'just now';
               return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
-                <button class="act-btn" onclick="sendToClient('${o.id}')" title="Sent by ${o.wa_sent_by||'?'} — click to resend" style="color:#25d366;border-color:#25d366;background:rgba(37,211,102,.12)">✓ WA</button>
+                <button class="act-btn ro-hide" onclick="sendToClient('${o.id}')" title="Sent by ${o.wa_sent_by||'?'} — click to resend" style="color:#25d366;border-color:#25d366;background:rgba(37,211,102,.12)">✓ WA</button>
                 <span style="font-size:9px;color:#25d366;font-family:var(--mono)">${timeAgo}</span>
               </div>`;
             }
-            return `<button class="act-btn" onclick="sendToClient('${o.id}')" title="Send to Client via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>`;
+            return `<button class="act-btn ro-hide" onclick="sendToClient('${o.id}')" title="Send to Client via WhatsApp" style="color:#25d366;border-color:rgba(37,211,102,.3)">WA</button>`;
           })() : ''}
-          <button class="act-btn" onclick="editOrder('${o.id}')">Edit</button>
+          <button class="act-btn" onclick="editOrder('${o.id}')">${currentRole === 'stock' ? 'View' : 'Edit'}</button>
           <button class="act-btn" onclick="copyOrderDetails('${o.id}')" title="Copy order details" style="color:#25d366;border-color:rgba(37,211,102,.3)">⎘</button>
         </div></td>
       </tr>`;
@@ -5141,6 +5163,7 @@ function initShop() {
 
 // ORDER CRUD
 async function openNewOrder(){
+  if (currentRole === 'stock') { toast('🔒 View only — the Stock Controller cannot create orders', true); return; }   // v13.112
   if(currentRole==='dispatcher') return;
   editId=null;cart=[];
   document.getElementById('modal-title').textContent='New Order';
@@ -5226,8 +5249,8 @@ async function editOrder(id){
   if(document.getElementById('order-modal').classList.contains('open') && editId === id) return;
   editId=id;
   cart=[]; // always reset cart before loading
-  document.getElementById('modal-title').textContent='Edit Order';
-  const mdb=document.getElementById('modal-delete-order-btn');if(mdb)mdb.style.display='';
+  document.getElementById('modal-title').innerHTML = currentRole === 'stock' ? 'Order <span class="ro-note">view only</span>' : 'Edit Order';   // v13.112
+  const mdb=document.getElementById('modal-delete-order-btn');if(mdb)mdb.style.display=(currentRole==='stock')?'none':'';
   const dg=document.getElementById('f-driver-group');
   if(dg) dg.style.display=(currentRole==='admin')?'':'none';
   populateFormRefs(o);
@@ -5327,6 +5350,21 @@ async function editOrder(id){
   modal.classList.add('open');
   const modalEl = modal.querySelector('.modal');
   if(modalEl) modalEl.scrollTop = 0;
+  if (currentRole === 'stock') _orderModalViewOnly();   // v13.112
+}
+// v13.112: Stock Controller opens the order card to READ it. The CSS (.role-stock #order-modal …) hides every button but
+// Cancel and switches the mouse off on the fields; this disables the fields themselves so the keyboard cannot change
+// them either. Nothing here is persisted anyway: saveOrder() refuses and the DB policies refuse.
+function _orderModalViewOnly() {
+  document.querySelectorAll('#order-modal input, #order-modal select, #order-modal textarea').forEach(el => {
+    if (el.id === 'shop-search') return;   // searching the product list is reading
+    el.disabled = true; el.tabIndex = -1;
+  });
+  const cartEl = document.getElementById('shop-cart-items');   // the cart re-renders its qty inputs — keep them locked too
+  if (cartEl && !cartEl._roObs) {
+    cartEl._roObs = new MutationObserver(() => cartEl.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; el.tabIndex = -1; }));
+    cartEl._roObs.observe(cartEl, { childList: true, subtree: true });
+  }
 }
 
 // ─── LOGS ────────────────────────────────────────────────────────
@@ -5792,6 +5830,7 @@ function orderReviewDialog(payload, isNew, orderNum) {
 }
 
 async function saveOrder(){
+  if (currentRole === 'stock') { toast('🔒 View only — the Stock Controller cannot change orders', true); return; }   // v13.112 (the DB refuses too)
   // ── Duplicate-order guard ──────────────────────────────────────────
   // On save (new OR edit), if this phone already has an order CREATED in the
   // last 24h, ask the operator to confirm. Cancel aborts the save entirely.
@@ -6230,6 +6269,7 @@ function renderShelfMap() {
 }
 
 function openShelfCell(pos) {
+  if (currentRole !== 'admin') { toast('🔒 Read-only access', true); return; }   // v13.112: the shelf map is a Products write (v13.63 rule)
   const p = products.find(x => x.shelf_position === pos);
   const taken = products.filter(x => x.shelf_position && x.shelf_position !== pos).map(x => x.shelf_position);
 
@@ -6379,7 +6419,7 @@ let _labTimer = null, _labBusy = false, _labInflight = 0;
 const _labTapSeq = {};   // batch_id → sequence of the latest tap request (older replies are ignored)
 
 function labStage() {
-  if (currentRole === 'admin') return 'all';
+  if (currentRole === 'admin' || currentRole === 'stock') return 'all';   // v13.112: the stock role sees every station (read-only via CSS)
   return ['mixer', 'packer', 'qa'].includes(currentStaffRole || '') ? currentStaffRole : 'all';
 }
 function _labErr(e) { return (e && (e.message || e.hint)) || 'Something went wrong'; }
@@ -6466,7 +6506,7 @@ function initLabView() {
   const titles = { mixer: '🧪 Mixer', packer: '📦 Packer', qa: '✅ QA', all: '🧪 Lab — all stations' };
   document.getElementById('lab-title').textContent = titles[stage];
   document.getElementById('lab-sub').textContent = stage === 'all'
-    ? (currentRole === 'lab' ? 'staff role not set on your profile — ask the admin (showing all stations)' : 'mixer → packer → QA → stock (HUB)')
+    ? (currentRole === 'lab' ? 'staff role not set on your profile — ask the admin (showing all stations)' : (currentRole === 'stock' ? 'mixer → packer → QA → stock (HUB) · view only' : 'mixer → packer → QA → stock (HUB)'))
     : (currentUser && currentUser.email ? currentUser.email : '');
   document.getElementById('lab-history').style.display = stage === 'all' ? '' : 'none';
   loadLab(true);
@@ -7091,7 +7131,7 @@ function _putAwayHtml() {
 function renderPutAway() { const el = document.getElementById('wh-putaway'); if (el) el.innerHTML = _putAwayHtml(); }
 // v13.77: admin edits a lot in place — fridge, made-on date, quantity (a qty change is journaled as an adjustment on that lot)
 let _lotEditId = null;
-function startLotEdit(lotId) { if (currentRole !== 'admin') return; _lotEditId = lotId; renderStorage(); setTimeout(() => document.getElementById('lot-e-qty-' + lotId)?.focus(), 50); }
+function startLotEdit(lotId) { if (!['admin', 'stock'].includes(currentRole)) return; /* v13.112: + Stock Controller */ _lotEditId = lotId; renderStorage(); setTimeout(() => document.getElementById('lot-e-qty-' + lotId)?.focus(), 50); }
 function cancelLotEdit() { _lotEditId = null; renderStorage(); }
 async function saveLotEdit(lotId) {
   const l = stockLots.find(x => x.id === lotId); if (!l) { cancelLotEdit(); return; }
@@ -7226,7 +7266,7 @@ function renderStorage() {
         <td style="padding:3px 8px;font-family:var(--mono);font-size:11px;color:${l.made_on ? 'var(--text)' : 'var(--muted)'}">${l.made_on ? 'made ' + _lotDate(l.made_on) : 'no date'}</td>
         <td style="padding:3px 8px;text-align:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">${parseFloat(l.qty_left)}</td>
         <td style="padding:3px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'')}</td>
-        <td style="padding:3px 8px;white-space:nowrap">${currentRole === 'admin' ? `<button class="act-btn lot-edit-btn" style="padding:2px 7px;font-size:11px" onclick="startLotEdit(${l.id})" title="Edit this lot: fridge, made-on date, quantity (admin)">✎</button>` : ''}</td>
+        <td style="padding:3px 8px;white-space:nowrap">${['admin', 'stock'].includes(currentRole) ? `<button class="act-btn lot-edit-btn" style="padding:2px 7px;font-size:11px" onclick="startLotEdit(${l.id})" title="Edit this lot: fridge, made-on date, quantity (admin)">✎</button>` : ''}</td>
       </tr>`).join('') : (q !== 0 ? `<tr class="lot-row"><td></td><td colspan="5" style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--yellow);font-family:var(--mono)">↳ no lots — recount, or add with a date and fridge</td><td></td></tr>` : '');
       return `<tr class="prod-row"${rowTitle}>
         <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
@@ -9066,6 +9106,7 @@ async function getNextInvoiceNumber() {
 function openCtxMenu(e, orderId) {
   e.preventDefault();
   if (window._dispatcherMode) return; // dispatcher cannot edit orders
+  if (currentRole === 'stock') return;   // v13.112: view only — no invoices from here
   ctxOrderId = orderId;
   // v13.59: the invoice item says what it will actually do for THIS order
   const _io = orders.find(x => x.id === orderId);
