@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.112"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.113"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1943,7 +1943,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.112';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.113';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5982,6 +5982,10 @@ async function saveOrder(){
     if (!orderId) { toast('Error: failed to get order ID', true); btn.disabled=false; btn.textContent='Save Order'; return; }
     payload.order_num = orderNum;
   }
+  // v13.113: a new link → the server resolves it into a stored map point (fire-and-forget; nothing waits for it)
+  { const _prev = editId ? (orders.find(x => x.id === editId) || null) : null;
+    if (payload.location_url && (!_prev || _prev.location_url !== payload.location_url || (_geoReady(_prev) && !_prev.geo_src)) && orders.some(_geoReady))
+      _geoResolve([orderId]).catch(() => {}); }
   // save cart items — atomic replace via RPC (delete+insert in ONE transaction).
   // Old rows are guaranteed gone before new ones are written; on any failure the
   // whole operation rolls back, so duplicate rows can no longer accumulate.
@@ -10759,6 +10763,75 @@ function extractCoordsFromUrl(url) {
   return null;
 }
 
+// ── v13.113: stored map points (add_order_geo.sql + Edge Function geo-resolve) ──────────────────────────────
+// The point of an order lives on the order: geo_lat / geo_lng / geo_src ('pin' = exact point out of the link,
+// 'district' = centre of the district by Nominatim, 'none' = nothing found). The Edge Function fills it once, server
+// side (it follows the short Google links itself — no CORS proxies). The core asks it (a) right after an order with a
+// link is saved, (b) for a selected card that has no point yet, (c) for the pending open orders when Dispatch opens.
+// Before the migration the columns are absent → everything below is a no-op and the old browser path works as before.
+function _geoOf(o) {
+  if (!o || (o.geo_src !== 'pin' && o.geo_src !== 'district')) return null;
+  const lat = Number(o.geo_lat), lng = Number(o.geo_lng);
+  return (isFinite(lat) && isFinite(lng)) ? { lat, lng, src: o.geo_src } : null;
+}
+function _geoReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'geo_src'); }
+let _geoBackfillAt = 0;
+const GEO_BACKFILL_MS = 10 * 60000;
+// ids → those orders; null → the pending open orders (≤ 25 per call). The local copies get the result at once.
+async function _geoResolve(ids, timeoutMs = 12000) {
+  if (!_authToken) return null;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/geo-resolve', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken },
+      body: JSON.stringify(ids && ids.length ? { ids } : { pending: true })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    (data && data.done || []).forEach(d => {
+      const o = orders.find(x => x.id === d.id); if (!o) return;
+      o.geo_src = d.src; o.geo_lat = d.lat; o.geo_lng = d.lng; o.geo_url = o.location_url; o.geo_at = new Date().toISOString();
+    });
+    return data;
+  } catch (e) { return null; } finally { clearTimeout(t); }
+}
+// Dispatch opened → the open orders without a point get one, at most once per 10 minutes per tab (fire-and-forget).
+function _geoBackfill() {
+  if (!['admin', 'dispatcher'].includes(currentRole)) return;
+  if (!orders.some(_geoReady)) return;                      // before the migration
+  if (Date.now() - _geoBackfillAt < GEO_BACKFILL_MS) return;
+  _geoBackfillAt = Date.now();
+  _geoResolve(null).catch(() => {});
+}
+// Put a selected order on the map: stored point first; otherwise ask the server once; the old browser-side path
+// (coordinates in the link / CORS proxies / Nominatim) stays as the last resort.
+async function _dispatchPlace(id, order, num) {
+  const g = _geoOf(order);
+  if (g) { addDispatchMarker(id, order, g, num); return; }
+  if (_geoReady(order) && order.geo_src !== 'none') {
+    await _geoResolve([id]);
+    const sel = dispatchSelected.find(s => s.id === id); if (!sel) return;   // unticked meanwhile
+    const g2 = _geoOf(order);
+    if (g2) { sel.coords = g2; addDispatchMarker(id, order, g2, num); return; }
+  }
+  const coords = extractCoordsFromUrl(order && order.location_url);
+  if (coords && dispatchMap && window.L) { const sel = dispatchSelected.find(s => s.id === id); if (sel) sel.coords = coords; addDispatchMarker(id, order, coords, num); }
+  else geocodeOrderAddress(id, order, num);
+}
+function _dispatchIconHtml(num, label, src) {
+  const approx = src === 'district';
+  return `<div title="${approx ? 'approximate — district centre' : 'exact pin'}" style="background:${approx ? 'var(--muted,#8a8f98)' : 'var(--accent)'};color:#000;font-family:monospace;font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)${approx ? ';border:1px dashed #000' : ''}">${approx ? '≈ ' : ''}${num}. ${label}</div>`;
+}
+// Order modal (block under the status rows): where the point came from — operators see a bad link at once.
+function _geoModalRow(o) {
+  if (!_geoReady(o)) return '';
+  if (o.geo_src === 'pin') return `<div>📍 <b>Map point</b> · exact pin from the link${o.geo_at ? ' · ' + escHtml(_podTime(o.geo_at)) : ''}</div>`;
+  if (o.geo_src === 'district') return `<div style="color:var(--yellow,#e0b341)">📍 Map point ≈ district centre only — the link has no exact pin</div>`;
+  if (o.geo_src === 'none') return `<div style="color:var(--yellow,#e0b341)">📍 No map point — no link, or a link without coordinates</div>`;
+  return '';   // not resolved yet
+}
+
 function toggleDispatchMode() {
   if (!['admin', 'dispatcher'].includes(currentRole)) { toast('🔒 Dispatch — dispatchers and admins only', true); return; }
   dispatchMode = !dispatchMode;
@@ -10784,6 +10857,7 @@ function toggleDispatchMode() {
     populateDispatchDrivers();
     renderDispatchQueue();
     renderDispatchSent();
+    _geoBackfill();   // v13.113
   } else {
     panel.style.display = 'none';
     col3.style.display = 'none';
@@ -10819,17 +10893,12 @@ function onDispatchCheck(chk) {
   const row = document.getElementById('drow-' + id);
 
   if (chk.checked) {
-    const coords = extractCoordsFromUrl(order?.location_url);
+    const coords = _geoOf(order) || extractCoordsFromUrl(order?.location_url);   // v13.113: the stored point first
     console.log('Dispatch check:', order?.order_num, '| location_url:', order?.location_url, '| coords:', coords);
     dispatchSelected.push({ id, order, coords });
     if (row) row.style.background = 'rgba(255,200,0,.08)';
     document.getElementById('dispatch-map-placeholder').style.display = 'none';
-    // Try coords first, fallback to geocode by address
-    if (coords && dispatchMap && window.L) {
-      addDispatchMarker(id, order, coords, dispatchSelected.length);
-    } else {
-      geocodeOrderAddress(id, order, dispatchSelected.length);
-    }
+    _dispatchPlace(id, order, dispatchSelected.length);
   } else {
     dispatchSelected = dispatchSelected.filter(s => s.id !== id);
     if (row) row.style.background = '';
@@ -11090,6 +11159,8 @@ function _renderPodInModal(o) {
   if (_pickRow) rows.push(_pickRow);
   const _cashRow = _cashModalRow(o);   // v13.89
   if (_cashRow) rows.push(_cashRow);
+  const _geoRow = _geoModalRow(o);     // v13.113
+  if (_geoRow) rows.push(_geoRow);
   if (o && o.delivery_photo) {
     rows.push(`<div>📷 <b>Delivery photo</b> · ${escHtml(o.driver || '')} · ${escHtml(_podTime(o.delivered_at))} <a href="#" onclick="event.preventDefault();podOpen('${o.id}','delivered')" style="color:var(--blue)">open</a></div>`);
   } else if (o && o.delivery_photo_skip) {
@@ -12615,14 +12686,10 @@ function toggleDispatchOrder(id) {
   if (!order) { console.log('order not found'); return; }
   const idx = dispatchSelected.findIndex(s => s.id === id);
   if (idx === -1) {
-    const coords = extractCoordsFromUrl(order.location_url);
+    const coords = _geoOf(order) || extractCoordsFromUrl(order.location_url);   // v13.113: the stored point first
     dispatchSelected.push({ id, order, coords });
     document.getElementById('dispatch-map-placeholder').style.display = 'none';
-    if (coords && dispatchMap && window.L) {
-      addDispatchMarker(id, order, coords, dispatchSelected.length);
-    } else {
-      geocodeOrderAddress(id, order, dispatchSelected.length);
-    }
+    _dispatchPlace(id, order, dispatchSelected.length);
   } else {
     dispatchSelected.splice(idx, 1);
     removeDispatchMarker(id);
@@ -13143,11 +13210,12 @@ function addDispatchMarker(id, order, coords, num) {
   if (!dispatchMap || !window.L) return;
   const icon = L.divIcon({
     className: '',
-    html: `<div style="background:var(--accent);color:#000;font-family:monospace;font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">${num}. ${order?.order_num||id}</div>`,
+    html: _dispatchIconHtml(num, order?.order_num || id, coords && coords.src),   // v13.113: grey dashed "≈" when only the district is known
     iconAnchor: [0, 0]
   });
   const marker = L.marker([coords.lat, coords.lng], { icon }).addTo(dispatchMap)
-    .bindPopup(`<b>${order?.order_num}</b><br>${order?.emirate||''} ${order?.city||''}<br>${order?.client_number||''}`);
+    .bindPopup(`<b>${order?.order_num}</b><br>${order?.emirate||''} ${order?.city||''}<br>${order?.client_number||''}` +
+               (coords && coords.src === 'district' ? '<br><span style="color:#e0b341">≈ approximate — district centre</span>' : coords && coords.src === 'pin' ? '<br><span style="color:var(--muted)">📍 exact pin</span>' : ''));
   dispatchMarkers.push({ id, marker });
 
   // Fit map to all markers
@@ -13167,7 +13235,7 @@ function removeDispatchMarker(id) {
     if (sel) {
       m.marker.setIcon(L.divIcon({
         className: '',
-        html: `<div style="background:var(--accent);color:#000;font-family:monospace;font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">${i+1}. ${sel.order?.order_num||sel.id}</div>`,
+        html: _dispatchIconHtml(i + 1, sel.order?.order_num || sel.id, sel.coords && sel.coords.src),
         iconAnchor: [0, 0]
       }));
     }
