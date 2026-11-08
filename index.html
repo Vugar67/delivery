@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.110"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.111"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -398,6 +398,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .lab-name{font-weight:700;font-size:13px;flex:1 1 160px;min-width:0}
 .lab-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.lab-upd{color:var(--accent)}   /* v13.111: the order was edited after it was created */
 .lab-meta b{color:var(--text);font-weight:600}
 .lot-line{font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;margin-top:2px;white-space:normal}   /* v13.75: lots under a HUB product */
 .lot-line b{color:var(--text);font-weight:600}
@@ -1927,7 +1928,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.110';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.111';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6351,6 +6352,29 @@ async function loadProductComponents() {
 const LAB_POLL_MS = 10000;
 const LAB_REJECT_REASONS = ['Leak', 'Underfill', 'Label', 'Contamination', 'Other'];
 let labDemand = [], labCustom = [], labBatches = [], labHistory = [], labLoadedAt = null;
+// v13.111: created / last-update stamps of the orders behind the Mixer list — keyed by order id AND order number
+// (lab_order_lines_v gives ids, lab_demand_v gives order numbers). Loaded with the lab data; drives the sort.
+let labOrderMeta = {};
+function _labMetaFor(key) { return (key && labOrderMeta[String(key)]) || null; }
+// "edited" = somebody saved the order after it was created — not the lab's own automatic status flips
+function _labEdited(m) {
+  if (!m || !m.updated_at || !m.created_at) return false;
+  if (/^(lab-auto|sql-maintenance|system)$/i.test(String(m.updated_by || ''))) return false;
+  return new Date(m.updated_at) - new Date(m.created_at) > 60000;
+}
+function _labStampHtml(m, labelCreated) {
+  if (!m || !m.created_at) return '';
+  let h = `<span title="Order created">${labelCreated || 'created'} <b>${_labWhen(m.created_at)}</b></span>`;
+  if (_labEdited(m)) h += `<span class="lab-upd" title="The order was changed after it was created — check the lines">✎ updated <b>${_labWhen(m.updated_at)}</b>${m.updated_by ? ' · ' + escAttr(String(m.updated_by).split('@')[0]) : ''}</span>`;
+  return h;
+}
+// the oldest waiting order behind a stock demand row (its created_at is the row's place in the list)
+function _labDemandSince(d) {
+  const nums = String(d.order_nums || '').split(', ').filter(Boolean);
+  let best = null;
+  nums.forEach(n => { const m = _labMetaFor(n); if (m && m.created_at && (!best || m.created_at < best.created_at)) best = m; });
+  return best;
+}
 let _labTimer = null, _labBusy = false, _labInflight = 0;
 const _labTapSeq = {};   // batch_id → sequence of the latest tap request (older replies are ignored)
 
@@ -6469,11 +6493,27 @@ async function loadLab(manual) {
     labCustom  = (res[1].data || []).map(c => ({ ...c, custom_name: c.custom_name || c.line_name }));   // v13.78: line_name → custom_name alias
     labBatches = res[2].data || [];
     if (res[3]) labHistory = res[3].data || [];
+    await _loadLabOrderMeta();   // v13.111: created / updated stamps for the sort and the cards (failure → no stamps, list still renders)
     _labSnapshot();
     labLoadedAt = new Date();
   } finally { _labBusy = false; }
   if (_labInflight > 0) return;       // someone is tapping — don't yank the screen from under their finger
   renderLab();
+}
+
+// v13.111: created_at / updated_at / updated_by of every order on the Mixer screen — two small reads (by id for the
+// per-order lines, by order number for the stock demand rows), chunks of 100. Keyed both ways.
+async function _loadLabOrderMeta() {
+  try {
+    const ids = [...new Set(labCustom.map(c => c.order_id).filter(Boolean))];
+    const nums = [...new Set(labDemand.flatMap(d => String(d.order_nums || '').split(', ')).map(x => x.trim()).filter(Boolean))];
+    const meta = {};
+    const put = rows => (rows || []).forEach(o => { const m = { created_at: o.created_at, updated_at: o.updated_at, updated_by: o.updated_by, order_num: o.order_num }; meta[String(o.id)] = m; if (o.order_num) meta[String(o.order_num)] = m; });
+    for (let i = 0; i < ids.length; i += 100) { const { data } = await sb.from('orders').select('id,order_num,created_at,updated_at,updated_by').in('id', ids.slice(i, i + 100)); put(data); }
+    const restNums = nums.filter(n => !meta[n]);
+    for (let i = 0; i < restNums.length; i += 100) { const { data } = await sb.from('orders').select('id,order_num,created_at,updated_at,updated_by').in('order_num', restNums.slice(i, i + 100)); put(data); }
+    labOrderMeta = meta;
+  } catch (e) { /* stamps are a convenience — the list must render without them */ }
 }
 
 function renderLab() {
@@ -6531,7 +6571,7 @@ function renderLabMixer() {
                 <button class="lab-btn primary" onclick="labOpen(${d.product_id}, null, ${forStock ? 'true' : 'false'})">Open batch</button>` : ''}
       </div>
       <div class="lab-meta">
-        ${!forStock ? `<span>for <b>${d.orders_waiting}</b> order${d.orders_waiting == 1 ? '' : 's'}${d.order_nums ? ': <b>' + escAttr(_labOrderNums(d.order_nums)) + '</b>' : ''}</span>${d.nearest_date ? `<span>nearest <b>${_labDate(d.nearest_date)}</b></span>` : ''}` : `<span>min stock <b>${num(d.min_stock)}</b></span>`}
+        ${!forStock ? `<span>for <b>${d.orders_waiting}</b> order${d.orders_waiting == 1 ? '' : 's'}${d.order_nums ? ': <b>' + escAttr(_labOrderNums(d.order_nums)) + '</b>' : ''}</span>${(() => { const m = _labDemandSince(d); return m ? `<span title="Oldest waiting order">since <b>${_labWhen(m.created_at)}</b></span>` : ''; })()}${d.nearest_date ? `<span>nearest <b>${_labDate(d.nearest_date)}</b></span>` : ''}` : `<span>min stock <b>${num(d.min_stock)}</b></span>`}
         <span>free in HUB <b>${num(d.free)}</b></span>${num(d.in_pipeline) > 0 ? `<span>in progress <b>${num(d.in_pipeline)}</b></span>` : ''}
       </div>
       ${b ? _labTallyHtml(b) : ''}
@@ -6570,18 +6610,20 @@ function renderLabMixer() {
     return `<div class="lab-card custom order-card${c0.priority === 1 ? ' urgent' : ''}${open ? ' open' : ''}" data-order="${escAttr(c0.order_id)}">
       <div class="lab-row">
         <div class="lab-name">${escAttr(c0.order_num)} ${_labUrgChip(c0.priority)} <span class="lab-chip custom">per order · ${lines.length} line${lines.length === 1 ? '' : 's'}${doneN ? ' · ' + doneN + ' done' : ''}</span></div>
-        <div class="lab-meta" style="margin:0">${_labWho(c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
+        <div class="lab-meta" style="margin:0">${_labWho(c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}${_labStampHtml(_labMetaFor(c0.order_id))}</div>
       </div>
       <div class="lab-lines">${sorted.map(lineRow).join('')}</div>
       ${_labStockLine(c0)}
       <div class="lab-actions"><button class="lab-btn primary" onclick="labCloseOrder('${escAttr(c0.order_id)}')" ${canClose ? '' : 'disabled'}>Close batch → Packer</button></div>
     </div>`;
   };
-  // v13.74.2: ONE list — stock rows and per-order lines together, most urgent first (priority → nearest date → amount)
+  // v13.111 (Vugar 08.11): ONE list — stock rows and per-order cards together: urgency first, then the ORDER'S CREATION
+  // time (oldest first; a stock row takes the oldest waiting order behind it), then amount. Editing an order does not
+  // move it (updated_at is not a key); the card shows "✎ updated" instead. Unknown stamp sorts last.
   const needList = [
-    ...needRows.map(d => ({ prio: d.top_priority ?? 9, date: String(d.nearest_date || '9999'), amt: num(d.need), html: demandCard(d, false) })),
-    ...actionable.map(lines => ({ prio: lines[0].priority ?? 9, date: String(lines[0].sched_date || '9999'), amt: lines.reduce((t, c) => t + (c.done ? 0 : _labItemLeft(c)), 0), html: orderCard(lines) })),
-  ].sort((a, b) => (a.prio - b.prio) || a.date.localeCompare(b.date) || (b.amt - a.amt));
+    ...needRows.map(d => { const m = _labDemandSince(d); return { prio: d.top_priority ?? 9, created: m ? m.created_at : '9999', amt: num(d.need), html: demandCard(d, false) }; }),
+    ...actionable.map(lines => { const m = _labMetaFor(lines[0].order_id); return { prio: lines[0].priority ?? 9, created: m ? m.created_at : '9999', amt: lines.reduce((t, c) => t + (c.done ? 0 : _labItemLeft(c)), 0), html: orderCard(lines) }; }),
+  ].sort((a, b) => (a.prio - b.prio) || String(a.created).localeCompare(String(b.created)) || (b.amt - a.amt));
   const handedLine = lines => `<div class="lab-meta" style="padding:4px 2px;opacity:.75"><span><b>${escAttr(lines[0].order_num)}</b></span>${lines.filter(c => lineState(c) === 'handed').map(c => { const b = liveOf(c); return `<span>${escAttr(c.custom_name)} <span class="lab-chip ok">${b.stage === 'packing' ? 'at Packer' : 'at QA'} · ${escAttr(b.batch_no)}</span> ${b.qty_mixed} made</span>`; }).join('')}${lines.some(c => c.done) ? `<span>${lines.filter(c => c.done).length} done</span>` : ''}</div>`;
   const openIds = new Set(Object.keys(openBy));
   const pickerOpts = labDemand.filter(d => !d.no_stock_ahead && !openIds.has(String(d.product_id))).sort((a, b) => a.name.localeCompare(b.name));
