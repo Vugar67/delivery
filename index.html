@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.109"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.110"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -994,9 +994,28 @@ select option{background:#1a1d27;color:#f0f2ff}
     </div>
 
     <div id="view-storage" style="display:none">
-      <div class="section-head" style="margin-bottom:16px">
+      <div class="section-head" style="margin-bottom:12px">
         <div class="section-title">🏭 Storage</div>
         <button class="btn btn-primary" onclick="openNewStorage()">+ Add Location</button>
+      </div>
+      <!-- v13.110: search + filters (same look as the Products tab); they narrow the product rows of every depot / rover card -->
+      <div id="stor-filters" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <input type="text" id="stor-search" placeholder="Search products..." oninput="renderStorage()" autocomplete="off" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:260px">
+        <select id="stor-cat-filter" onchange="renderStorage()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+          <option value="">All Categories</option>
+        </select>
+        <select id="stor-kind-filter" onchange="renderStorage()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+          <option value="">All Kinds</option>
+        </select>
+        <select id="stor-stock-filter" onchange="renderStorage()" title="By quantity on hand" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font);font-size:13px;outline:none">
+          <option value="">All stock</option>
+          <option value="pos">In stock (&gt; 0)</option>
+          <option value="zero">Zero</option>
+          <option value="neg">Negative</option>
+          <option value="low">Below minimum</option>
+        </select>
+        <button type="button" class="btn btn-ghost" id="stor-filter-clear" onclick="storageFiltersClear()" style="display:none;font-size:12px;padding:6px 12px">✕ Clear</button>
+        <span id="stor-filter-count" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:auto"></span>
       </div>
       <!-- Depots -->
       <div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">🏢 Depots</div>
@@ -1908,7 +1927,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.109';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.110';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7069,11 +7088,61 @@ async function stockPlaceLot(lotId) {
   else { await loadStorage(); renderStorage(); }
 }
 
+// ── v13.110: Storage search + filters (Vugar, 08.11.2026) ───────────────────────────────────────────
+// Same controls as the Products tab: text search (name / category / sticker name), Category, Kind (refs.productType),
+// plus a stock filter (in stock / zero / negative / below minimum). They narrow the product rows inside every card;
+// the Put away panel, the "+ Add" and "Count" rows are not affected. The selects are refilled on every render and keep
+// their current value; the counter shows "shown / total products".
+function _storageFilters() {
+  const q = (document.getElementById('stor-search')?.value || '').trim().toLowerCase();
+  const cat = (document.getElementById('stor-cat-filter')?.value || '').trim().toUpperCase();
+  const kind = document.getElementById('stor-kind-filter')?.value || '';
+  const stock = document.getElementById('stor-stock-filter')?.value || '';
+  return { q, cat, kind, stock, active: !!(q || cat || kind || stock) };
+}
+function _storageRowMatches(f, i, p) {
+  if (!f.active) return true;
+  const qn = parseFloat(i.quantity) || 0, minS = parseFloat(p?.min_stock) || 0;
+  if (f.q) {
+    const hay = [p?.name, p?.category, p?.sticker_name, p?.invoice_nickname].filter(Boolean).join(' ').toLowerCase();
+    if (!hay.includes(f.q)) return false;
+  }
+  if (f.cat && (p?.category || '').trim().toUpperCase() !== f.cat) return false;
+  if (f.kind && (p?.type || '') !== f.kind) return false;
+  if (f.stock === 'pos' && !(qn > 0)) return false;
+  if (f.stock === 'zero' && qn !== 0) return false;
+  if (f.stock === 'neg' && !(qn < 0)) return false;
+  if (f.stock === 'low' && !(minS > 0 && qn < minS)) return false;
+  return true;
+}
+function _storageFillFilterOptions() {
+  const catEl = document.getElementById('stor-cat-filter'), kindEl = document.getElementById('stor-kind-filter');
+  if (catEl) {
+    const cur = catEl.value;
+    const cats = [...new Set(storageInventory.map(i => ((products.find(p => p.id === i.product_id) || (window._allProducts || []).find(p => p.id === i.product_id))?.category || '').trim().toUpperCase()).filter(Boolean))].sort();
+    catEl.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${escAttr(c)}" ${cur === c ? 'selected' : ''}>${escHtml(c)}</option>`).join('');
+  }
+  if (kindEl) {
+    const cur = kindEl.value;
+    kindEl.innerHTML = '<option value="">All Kinds</option>' + (refs.productType || []).map(r => `<option value="${escAttr(r.value)}" ${cur === r.value ? 'selected' : ''}>${escHtml(r.value)}</option>`).join('');
+  }
+}
+function storageFiltersClear() {
+  ['stor-search', 'stor-cat-filter', 'stor-kind-filter', 'stor-stock-filter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderStorage();
+  document.getElementById('stor-search')?.focus();
+}
+
 function renderStorage() {
   const depots = storageLocations.filter(s => s.type === 'Depot' && s.active !== false);
   const rovers = storageLocations.filter(s => s.type === 'Rover' && s.active !== false);
+  _storageFillFilterOptions();
+  const _f = _storageFilters();
+  let _shown = 0, _total = 0;
   const renderCard = (s) => {
-    const inv = storageInventory.filter(i => i.storage_id === s.id);
+    const invAll = storageInventory.filter(i => i.storage_id === s.id);
+    const inv = invAll.filter(i => _storageRowMatches(_f, i, products.find(x => x.id === i.product_id) || (window._allProducts || []).find(x => x.id === i.product_id)));
+    _total += invAll.length; _shown += inv.length;
     const driver = s.driver_id ? drivers.find(d => d.id === s.driver_id) : null;
     const ledger = _storageIsLedger(s);   // v13.74: the HUB is edited through stock_adjust → journal; rovers stay legacy
     const invRows = inv.slice().sort((x, y) => (products.find(p => p.id === x.product_id)?.name || '').localeCompare(products.find(p => p.id === y.product_id)?.name || '')).map((i, idx) => {
@@ -7151,7 +7220,7 @@ function renderStorage() {
           <th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)">UNIT</th>
           <th style="width:32px"></th>
         </tr></thead>
-        <tbody>${invRows || `<tr><td colspan="${ledger ? 7 : 6}" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">No items — add below</td></tr>`}</tbody>
+        <tbody>${invRows || `<tr><td colspan="${ledger ? 7 : 6}" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">${_f.active && invAll.length ? `No products match the filter (${invAll.length} hidden)` : 'No items — add below'}</td></tr>`}</tbody>
       </table>
       <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;background:var(--surface2)">
         <select id="inv-add-prod-${s.id}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
@@ -7183,6 +7252,10 @@ function renderStorage() {
   const roversEl = document.getElementById('storage-rovers');
   depotsEl.innerHTML = depots.length ? depots.map(renderCard).join('') : '<div style="color:var(--muted);font-size:13px">No depots defined</div>';
   roversEl.innerHTML = rovers.length ? rovers.map(renderCard).join('') : '<div style="color:var(--muted);font-size:13px">No rovers defined</div>';
+  // v13.110: filter state — counter + Clear button
+  const cnt = document.getElementById('stor-filter-count'), clr = document.getElementById('stor-filter-clear');
+  if (cnt) cnt.textContent = _f.active ? `${_shown} of ${_total} products` : `${_total} products`;
+  if (clr) clr.style.display = _f.active ? '' : 'none';
 }
 
 let _editStorageId = null;
