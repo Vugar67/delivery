@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.114"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.114.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1974,7 +1974,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.114';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.114.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -11524,7 +11524,7 @@ function _ddApplyFilter() {
 let _dmDay = null, _dmDriver = '', _dmMap = null, _dmLayer = null, _dmSeq = 0, _dmData = null;
 const _dmShow = { delivered: true, failed: true, lines: true };
 const DM_COLORS = ['#f5a623', '#60a5fa', '#4ade80', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#facc15', '#38bdf8', '#c084fc', '#86efac', '#fda4af'];
-const DM_COLS = 'id,order_num,driver,client_name,client_number,emirate,city,district,apt,villa,delivery_status,delivered_at,delivery_lat,delivery_lng,' +
+const DM_COLS = 'id,order_num,driver,client_name,client_number,emirate,city,apt,villa,delivery_status,delivered_at,delivery_lat,delivery_lng,' +   // v13.114.1: the district lives in orders.apt (no "district" column)
                 'geo_lat,geo_lng,geo_src,location_url,total,payment_status,last_fail_at,last_fail_by,last_fail_reason,fail_count';
 function _dmIsDriver(name) { const n = String(name || '').trim().toUpperCase(); return n !== '' && !['ARAMEX', 'PICK-UP', 'PICKUP'].includes(n); }
 function _dmRange(day) { const a = new Date(day + 'T00:00:00+04:00'); return { from: a.toISOString(), to: new Date(a.getTime() + 86400e3).toISOString() }; }
@@ -11537,7 +11537,7 @@ function _dmPoint(o) {   // the delivered order's point: GPS → stored pin / di
   const c = extractCoordsFromUrl(o.location_url); return c ? { lat: c.lat, lng: c.lng, src: 'pin' } : null;
 }
 function _dmOrderPoint(o) { const g = _geoOf(o); if (g) return g; const c = extractCoordsFromUrl(o.location_url); return c ? { lat: c.lat, lng: c.lng, src: 'pin' } : null; }
-function _dmAddr(o) { return [o.district || o.apt, o.villa, o.city, o.emirate].filter(Boolean).join(', '); }
+function _dmAddr(o) { return [o.apt, o.villa, o.city, o.emirate].filter(Boolean).join(', '); }   // apt = district / area (as everywhere in the core)
 const DM_SRC_TXT = { gps: "driver's GPS at Delivered", pin: 'exact pin from the link', district: '≈ district centre (approximate)' };
 
 async function _dmLoad(day) {
