@@ -1260,7 +1260,7 @@ select option{background:#1a1d27;color:#f0f2ff}
       <select id="inv-product-sel" style="flex:2;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none">
         <option value="">— Select Product to Add —</option>
       </select>
-      <input id="inv-qty" type="number" min="0" step="0.01" placeholder="Qty" style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none;text-align:center">
+      <input id="inv-qty" type="number" min="0" step="1" placeholder="Qty" style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;outline:none;text-align:center">
       <button class="btn btn-primary" onclick="saveInventoryItem()">+ Add</button>
     </div>
   </div>
@@ -1741,7 +1741,7 @@ select option{background:#1a1d27;color:#f0f2ff}
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">QTY</div>
-              <input id="custom-item-qty" type="number" min="1" value="1" onfocus="this.select()" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
+              <input id="custom-item-qty" type="number" min="1" step="1" value="1" onfocus="this.select()" oninput="updateCustomItemTotal()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;color:var(--text);box-sizing:border-box">
             </div>
             <div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px">PRICE</div>
@@ -4568,7 +4568,9 @@ function addCustomItem() {
     ? d2Sel.value
     : (document.getElementById('custom-item-dosage2')?.value || '').trim();
   const price = parseFloat(document.getElementById('custom-item-price').value) || 0;
-  const qty = parseFloat(document.getElementById('custom-item-qty').value) || 1;
+  const qRaw = document.getElementById('custom-item-qty').value;   // v13.115: whole number ≥ 1 (empty = 1, as before)
+  const qty = String(qRaw).trim() === '' ? 1 : _qtyParse(qRaw, { name: 'A custom item', unit: 'pcs' }, { min: 1 });
+  if (qty === null) return;
   const unitSel = document.getElementById('custom-item-unit-sel');
   const unit = (unitSel && unitSel.value && unitSel.value !== '__custom__')
     ? unitSel.value
@@ -7172,8 +7174,8 @@ async function saveLotEdit(lotId) {
   const l = stockLots.find(x => x.id === lotId); if (!l) { cancelLotEdit(); return; }
   const place = document.getElementById('lot-e-place-' + lotId)?.value || null;
   const madeOn = document.getElementById('lot-e-date-' + lotId)?.value || null;
-  const qty = parseFloat(document.getElementById('lot-e-qty-' + lotId)?.value);
-  if (isNaN(qty) || qty < 0) { toast('Qty must be 0 or more', true); return; }
+  const qty = _qtyParse(document.getElementById('lot-e-qty-' + lotId)?.value, _prodById(l.product_id));   // v13.115: whole number ≥ 0
+  if (qty === null) return;
   if (madeOn && !/^\d{4}-\d{2}-\d{2}$/.test(madeOn)) { toast('Bad date', true); return; }
   const oldQ = parseFloat(l.qty_left) || 0;
   const changes = [];
@@ -7193,9 +7195,11 @@ async function saveLotEdit(lotId) {
 async function stockPlaceLot(lotId) {
   const l = stockLots.find(x => x.id === lotId); if (!l) return;
   const place = document.getElementById('lot-place-' + lotId)?.value || '';
-  const qty = parseFloat(document.getElementById('lot-qty-' + lotId)?.value);
   if (!place) { toast('Pick the fridge', true); return; }
-  if (isNaN(qty) || qty <= 0 || qty > parseFloat(l.qty_left)) { toast('Qty must be 1..' + parseFloat(l.qty_left), true); return; }
+  const lp = _prodById(l.product_id);
+  const qty = _qtyParse(document.getElementById('lot-qty-' + lotId)?.value, lp, { min: _qtyWhole(lp) ? 1 : 0.01 });   // v13.115
+  if (qty === null) return;
+  if (qty > parseFloat(l.qty_left)) { toast('Only ' + parseFloat(l.qty_left) + ' left in this lot', true); return; }
   const { error } = await sb.rpc('stock_place_lot', { p_lot_id: lotId, p_place: place, p_qty: qty });
   if (error) { toast('Put away: ' + (error.message || 'error'), true); return; }
   const p = products.find(x => x.id === l.product_id) || (window._allProducts || []).find(x => x.id === l.product_id);
@@ -7268,7 +7272,7 @@ function renderStorage() {
       const low = q < 0 ? 'neg' : (minS > 0 && q < minS ? 'low' : '');
       const qColor = low === 'neg' ? 'var(--red)' : (low === 'low' ? 'var(--yellow)' : (ledger ? 'var(--accent)' : 'var(--text)'));   // v13.76.2: HUB total in accent, lots in white
       const flags = `${p && !p.lab_made ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono)">purchased</span>' : ''}${low === 'neg' ? ' <span style="font-size:9px;color:var(--red);font-family:var(--mono)">NEGATIVE</span>' : (low === 'low' ? ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">LOW</span>' : '')}`;
-      const qtyInput = `<input type="number" step="0.01" value="${i.quantity}"
+      const qtyInput = `<input type="number" min="0" step="${_qtyStep(p)}" value="${i.quantity}"
             onchange="${ledger ? `storageCountQty(${i.id},this.value)` : `updateInventoryQty(${i.id},this.value)`}"
             title="${ledger ? 'Total on hand. Type the counted total — the difference is written to the stock journal (reason: count)' : ''}"
             style="width:65px;background:var(--surface2);border:1px solid ${low ? qColor : 'var(--border)'};border-radius:5px;padding:3px 6px;color:${qColor};font-family:var(--mono);font-size:12px;font-weight:${low ? 700 : 400};outline:none;text-align:center">`;
@@ -7343,7 +7347,7 @@ function renderStorage() {
         <select id="inv-add-prod-${s.id}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
           <option value="">+ Select product...</option>${prodOpts}
         </select>
-        <input id="inv-add-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Qty"
+        <input id="inv-add-qty-${s.id}" type="number" min="0" step="1" placeholder="Qty"
           style="width:70px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;text-align:center">
         ${ledger ? `<input id="inv-add-date-${s.id}" type="date" value="${toUAEDate(new Date().toISOString())}" max="${toUAEDate(new Date().toISOString())}" title="Made on — the lot's production date"
           style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono)">
@@ -7359,7 +7363,7 @@ function renderStorage() {
         <select id="inv-cnt-prod-${s.id}" style="width:260px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none">
           <option value="">product…</option>${prodOpts}
         </select>
-        <input id="inv-cnt-qty-${s.id}" type="number" min="0" step="0.01" placeholder="Total"
+        <input id="inv-cnt-qty-${s.id}" type="number" min="0" step="1" placeholder="Total"
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none;text-align:center">
         <button class="btn btn-ghost btn-sm" onclick="countInventoryInline('${s.id}')" title="Set the counted total — the difference goes to the journal (reason: count)">Count</button>
       </div>` : ''}
@@ -7466,7 +7470,7 @@ function renderInventoryList() {
       <td style="font-weight:600">${p ? p.name : '—'}</td>
       <td style="color:var(--muted)">${p?.category||'—'}</td>
       <td style="text-align:center">
-        <input type="number" min="0" step="0.01" value="${i.quantity}"
+        <input type="number" min="0" step="${_qtyStep(p)}" value="${i.quantity}"
           onchange="updateInventoryQty(${i.id},this.value)"
           style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;text-align:center">
       </td>
@@ -7478,8 +7482,9 @@ function renderInventoryList() {
 
 async function saveInventoryItem() {
   const product_id = document.getElementById('inv-product-sel').value;
-  const quantity = parseFloat(document.getElementById('inv-qty').value);
-  if (!product_id || isNaN(quantity)) { toast('Select product and enter quantity', true); return; }
+  if (!product_id) { toast('Select product and enter quantity', true); return; }
+  const quantity = _qtyParse(document.getElementById('inv-qty').value, _prodById(product_id));   // v13.115
+  if (quantity === null) return;
   await sb.from('storage_inventory').upsert(
     { storage_id: _invStorageId, product_id: parseInt(product_id), quantity, updated_at: new Date().toISOString() },
     { onConflict: 'storage_id,product_id' }
@@ -7520,6 +7525,31 @@ async function openStockMoves(productId) {
       <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${escAttr(r.created_by || '')}</td>
     </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--muted);font-size:12px">No movements yet</div>';
 }
+// ── v13.115: Storage quantities are WHOLE numbers (Vugar, 09.11.2026) ─────────────────────────────────────────────────
+// Every HUB row is counted in pcs (114 of 114 on 09.11); a fraction in a quantity field is a slip — 09.11 12:41 the count field
+// of V-AOD VIAL 10mg went 0 → −0.01 from a mouse wheel / arrow on a step-0.01 field and the journal got a −0.01 movement.
+// Rule: a product whose unit is a weight / volume (kg, g, ml, l…) may take a fraction; everything else must be a whole number.
+// Fractions are REFUSED with a toast (never rounded), the fields step by 1 and do not go below 0, and the mouse wheel over a
+// focused quantity field in Storage changes nothing.
+const QTY_FRACTION_UNITS = ['kg', 'g', 'gr', 'gram', 'mg', 'ml', 'l', 'lt', 'liter', 'litre'];
+function _qtyWhole(p) { return !QTY_FRACTION_UNITS.includes(String((p && p.unit) || 'pcs').trim().toLowerCase()); }
+function _qtyStep(p) { return _qtyWhole(p) ? '1' : '0.01'; }
+function _qtyParse(val, p, opts) {   // → number, or null after a toast. opts.min: smallest allowed value (default 0)
+  const str = String(val == null ? '' : val).trim();
+  if (str === '') { toast('Enter a quantity', true); return null; }
+  const n = Number(str);
+  if (!isFinite(n)) { toast('Enter a number', true); return null; }
+  const min = opts && opts.min != null ? opts.min : 0;
+  if (n < min) { toast(min > 0 ? 'Quantity must be at least ' + min : 'Quantity cannot be negative', true); return null; }
+  if (_qtyWhole(p) && n % 1 !== 0) { toast('Whole number only — ' + ((p && p.name) || 'this product') + ' is counted in ' + ((p && p.unit) || 'pcs'), true); return null; }
+  return n;
+}
+function _prodById(id) { return products.find(x => String(x.id) === String(id)) || (window._allProducts || []).find(x => String(x.id) === String(id)) || null; }
+document.addEventListener('wheel', ev => {   // the wheel must never change a quantity in Storage (it scrolls the page instead)
+  const t = ev.target;
+  if (t && t.tagName === 'INPUT' && t.type === 'number' && t.closest && t.closest('#view-storage') && document.activeElement === t) { t.blur(); }
+}, { passive: true });
+
 async function _stockAdjust(productId, delta, reason, note) {
   const { data, error } = await sb.rpc('stock_adjust', { p_product_id: parseInt(productId), p_qty: delta, p_reason: reason, p_note: note || null });
   if (error) { toast('Stock: ' + (error.message || 'error'), true); return false; }
@@ -7527,11 +7557,11 @@ async function _stockAdjust(productId, delta, reason, note) {
 }
 async function storageCountQty(invId, val) {
   const inv = storageInventory.find(i => i.id === invId); if (!inv) return;
-  const counted = parseFloat(val);
-  if (isNaN(counted)) { toast('Enter a number', true); await loadStorage(); renderStorage(); return; }
+  const p = _prodById(inv.product_id);
+  const counted = _qtyParse(val, p);   // v13.115: whole number ≥ 0 (unless the unit is a weight / volume)
+  if (counted === null) { renderStorage(); return; }
   const delta = parseFloat((counted - (parseFloat(inv.quantity) || 0)).toFixed(2));
   if (delta === 0) return;
-  const p = products.find(x => x.id === inv.product_id);
   if (await _stockAdjust(inv.product_id, delta, 'count', 'Storage count: ' + (parseFloat(inv.quantity) || 0) + ' → ' + counted)) {
     logEvent('UPDATE', 'stock', String(inv.product_id), { action: 'stock_count', product: p?.name, before: parseFloat(inv.quantity) || 0, after: counted, delta });
     toast((delta > 0 ? '+' : '') + delta + ' ' + (p?.name || '') + ' → journal (count)');
@@ -7540,7 +7570,10 @@ async function storageCountQty(invId, val) {
 }
 
 async function updateInventoryQty(invId, val) {
-  await sb.from('storage_inventory').update({ quantity: parseFloat(val), updated_at: new Date().toISOString() }).eq('id', invId);
+  const inv = storageInventory.find(i => i.id === invId);
+  const q = _qtyParse(val, inv ? _prodById(inv.product_id) : null);   // v13.115
+  if (q === null) { renderStorage(); return; }
+  await sb.from('storage_inventory').update({ quantity: q, updated_at: new Date().toISOString() }).eq('id', invId);
   await loadStorage();
 }
 
@@ -7563,11 +7596,12 @@ async function deleteInventoryItem(invId, storageId) {
 async function receiveInventoryInline(storageId) {
   const sid = parseInt(storageId);
   const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
-  const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
   const madeOn = document.getElementById('inv-add-date-' + storageId)?.value || '';
   const place = document.getElementById('inv-add-place-' + storageId)?.value || '';
-  if (!product_id || isNaN(qty) || qty <= 0) { toast('Select product and enter a positive quantity', true); return; }
-  const p = products.find(x => String(x.id) === String(product_id));
+  if (!product_id) { toast('Select product and enter a positive quantity', true); return; }
+  const p = _prodById(product_id);
+  const qty = _qtyParse(document.getElementById('inv-add-qty-' + storageId)?.value, p, { min: _qtyWhole(p) ? 1 : 0.01 });   // v13.115
+  if (qty === null) return;
   if (p && p.made_to_order) { toast((p.name || 'This product') + ' is made per order — it is never stocked', true); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(madeOn)) { toast('Pick the made-on date', true); return; }
   if (!place) { toast('Pick the fridge', true); return; }   // v13.76
@@ -7583,8 +7617,9 @@ async function receiveInventoryInline(storageId) {
 async function countInventoryInline(storageId) {
   const sid = parseInt(storageId);
   const product_id = document.getElementById('inv-cnt-prod-' + storageId)?.value;
-  const qty = parseFloat(document.getElementById('inv-cnt-qty-' + storageId)?.value);
-  if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter the counted total', true); return; }
+  if (!product_id) { toast('Select product and enter the counted total', true); return; }
+  const qty = _qtyParse(document.getElementById('inv-cnt-qty-' + storageId)?.value, _prodById(product_id));   // v13.115
+  if (qty === null) return;
   if (await _countInventory(sid, product_id, qty)) { const q = document.getElementById('inv-cnt-qty-' + storageId); if (q) q.value = ''; }
 }
 // v13.74: HUB — the entered number is the COUNTED total; the difference goes to the journal (reason: count)
@@ -7610,8 +7645,9 @@ async function addInventoryInline(storageId) {
   const sLoc = storageLocations.find(x => x.id === sid);
   if (_storageIsLedger(sLoc)) { await countInventoryInline(storageId); return; }   // HUB: the ledger path is the recount row
   const product_id = document.getElementById('inv-add-prod-' + storageId)?.value;
-  const qty = parseFloat(document.getElementById('inv-add-qty-' + storageId)?.value);
-  if (!product_id || isNaN(qty) || qty < 0) { toast('Select product and enter quantity', true); return; }
+  if (!product_id) { toast('Select product and enter quantity', true); return; }
+  const qty = _qtyParse(document.getElementById('inv-add-qty-' + storageId)?.value, _prodById(product_id));   // v13.115
+  if (qty === null) return;
   await sb.from('storage_inventory').upsert(
     { storage_id: sid, product_id: parseInt(product_id), quantity: qty, updated_at: new Date().toISOString() },
     { onConflict: 'storage_id,product_id' }
@@ -10800,21 +10836,16 @@ function extractCoordsFromUrl(url) {
 // side (it follows the short Google links itself — no CORS proxies). The core asks it (a) right after an order with a
 // link is saved, (b) for a selected card that has no point yet, (c) for the pending open orders when Dispatch opens.
 // Before the migration the columns are absent → everything below is a no-op and the old browser path works as before.
-// v13.115: the UAE with a margin — the company delivers here; a stored point outside it is a resolver accident, not an
-// address (09.11: seven orders carried the Edge runtime's data-centre IP location — Zurich / Korea / Mumbai) → not a point.
-function _geoInUae(lat, lng) { return lat >= 22 && lat <= 27 && lng >= 51 && lng <= 57; }
 function _geoOf(o) {
   if (!o || (o.geo_src !== 'pin' && o.geo_src !== 'district')) return null;
   const lat = Number(o.geo_lat), lng = Number(o.geo_lng);
-  return (isFinite(lat) && isFinite(lng) && _geoInUae(lat, lng)) ? { lat, lng, src: o.geo_src } : null;
+  return (isFinite(lat) && isFinite(lng)) ? { lat, lng, src: o.geo_src } : null;
 }
 function _geoReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'geo_src'); }
 let _geoBackfillAt = 0;
 const GEO_BACKFILL_MS = 10 * 60000;
 // ids → those orders; null → the pending open orders (≤ 25 per call). The local copies get the result at once.
-async function _geoResolve(ids, timeoutMs) {
-  // v13.115: one card waits 12 s; the pending batch (≤ 25 links followed server side) may take a minute — do not cut it off
-  if (timeoutMs == null) timeoutMs = ids && ids.length ? 12000 : 90000;
+async function _geoResolve(ids, timeoutMs = 12000) {
   if (!_authToken) return null;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
