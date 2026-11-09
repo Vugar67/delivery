@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.113"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.114"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -355,6 +355,36 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .role-operator #prod-export-btn,.role-operator #prod-add-btn,.role-operator #cl-export-btn,.role-operator #cl-add-btn,
 .role-stock #prod-export-btn,.role-stock #prod-add-btn{display:none!important}
 .role-operator #view-products .act-btn,.role-operator #view-clients .act-btn,.role-stock #view-products .act-btn{display:none!important}
+/* v13.114: 🗺 Deliveries map (admin) */
+#dm-overlay{position:fixed;inset:0;background:var(--bg);z-index:2000;display:flex;flex-direction:column;font-family:var(--mono)}
+#dm-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+#dm-top .dm-inp{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text)}
+#dm-top label.dm-tg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+#dm-top label.dm-tg input{accent-color:var(--accent)}
+#dm-body{flex:1;display:flex;min-height:0}
+#dm-side{width:300px;flex-shrink:0;overflow:auto;border-right:1px solid var(--border);background:var(--surface);padding:8px}
+#dm-map{flex:1;min-width:0;background:#1b1f2a}
+.dm-row{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;border:1px solid transparent;font-size:12px}
+.dm-row:hover{background:var(--surface2)}
+.dm-row.on{border-color:var(--accent);background:rgba(245,166,35,.08)}
+.dm-row.dim{opacity:.45}
+.dm-dot{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#000;border:2px solid #fff}
+.dm-name{flex:1;min-width:0;line-height:1.35}
+.dm-name b{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.dm-name span{color:var(--muted);font-size:10.5px}
+.dm-sum{font-size:10.5px;color:var(--muted);padding:6px 9px 2px;text-transform:uppercase;letter-spacing:.06em}
+.dm-nopt{font-size:11px;color:var(--muted);padding:8px 9px;line-height:1.5;border-top:1px solid var(--border);margin-top:6px}
+.dm-pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 11px/1 var(--mono),monospace;color:#000;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.dm-pin.src-pin{border-style:double;border-width:4px}
+.dm-pin.src-district{border-style:dashed;opacity:.85}
+.dm-pin.failed{background:#f87171;color:#fff;border-color:#fff;font-size:13px}
+.dm-legend{margin-left:auto;display:flex;gap:12px;align-items:center;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+.dm-legend i{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-3px;margin-right:4px;border:2px solid #fff;background:var(--accent)}
+.dm-legend i.l-pin{border-style:double;border-width:3px}.dm-legend i.l-district{border-style:dashed;opacity:.85}.dm-legend i.l-failed{background:#f87171}
+.dm-pop{font-family:var(--mono);font-size:12px;line-height:1.5;color:#111;min-width:200px}
+.dm-pop b{font-size:13px}.dm-pop .mu{color:#666}.dm-pop a{color:#1d4ed8}
+.leaflet-container .leaflet-popup-content-wrapper{border-radius:8px}
+@media (max-width:760px){#dm-body{flex-direction:column}#dm-side{width:auto;max-height:38vh;border-right:none;border-bottom:1px solid var(--border)}}
 /* v13.112: Stock Controller (role "stock") — Orders and the order card are VIEW ONLY: no New Order, no WhatsApp, no
    save / delete, no cart or field changes; the card can still be opened and read, ⎘ copy stays. Lab: every station
    visible, nothing clickable. Storage: full access (no rule here). */
@@ -637,6 +667,7 @@ select option{background:#1a1d27;color:#f0f2ff}
         <button class="btn btn-ghost" id="trips-btn" onclick="openTripsPanel()" title="Staff pick-up / drop-off and driver tasks (v13.92)">🚐 Trips</button>
         <button class="btn btn-ghost" id="dw-btn" onclick="openDriversWeek()" title="Weekly drivers report, Excel (admin, v13.92)">📊 Drivers week</button>
         <button class="btn btn-ghost" id="dd-btn" onclick="openDriversDay()" title="Daily drivers report: deliveries with times, Excel (admin, v13.93)">📅 Drivers day</button>
+        <button class="btn btn-ghost" id="dm-btn" onclick="openDeliveriesMap()" title="Where the orders of a day were delivered — every driver on one map, with the failed attempts (admin, v13.114)">🗺 Map</button>
         <button class="btn btn-ghost" id="orders-export-btn" onclick="exportXLSX()">&#8595; XLSX</button>
       </div>
       <!-- DISPATCH MODE PANEL (header bar) -->
@@ -1943,7 +1974,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.113';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.114';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2627,7 +2658,7 @@ async function initApp(){
   if(!CASH_ROLES.includes(currentRole)){ ['cash-btn','dispatch-cash-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
   // v13.92: 🚐 Trips — admin and dispatcher; 📊 Drivers week — admin only
   if(!TRIP_ROLES.includes(currentRole)){ ['trips-btn','dispatch-trips-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
-  if(currentRole!=='admin'){ ['dw-btn','dd-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }
+  if(currentRole!=='admin'){ ['dw-btn','dd-btn','dm-btn'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; }); }   // v13.114: + 🗺 Map
   if(isAdmin || isOperator){   // v13.63: operators see Products + Clients read-only
     nav.innerHTML+=`<a class="tab-btn" href="#products" onclick="showView('products');return false;">Products</a>`;
     nav.innerHTML+=`<a class="tab-btn" href="#clients" onclick="showView('clients');return false;">Clients</a>`;
@@ -11479,6 +11510,191 @@ function _ddPeriodText() { return _ddFrom === _ddTo ? _tripFmtDay(_ddFrom) : _tr
 function _ddApplyFilter() {
   const all = _ddRowsAll || [];
   _ddRows = _ddDriver ? all.filter(r => r.driver_name === _ddDriver) : all.slice();
+}
+
+// ── v13.114: 🗺 DELIVERIES MAP (admin, Vugar 09.11.2026) ─────────────────────────────────────────────────────────────
+// One Dubai day, every own driver on one map: where each order was DELIVERED (numbered in delivery order per driver,
+// a dashed line joins a driver's points in time order) and where the day's FAILED attempts happened (red ✖).
+// The point of a delivered order: the driver's GPS at "Delivered" (driver app) first; otherwise the order's own point
+// (v13.113: exact pin from the link → double ring, ≈ district centre → dashed ring); nothing → listed on the left as
+// "without a map point". A failed attempt: GPS from the driver app's log row; the dispatcher's ↩ Failed → the order's point.
+// Filters: date (‹ › Today), driver (the list on the left or the select), Delivered / Failed / Lines toggles.
+// Data: orders delivered_at in the day + orders whose last_fail_at is in the day (+ their 'driver_delivery_failed' /
+// 'dispatch_delivery_failed' log rows → every attempt of the day). Aramex / pick-up are not drivers → left out.
+let _dmDay = null, _dmDriver = '', _dmMap = null, _dmLayer = null, _dmSeq = 0, _dmData = null;
+const _dmShow = { delivered: true, failed: true, lines: true };
+const DM_COLORS = ['#f5a623', '#60a5fa', '#4ade80', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#facc15', '#38bdf8', '#c084fc', '#86efac', '#fda4af'];
+const DM_COLS = 'id,order_num,driver,client_name,client_number,emirate,city,district,apt,villa,delivery_status,delivered_at,delivery_lat,delivery_lng,' +
+                'geo_lat,geo_lng,geo_src,location_url,total,payment_status,last_fail_at,last_fail_by,last_fail_reason,fail_count';
+function _dmIsDriver(name) { const n = String(name || '').trim().toUpperCase(); return n !== '' && !['ARAMEX', 'PICK-UP', 'PICKUP'].includes(n); }
+function _dmRange(day) { const a = new Date(day + 'T00:00:00+04:00'); return { from: a.toISOString(), to: new Date(a.getTime() + 86400e3).toISOString() }; }
+function _dmTime(iso) { const t = new Date(iso || ''); return isNaN(t) ? '' : t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' }); }
+function _dmNum(v) { const n = Number(v); return isFinite(n) ? n : null; }
+function _dmPoint(o) {   // the delivered order's point: GPS → stored pin / district → coordinates in the link
+  const la = _dmNum(o.delivery_lat), ln = _dmNum(o.delivery_lng);
+  if (la !== null && ln !== null && (la !== 0 || ln !== 0)) return { lat: la, lng: ln, src: 'gps' };
+  const g = _geoOf(o); if (g) return g;
+  const c = extractCoordsFromUrl(o.location_url); return c ? { lat: c.lat, lng: c.lng, src: 'pin' } : null;
+}
+function _dmOrderPoint(o) { const g = _geoOf(o); if (g) return g; const c = extractCoordsFromUrl(o.location_url); return c ? { lat: c.lat, lng: c.lng, src: 'pin' } : null; }
+function _dmAddr(o) { return [o.district || o.apt, o.villa, o.city, o.emirate].filter(Boolean).join(', '); }
+const DM_SRC_TXT = { gps: "driver's GPS at Delivered", pin: 'exact pin from the link', district: '≈ district centre (approximate)' };
+
+async function _dmLoad(day) {
+  const { from, to } = _dmRange(day);
+  const [dRes, fRes] = await Promise.all([
+    sb.from('orders').select(DM_COLS).eq('delivery_status', 'Delivered').is('deleted', null).gte('delivered_at', from).lt('delivered_at', to).order('delivered_at', { ascending: true }).limit(3000),
+    sb.from('orders').select(DM_COLS).is('deleted', null).gte('last_fail_at', from).lt('last_fail_at', to).limit(3000)
+  ]);
+  if (dRes.error) throw dRes.error;
+  if (fRes.error) throw fRes.error;
+  const delivered = (dRes.data || []).filter(o => _dmIsDriver(o.driver)).map(o => ({ kind: 'delivered', order: o, at: o.delivered_at, driver: String(o.driver).trim(), point: _dmPoint(o) }));
+  // failed attempts: one per log row of the day (driver app rows carry GPS); an order without a readable log row → its last_fail_* fields
+  const cands = (fRes.data || []).filter(o => _dmIsDriver(o.last_fail_by));
+  const byId = {}; cands.forEach(o => byId[o.id] = o);
+  const failed = []; const seen = new Set();
+  const ids = cands.map(o => o.id);
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await sb.from('logs').select('entity_id,created_at,details').in('entity_id', ids.slice(i, i + 100)).gte('created_at', from).lt('created_at', to).limit(2000);
+    if (error) break;
+    (data || []).forEach(l => {
+      const d = l.details || {}; if (!['driver_delivery_failed', 'dispatch_delivery_failed'].includes(d.action)) return;
+      const o = byId[l.entity_id]; if (!o) return;
+      const drv = String(d.driver_failed || o.last_fail_by || '').trim(); if (!_dmIsDriver(drv)) return;
+      const la = _dmNum(d.lat), ln = _dmNum(d.lng);
+      const point = (la !== null && ln !== null && (la || ln)) ? { lat: la, lng: ln, src: 'gps' } : _dmOrderPoint(o);
+      failed.push({ kind: 'failed', order: o, at: l.created_at, driver: drv, reason: d.reason || o.last_fail_reason || '', via: d.action === 'driver_delivery_failed' ? 'Driver app' : 'Dispatcher', point });
+      seen.add(o.id);
+    });
+  }
+  cands.forEach(o => { if (!seen.has(o.id)) failed.push({ kind: 'failed', order: o, at: o.last_fail_at, driver: String(o.last_fail_by).trim(), reason: o.last_fail_reason || '', via: '—', point: _dmOrderPoint(o) }); });
+  failed.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  // drivers of the day, colours by name
+  const names = Array.from(new Set(delivered.concat(failed).map(e => e.driver))).sort((a, b) => a.localeCompare(b));
+  const color = {}; names.forEach((n, i) => color[n] = DM_COLORS[i % DM_COLORS.length]);
+  return { day, delivered, failed, names, color };
+}
+
+async function openDeliveriesMap(day) {
+  if (currentRole !== 'admin') { toast('🔒 Map — admins only', true); return; }
+  if (typeof L === 'undefined') { toast('Map library did not load — check the internet connection and reload', true); return; }
+  _dmDay = day || _dmDay || _dubaiToday();
+  if (_dmDay > _dubaiToday()) _dmDay = _dubaiToday();
+  let ov = document.getElementById('dm-overlay');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'dm-overlay';
+    ov.innerHTML = `
+      <div id="dm-top">
+        <div style="font-size:15px;font-weight:700;color:var(--accent)">🗺 Deliveries map</div>
+        <input type="date" id="dm-date" class="dm-inp">
+        <button type="button" id="dm-prev" class="btn btn-ghost" style="padding:4px 10px" title="Previous day">‹</button>
+        <button type="button" id="dm-next" class="btn btn-ghost" style="padding:4px 10px" title="Next day">›</button>
+        <button type="button" id="dm-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
+        <select id="dm-driver" class="dm-inp" style="min-width:160px"><option value="">All drivers</option></select>
+        <label class="dm-tg"><input type="checkbox" id="dm-tg-delivered" checked> delivered</label>
+        <label class="dm-tg"><input type="checkbox" id="dm-tg-failed" checked> failed attempts</label>
+        <label class="dm-tg"><input type="checkbox" id="dm-tg-lines" checked> route lines</label>
+        <button type="button" id="dm-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
+        <div class="dm-legend"><span><i></i>driver's GPS</span><span><i class="l-pin"></i>pin from the link</span><span><i class="l-district"></i>≈ district</span><span><i class="l-failed"></i>failed attempt</span></div>
+        <span id="dm-x" style="cursor:pointer;color:var(--muted);font-size:18px;padding:2px 8px" title="Close (Esc)">✕</span>
+      </div>
+      <div id="dm-body"><div id="dm-side">Loading…</div><div id="dm-map"></div></div>`;
+    document.body.appendChild(ov);
+    const close = () => { document.removeEventListener('keydown', onKey); if (_dmMap) { try { _dmMap.remove(); } catch (e) {} _dmMap = null; _dmLayer = null; } ov.remove(); };
+    const onKey = ev => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    ov.querySelector('#dm-x').onclick = close;
+    ov.querySelector('#dm-prev').onclick = () => openDeliveriesMap(_tripShift(_dmDay, -1));
+    ov.querySelector('#dm-next').onclick = () => openDeliveriesMap(_tripShift(_dmDay, 1));
+    ov.querySelector('#dm-today').onclick = () => openDeliveriesMap(_dubaiToday());
+    ov.querySelector('#dm-refresh').onclick = () => openDeliveriesMap(_dmDay);
+    ov.querySelector('#dm-date').onchange = ev => { if (ev.target.value) openDeliveriesMap(ev.target.value); };
+    ov.querySelector('#dm-driver').onchange = ev => { _dmDriver = ev.target.value; _dmRender(); };
+    ['delivered', 'failed', 'lines'].forEach(k => ov.querySelector('#dm-tg-' + k).onchange = ev => { _dmShow[k] = ev.target.checked; _dmRender(); });
+    _dmMap = L.map(ov.querySelector('#dm-map'), { zoomControl: true }).setView([25.2048, 55.2708], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM', maxZoom: 19 }).addTo(_dmMap);
+    _dmLayer = L.layerGroup().addTo(_dmMap);
+    setTimeout(() => { try { _dmMap.invalidateSize(); } catch (e) {} }, 60);
+  }
+  ov.querySelector('#dm-date').value = _dmDay;
+  ov.querySelector('#dm-date').max = _dubaiToday();
+  ov.querySelector('#dm-next').disabled = _dmDay >= _dubaiToday();
+  const side = ov.querySelector('#dm-side'); side.innerHTML = '<div class="dm-sum">Loading…</div>';
+  const seq = ++_dmSeq;
+  try {
+    const data = await _dmLoad(_dmDay);
+    if (seq !== _dmSeq || !document.getElementById('dm-overlay')) return;   // a newer day was requested meanwhile
+    _dmData = data;
+  } catch (e) {
+    if (seq !== _dmSeq || !document.getElementById('dm-overlay')) return;
+    _dmData = null; side.innerHTML = `<div class="dm-nopt" style="color:var(--red)">${escHtml((e && e.message) || 'failed to load')}</div>`; return;
+  }
+  const sel = ov.querySelector('#dm-driver');
+  if (_dmDriver && !_dmData.names.includes(_dmDriver)) _dmDriver = '';
+  sel.innerHTML = '<option value="">All drivers</option>' + _dmData.names.map(n => `<option value="${escAttr(n)}"${n === _dmDriver ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+  _dmRender();
+}
+
+function _dmPinHtml(color, text, src, failed) {   // a failed attempt is red with the driver's colour as the ring
+  return `<div class="dm-pin${failed ? ' failed' : ' src-' + (src || 'gps')}" style="background:${failed ? '#f87171' : color}${failed ? ';border-color:' + color : ''}">${text}</div>`;
+}
+function _dmPopup(e, n) {
+  const o = e.order, p = e.point;
+  const gm = p ? `<a href="https://www.google.com/maps?q=${encodeURIComponent(p.lat + ',' + p.lng)}" target="_blank" rel="noopener">Google Maps</a>` : '';
+  const head = e.kind === 'failed'
+    ? `<b style="color:#b91c1c">✖ Failed attempt</b> · ${escHtml(_dmTime(e.at))} · ${escHtml(e.driver)}<br>${escHtml(o.order_num)}${e.reason ? ' · <i>' + escHtml(e.reason) + '</i>' : ''} <span class="mu">(${escHtml(e.via)})</span>`
+    : `<b>${n ? n + '. ' : ''}${escHtml(o.order_num)}</b> · ${escHtml(_dmTime(e.at))} · ${escHtml(e.driver)}`;
+  return `<div class="dm-pop">${head}<br>${escHtml(o.client_name || '—')}<br><span class="mu">${escHtml(_dmAddr(o) || '—')}</span>` +
+    `<br><span class="mu">${p ? escHtml(DM_SRC_TXT[p.src] || p.src) : 'no map point'}</span>${gm ? ' · ' + gm : ''}` +
+    `${o.location_url ? ` · <a href="${escAttr(o.location_url)}" target="_blank" rel="noopener">order link</a>` : ''}</div>`;
+}
+
+function _dmRender() {
+  const d = _dmData; if (!d || !_dmLayer) return;
+  const side = document.getElementById('dm-side'); if (!side) return;
+  _dmLayer.clearLayers();
+  const show = n => !_dmDriver || n === _dmDriver;
+  const bounds = []; let shown = 0, noPoint = [];
+  d.names.forEach(name => {
+    if (!show(name)) return;
+    const col = d.color[name];
+    const dl = d.delivered.filter(e => e.driver === name);
+    if (_dmShow.delivered) {
+      const path = [];
+      dl.forEach((e, i) => {
+        if (!e.point) { noPoint.push(e); return; }
+        const ll = [e.point.lat, e.point.lng]; path.push(ll); bounds.push(ll); shown++;
+        L.marker(ll, { icon: L.divIcon({ className: 'dm-ico', html: _dmPinHtml(col, i + 1, e.point.src, false), iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12] }), title: e.order.order_num + ' · ' + _dmTime(e.at) + ' · ' + name, zIndexOffset: 200 })
+          .bindPopup(_dmPopup(e, i + 1)).addTo(_dmLayer);
+      });
+      if (_dmShow.lines && path.length > 1) L.polyline(path, { color: col, weight: 2.5, opacity: .8, dashArray: '6 6' }).addTo(_dmLayer);
+    }
+    if (_dmShow.failed) {
+      d.failed.filter(e => e.driver === name).forEach(e => {
+        if (!e.point) { noPoint.push(e); return; }
+        const ll = [e.point.lat, e.point.lng]; bounds.push(ll); shown++;
+        L.marker(ll, { icon: L.divIcon({ className: 'dm-ico', html: _dmPinHtml(col, '✖', e.point.src, true), iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12] }), title: e.order.order_num + ' · failed ' + _dmTime(e.at) + ' · ' + name, zIndexOffset: 400 })
+          .bindPopup(_dmPopup(e, 0)).addTo(_dmLayer);
+      });
+    }
+  });
+  if (bounds.length) { try { _dmMap.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 15 }); } catch (e) {} }
+  // left side: totals, one row per driver, the points we could not place
+  const totD = d.delivered.length, totF = d.failed.length;
+  let h = `<div class="dm-sum">${escHtml(_tripFmtDay(d.day))} · ${totD} delivered · ${totF} failed · ${shown} on the map</div>`;
+  h += `<div class="dm-row${_dmDriver ? '' : ' on'}" data-drv=""><div class="dm-dot" style="background:var(--surface2);color:var(--text);border-color:var(--border)">${d.names.length}</div><div class="dm-name"><b>All drivers</b><span>${totD} delivered · ${totF} failed</span></div></div>`;
+  d.names.forEach(name => {
+    const dl = d.delivered.filter(e => e.driver === name), fl = d.failed.filter(e => e.driver === name);
+    const times = dl.map(e => e.at).filter(Boolean).sort();
+    const span = times.length ? _dmTime(times[0]) + (times.length > 1 ? '–' + _dmTime(times[times.length - 1]) : '') : '';
+    const miss = dl.filter(e => !e.point).length + fl.filter(e => !e.point).length;
+    h += `<div class="dm-row${_dmDriver === name ? ' on' : (_dmDriver ? ' dim' : '')}" data-drv="${escAttr(name)}"><div class="dm-dot" style="background:${d.color[name]}">${dl.length}</div>` +
+         `<div class="dm-name"><b>${escHtml(name)}</b><span>${dl.length} delivered${fl.length ? ' · <span style="color:var(--red)">' + fl.length + ' failed</span>' : ''}${span ? ' · ' + escHtml(span) : ''}${miss ? ' · ' + miss + ' no point' : ''}</span></div></div>`;
+  });
+  if (!d.names.length) h += '<div class="dm-nopt">No deliveries by own drivers on this day.</div>';
+  if (noPoint.length) h += `<div class="dm-nopt"><b>Without a map point (${noPoint.length}):</b> ${noPoint.map(e => escHtml(e.order.order_num) + (e.kind === 'failed' ? ' ✖' : '') + ' · ' + escHtml(e.driver)).join('<br>')}<br><span style="font-size:10px">no GPS from the app and no coordinates on the order (closed before v13.113, or a link without a pin)</span></div>`;
+  side.innerHTML = h;
+  side.querySelectorAll('.dm-row').forEach(r => r.onclick = () => { const n = r.dataset.drv || ''; _dmDriver = (_dmDriver === n) ? '' : n; const sel = document.getElementById('dm-driver'); if (sel) sel.value = _dmDriver; _dmRender(); });
 }
 
 async function openDriversDay(from, to) {
