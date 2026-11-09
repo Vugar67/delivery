@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.114.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.115"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1974,7 +1974,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.114.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.115';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -10800,16 +10800,21 @@ function extractCoordsFromUrl(url) {
 // side (it follows the short Google links itself — no CORS proxies). The core asks it (a) right after an order with a
 // link is saved, (b) for a selected card that has no point yet, (c) for the pending open orders when Dispatch opens.
 // Before the migration the columns are absent → everything below is a no-op and the old browser path works as before.
+// v13.115: the UAE with a margin — the company delivers here; a stored point outside it is a resolver accident, not an
+// address (09.11: seven orders carried the Edge runtime's data-centre IP location — Zurich / Korea / Mumbai) → not a point.
+function _geoInUae(lat, lng) { return lat >= 22 && lat <= 27 && lng >= 51 && lng <= 57; }
 function _geoOf(o) {
   if (!o || (o.geo_src !== 'pin' && o.geo_src !== 'district')) return null;
   const lat = Number(o.geo_lat), lng = Number(o.geo_lng);
-  return (isFinite(lat) && isFinite(lng)) ? { lat, lng, src: o.geo_src } : null;
+  return (isFinite(lat) && isFinite(lng) && _geoInUae(lat, lng)) ? { lat, lng, src: o.geo_src } : null;
 }
 function _geoReady(o) { return !!o && Object.prototype.hasOwnProperty.call(o, 'geo_src'); }
 let _geoBackfillAt = 0;
 const GEO_BACKFILL_MS = 10 * 60000;
 // ids → those orders; null → the pending open orders (≤ 25 per call). The local copies get the result at once.
-async function _geoResolve(ids, timeoutMs = 12000) {
+async function _geoResolve(ids, timeoutMs) {
+  // v13.115: one card waits 12 s; the pending batch (≤ 25 links followed server side) may take a minute — do not cut it off
+  if (timeoutMs == null) timeoutMs = ids && ids.length ? 12000 : 90000;
   if (!_authToken) return null;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
