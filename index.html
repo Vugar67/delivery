@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.117"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.118"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1979,7 +1979,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.117';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.118';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6619,8 +6619,9 @@ async function _loadLabOrphans() {
       const oids = [...new Set(Object.values(itemOrder).filter(Boolean).map(String))];
       const rows = {};
       for (let i = 0; i < oids.length; i += 100) {
-        const { data } = await sb.from('orders').select('id,order_num,delivery_status,stock_out_at,deleted,priority,client_name,seller_name,sched_date').in('id', oids.slice(i, i + 100));
-        (data || []).forEach(o => rows[String(o.id)] = o);
+        const { data } = await sb.from('orders').select('id,order_num,delivery_status,stock_out_at,deleted,priority,client_name,seller_name,sched_date,created_at,updated_at,updated_by').in('id', oids.slice(i, i + 100));
+        (data || []).forEach(o => { rows[String(o.id)] = o;   // v13.118: their created / updated stamps too
+          const m = { created_at: o.created_at, updated_at: o.updated_at, updated_by: o.updated_by, order_num: o.order_num }; labOrderMeta[String(o.id)] = m; if (o.order_num) labOrderMeta[o.order_num] = m; });
       }
       orph.forEach(b => { const oid = itemOrder[b.order_item_id]; map[b.order_item_id] = rows[String(oid)] || (oid ? { id: oid } : null); });
     }
@@ -6883,7 +6884,7 @@ function _labStationOrderCards(stage, lineCtrl, cardAction) {
     cards.push({ prio: prio ?? 9, date: String(c0.sched_date || '9999'), when: String(when || ''), html: `<div class="lab-card custom order-card${prio === 1 ? ' urgent' : ''}" data-order="${escAttr(oid)}">
       <div class="lab-row">
         <div class="lab-name">${escAttr(c0.order_num || '')}${!c0.order_num ? '<span style="color:var(--muted)">order ?</span>' : ''} ${_labUrgChip(prio)} <span class="lab-chip custom">per order · ${bs.length} of ${lines.length || bs.length} line${(lines.length || bs.length) === 1 ? '' : 's'} here</span>${orphan ? _labOrphanChip(orphan) : ''}</div>
-        <div class="lab-meta" style="margin:0">${_labWho(lines.find(c => c.client_name || c.seller_name) || c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}</div>
+        <div class="lab-meta" style="margin:0">${_labWho(lines.find(c => c.client_name || c.seller_name) || c0)}${c0.sched_date ? `<span>delivery <b>${_labDate(c0.sched_date)}</b></span>` : ''}${_labStampHtml(_labMetaFor(oid))}</div>
       </div>
       <div class="lab-lines">${rows}</div>
       ${_labStockLine(c0)}
