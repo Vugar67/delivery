@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.118"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.119"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1979,7 +1979,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.118';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.119';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2463,6 +2463,26 @@ function fmtSched(o) {
   const t = [o.sched_from, o.sched_to].filter(Boolean).map(x => String(x).slice(0, 5)).join('–');
   return t ? `${dd} ${t}` : dd;
 }
+
+// ── v13.119: scheduled deliveries (Vugar, 11.11.2026) ─────────────────────────────────────────────────────────────
+// An order whose Scheduled Delivery date is AFTER today (Dubai) waits in its own "🗓 Scheduled" column on the warehouse
+// board (right end) and in a "Scheduled later" block under the Dispatch queue; on its day it moves by itself to its
+// emirate column / the queue. The warehouse may pack it earlier (it then waits as "packed" in Scheduled). The boards
+// re-render when the Dubai date changes (minute timer), so the move happens at midnight without a reload.
+function _schedFuture(o) { return !!(o && o.sched_date && String(o.sched_date).slice(0, 10) > _dubaiToday()); }
+function _schedChip(o) {
+  if (!o || !o.sched_date) return '';
+  return `<span title="Scheduled delivery" style="font-family:var(--mono);font-size:10px;color:var(--blue);background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.35);border-radius:5px;padding:0 5px;white-space:nowrap">🗓 ${escHtml(fmtSched(o))}</span>`;
+}
+let _schedDay = null;
+setInterval(() => {   // the day turned over → scheduled orders of the new day move to their columns
+  const d = _dubaiToday();
+  if (_schedDay && d !== _schedDay) {
+    try { if (document.getElementById('warehouse-queue')) renderWarehouseQueue(); } catch (e) {}
+    try { if (document.getElementById('dcol-queue')) renderDispatchQueue(); } catch (e) {}
+  }
+  _schedDay = d;
+}, 60000);
 
 function toUAE(utcStr) {
   if (!utcStr) return '—';
@@ -4837,9 +4857,12 @@ function renderWarehouseQueue() {
   // LAB_TRANSITION: during the roll-out the board still shows "Processing in Lab" too (pre-v13.74
   // behaviour: the warehouse decided what was ready by looking at the shelf). Flip to false once the
   // inventory count is done and the lab has run for a week.
-  const active = orders.filter(o => (o.delivery_status || '') === 'Ready in Lab' || (LAB_TRANSITION && (o.delivery_status || '') === 'Processing in Lab')).filter(_whMatch);
+  const activeAll = orders.filter(o => (o.delivery_status || '') === 'Ready in Lab' || (LAB_TRANSITION && (o.delivery_status || '') === 'Processing in Lab')).filter(_whMatch);
   // Parked = Ready for Pick-up. Stays until En Route.
-  const parked = orders.filter(o => o.delivery_status === 'Ready for Pick-up').filter(_whMatch);
+  const parkedAll = orders.filter(o => o.delivery_status === 'Ready for Pick-up').filter(_whMatch);
+  // v13.119: delivery date after today → the "🗓 Scheduled" column at the right end, not the emirate columns
+  const active = activeAll.filter(o => !_schedFuture(o)), parked = parkedAll.filter(o => !_schedFuture(o));
+  const schedA = activeAll.filter(_schedFuture), schedP = parkedAll.filter(_schedFuture);
 
   // Fixed columns: every emirate defined in the Directory (locations), always
   // shown even when empty, in the Directory's sort order. Plus any stray emirate
@@ -4854,18 +4877,18 @@ function renderWarehouseQueue() {
     : [...dirEmirates, ...stray];
   if (seen.has('—')) present.push('—');
 
-  if (_whSearch && !present.length) {
+  if (_whSearch && !present.length && !schedA.length && !schedP.length) {
     container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--muted)">No orders match "${escHtml(_whSearch)}"</div>`;
     return;
   }
 
-  if (!present.length) {
+  if (!present.length && !schedA.length && !schedP.length) {
     container.innerHTML = '<div style="text-align:center;padding:48px;color:var(--muted)">No orders on the board</div>';
     return;
   }
 
   // Card row: priority dot + order number + item count (+ copy).
-  const card = (o, dimmed) => {
+  const card = (o, dimmed, sched) => {
     const items = orderItems[o.id] || [];
     const qty = items.reduce((s,i) => s + (i.quantity||1), 0);
     return `<div onclick="whCardClick('${o.id}',${dimmed})" style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:${dimmed?'default':'pointer'};opacity:${dimmed?'.5':'1'};transition:.15s">
@@ -4874,6 +4897,7 @@ function renderWarehouseQueue() {
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.order_num||'—'}</span>
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">🕐 ${toUAEDateTime(o.created_at).slice(5)}${!dimmed && LAB_TRANSITION ? (o.delivery_status === 'Ready in Lab' ? ' <span style="color:var(--green)" title="Lab: all items covered by stock">· lab ✓</span>' : ' <span style="color:var(--yellow)" title="Lab: not all items covered yet">· lab …</span>') : ''}</span>
       </span>
+      ${sched ? `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">${_schedChip(o)}<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${escHtml(o.emirate || '—')}</span></span>` : ''}
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0" title="items in order">📦 ${qty}</span>
       <button onclick="event.stopPropagation();whCopyBlock('${o.id}',this)" title="Copy order info" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">⧉</button>
       <button class="wh-print" onclick="event.stopPropagation();whPrintLabel('${o.id}',this)" title="Print the 3 × 2 in label (order info + QR)" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">🖨</button>
@@ -4899,7 +4923,23 @@ function renderWarehouseQueue() {
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div class="wh-scroll" style="display:flex;gap:12px;overflow-x:auto;padding:12px;align-items:flex-start">${cols}</div>`;
+  // v13.119: 🗓 Scheduled — by delivery date, then priority; packed ones under the line, as in the emirate columns
+  const bySched = a => a.slice().sort((x, y) => String(x.sched_date).localeCompare(String(y.sched_date)) || String(x.sched_from || '').localeCompare(String(y.sched_from || '')) || ((x.priority || 3) - (y.priority || 3)) || (onum(x) - onum(y)));
+  const sA = bySched(schedA), sP = bySched(schedP);
+  const schedCol = (sA.length || sP.length) ? `<div class="wh-sched-col" style="flex:0 0 262px;background:var(--surface2);border:1px dashed rgba(96,165,250,.6);border-radius:12px;padding:10px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span style="font-weight:700;font-size:14px;color:var(--blue)">🗓 Scheduled</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 9px">${sA.length}${sP.length ? (' + ' + sP.length + ' packed') : ''}</span>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.4">delivery on a later day — moves to its emirate on that day; can be packed earlier</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${sA.length ? sA.map(o => card(o, false, true)).join('') : '<div style="font-size:11px;color:var(--muted);padding:6px 2px">—</div>'}
+      </div>
+      ${sP.length ? `<div style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px;border-top:1px dashed var(--border);padding-top:8px">✓ packed — waits for its day</div>
+      <div style="display:flex;flex-direction:column;gap:6px">${sP.map(o => card(o, true, true)).join('')}</div>` : ''}
+    </div>` : '';
+
+  container.innerHTML = `<div class="wh-scroll" style="display:flex;gap:12px;overflow-x:auto;padding:12px;align-items:flex-start">${cols}${schedCol}</div>`;
   const sc = container.querySelector('.wh-scroll');
   if (sc) sc.scrollLeft = prevScroll;
 }
@@ -5980,6 +6020,19 @@ async function saveOrder(){
     const existingOrder = orders.find(x => x.id === editId);
     payload.order_num = existingOrder?.order_num || get('f-num');
   }
+  // v13.119: the order is with a driver (En Route) and its delivery date moves to a later day → offer to take it back:
+  // Ready for Pick-up, driver removed (the same reset as ↩ Failed) — it then waits in "🗓 Scheduled" for its day.
+  let _schedBack = null;
+  if (editId) {
+    const _so = orders.find(x => x.id === editId);
+    if (_so && (_so.delivery_status || '') === 'En Route' && payload.delivery_status === 'En Route' && payload.sched_date
+        && String(payload.sched_date) !== String(_so.sched_date || '') && String(payload.sched_date) > _dubaiToday()) {
+      if (confirm(`🗓 ${_so.order_num} is En Route with ${_so.driver || 'a driver'}, and its delivery date moves to ${fmtSched(payload)}.\n\nReturn it to the warehouse now?\n• status → Ready for Pick-up\n• driver removed (he no longer sees it in the app)\n• it waits in "Scheduled" until that day\n\nOK = return it · Cancel = keep it with the driver`)) {
+        _schedBack = { driver: _so.driver || null, to: payload.sched_date };
+        Object.assign(payload, { delivery_status: 'Ready for Pick-up', driver: null, wa_sent: false, wa_sent_at: null, wa_sent_by: null });
+      }
+    }
+  }
   // v13.107: "Order Details" review — the last look before anything is written. Cancel → form stays, nothing saved.
   if (!(await orderReviewDialog(payload, !editId, payload.order_num))) { btn.disabled = false; btn.textContent = 'Save Order'; return; }
   // v13.70.5: stamp the physical delivery moment on a manual close, clear it on
@@ -6004,6 +6057,7 @@ async function saveOrder(){
   let orderId=editId;
   if(editId){
     const{error}=await sb.from('orders').update(payload).eq('id',editId);
+    if (!error && _schedBack) logEvent('UPDATE', 'order', editId, { order_num: payload.order_num, action: 'rescheduled_back_to_warehouse', driver_was: _schedBack.driver, sched_date: _schedBack.to, delivery_status: 'Ready for Pick-up' });   // v13.119
     if(error){(console.log('DB error:', error), toast('Something went wrong. Please try again.', true));btn.disabled=false;btn.textContent='Save Order';return;}
   }else{
     payload.created_by=currentUser.email;
@@ -11118,15 +11172,23 @@ function renderDispatchQueue() {
   const el = document.getElementById('dcol-queue');
   const countEl = document.getElementById('dcol-queue-count');
   if (!el) return;
-  const allQueue = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
+  const readyAll = orders.filter(o => o.delivery_status === 'Ready for Pick-up');
+  const allQueue = readyAll.filter(o => !_schedFuture(o));          // v13.119: later days wait below, in "Scheduled later"
+  const later = readyAll.filter(_schedFuture).sort((x, y) => String(x.sched_date).localeCompare(String(y.sched_date)) || String(x.sched_from || '').localeCompare(String(y.sched_from || '')));
+  const laterHtml = later.length ? `<div style="margin:12px 2px 6px;font-family:var(--mono);font-size:10px;color:var(--blue);text-transform:uppercase;letter-spacing:.07em;border-top:1px dashed rgba(96,165,250,.45);padding-top:8px">🗓 Scheduled later — ${later.length} <span style="text-transform:none;color:var(--muted)">· packed, delivery on a later day; they join the queue on their day</span></div>` +
+    later.map(o => `<div onclick="dispatchSchedClick('${o.id}')" style="cursor:pointer;border-radius:8px;padding:8px 12px;margin-bottom:6px;border:1px dashed rgba(96,165,250,.4);background:rgba(96,165,250,.05);opacity:.8">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</span><span style="margin-left:auto">${_schedChip(o)}</span></div>
+      <div style="font-size:12px;color:var(--text)">${o.client_name || '—'}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">${[o.emirate, o.city].filter(Boolean).join(' · ')}</div>
+    </div>`).join('') : '';
   _dfRenderChips('queue', allQueue);                       // v13.71
   const queue = dispatchApplyFilter(allQueue, 'queue');    // v13.71
   if (countEl) countEl.textContent = _dfCountText(queue.length, allQueue.length);
   if (!allQueue.length) {
-    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No orders in queue</div>';
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No orders in queue</div>' + laterHtml;
     return;
   }
-  if (!queue.length) { el.innerHTML = _dfEmptyHtml('queue'); return; }
+  if (!queue.length) { el.innerHTML = _dfEmptyHtml('queue') + laterHtml; return; }
   el.innerHTML = queue.map(o => {
     const isSelected = dispatchSelected.find(s => s.id === o.id);
     const items = orderItems[o.id] || [];
@@ -11135,6 +11197,7 @@ function renderDispatchQueue() {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <div style="width:8px;height:8px;border-radius:50%;background:${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};box-shadow:0 0 6px ${o.priority===1?'#ff2222':o.priority===2?'#ffcc00':'#00ee44'};flex-shrink:0"></div>
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">${o.order_num}</span>
+        ${o.sched_date ? _schedChip(o) : ''}
         ${isSelected ? '<span style="margin-left:auto;font-size:10px;color:var(--accent);font-family:var(--mono);background:rgba(245,166,35,.2);padding:1px 6px;border-radius:4px">SELECTED</span>' : ''}
       </div>
       <div style="font-size:12px;color:var(--text)">${o.client_name||'—'}</div>
@@ -11143,7 +11206,14 @@ function renderDispatchQueue() {
       ${_failBadgeHtml(o)}
       ${o.driver_note && o.driver_note.trim() ? `<div style="font-size:11px;color:var(--accent);margin-top:4px;white-space:pre-wrap;line-height:1.4">📝 ${escHtml(o.driver_note.trim())}</div>` : ''}
     </div>`;
-  }).join('');
+  }).join('') + laterHtml;
+}
+// v13.119: a "Scheduled later" card — sending it today is possible, but asked
+function dispatchSchedClick(id) {
+  const o = orders.find(x => x.id === id); if (!o) return;
+  if (dispatchSelected.find(s => s.id === id)) { toggleDispatchOrder(id); return; }
+  if (!confirm(o.order_num + ' is scheduled for ' + fmtSched(o) + '.\nSend it TODAY anyway?')) return;
+  toggleDispatchOrder(id);
 }
 
 // v13.85: last failed delivery attempt (driver app or ↩ Failed), shown in the queue for 24 h
