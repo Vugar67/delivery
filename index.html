@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.120.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.121"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1979,7 +1979,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.120.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.121';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2703,6 +2703,7 @@ async function initApp(){
   }
 
   await Promise.all([loadRefs(),loadOrders(),loadProducts(),loadLocations(),loadDrivers(),loadDeliveryRates(),loadClients(),loadPartners(),loadDriverMessages(),loadAliases(),loadUnits(),loadComponents(),loadProductComponents(),loadStorage(),loadCustomProducts(),loadDefaultQuantities(),loadDosageSuffixes(),loadSystemRoles()]);
+  _rcvStartPoll();   // v13.121: 📥 badge on Storage for the Stock Controller / admin
   renderFilters();
   // Check URL hash for initial view
   const hash = window.location.hash.replace('#','');
@@ -2799,7 +2800,7 @@ function showView(v){
     renderClients();
   }
   if(v==='brands') renderBrandProfiles();
-  if(v==='storage') renderStorage();
+  if(v==='storage') { renderStorage(); if (['admin', 'stock'].includes(currentRole)) loadStorage().then(renderStorage).catch(() => {}); }   // v13.121: fresh lab batches to receive
 }
 
 function renderFilters(){
@@ -4826,7 +4827,7 @@ function whCloseModal() {
 
 // ─── WAREHOUSE ───────────────────────────────────────────────────
 let _whSearch = '';
-const LAB_TRANSITION = true;   // v13.74: warehouse board also shows 'Processing in Lab' until the lab line is trusted
+const LAB_TRANSITION = false;   // v13.121 (Aysel / Vugar 12.11.2026): the warehouse sees ONLY Ready in Lab — an order waiting for the lab or for the Stock Controller is not on the board   // v13.74: warehouse board also shows 'Processing in Lab' until the lab line is trusted
 function onWhSearch(v) {
   _whSearch = (v || '').trim();
   const clr = document.getElementById('wh-search-clear');
@@ -6503,6 +6504,7 @@ async function loadProductComponents() {
 const LAB_POLL_MS = 10000;
 const LAB_REJECT_REASONS = ['Leak', 'Underfill', 'Label', 'Contamination', 'Other'];
 let labDemand = [], labCustom = [], labBatches = [], labHistory = [], labLoadedAt = null;
+let labHandover = [];   // v13.121: stock batches accepted by QA, waiting for the Stock Controller (stage handover)
 // v13.111: created / last-update stamps of the orders behind the Mixer list — keyed by order id AND order number
 // (lab_order_lines_v gives ids, lab_demand_v gives order numbers). Loaded with the lab data; drives the sort.
 let labOrderMeta = {};
@@ -6641,7 +6643,9 @@ async function loadLab(manual) {
       sb.from('lab_batches').select('*').in('stage', ['mixing', 'packing', 'qa']).order('created_at', { ascending: true }),
     ];
     if (stage === 'all') reqs.push(sb.from('lab_batches').select('*').in('stage', ['done', 'cancelled']).order('updated_at', { ascending: false }).limit(40));
+    const _hoReq = (stage === 'all' || stage === 'qa') ? sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true }) : null;   // v13.121
     const res = await Promise.all(reqs);
+    if (_hoReq) { const h = await _hoReq; labHandover = h.error ? [] : (h.data || []); }
     const bad = res.find(r => r.error);
     if (bad) { if (manual) toast('Lab: ' + _labErr(bad.error), true); return; }
     labDemand  = res[0].data || [];
@@ -7153,7 +7157,8 @@ function _labQaShowRej(b, ok) { return b.qty_packed - ok > 0 && (ok > 0 || _labQ
 function labQaRejectAll(batchId) { _labQaRejAll[batchId] = true; renderLabQA(); }
 function _labQaCtrl(b) {
   const ok = Math.min(_labQaTally[b.id] || 0, b.qty_packed), rej = b.qty_packed - ok, showRej = _labQaShowRej(b, ok);
-  return `<div class="lab-tally sm" style="margin:0">
+  const mm = (!b.order_item_id && b.mismatch_qty != null) ? `<div class="ho-mismatch" style="margin:0 0 8px;padding:7px 10px;border:1px solid var(--red);border-radius:8px;background:rgba(248,113,113,.12);color:var(--red);font-size:12px">⚠ Sent back by the Stock Controller: <b>counted ${b.mismatch_qty}</b>, QA accepted <b>${b.qty_qa_ok ?? '?'}</b>${b.mismatch_by ? ' · ' + escAttr(b.mismatch_by) : ''}${b.mismatch_at ? ' · ' + _labWhen(b.mismatch_at) : ''}.<br>Find the missing vial and accept again — or count again: the vials that are not there go as rejected, with a reason.</div>` : '';   // v13.121
+  return mm + `<div class="lab-tally sm" style="margin:0">
       <button class="lab-tap minus" onclick="labQaTap(${b.id}, -1)" ${ok <= 0 ? 'disabled' : ''} title="Undo one">−</button>
       <div class="lab-count${ok >= b.qty_packed ? ' capped' : ''}" id="lab-qa-count-${b.id}">${ok} <span>/ ${b.qty_packed}</span><small>OK</small></div>
       <button class="lab-tap" onclick="labQaTap(${b.id}, 1)" ${ok >= b.qty_packed ? 'disabled' : ''} title="One more good vial">+</button>
@@ -7183,7 +7188,21 @@ function _labQaLinesClean(orderId) {   // lines where every packed vial was tapp
 }
 function renderLabQA() {
   _labStationRender('qa', 'lab-body-qa', 'lab-cnt-qa', _labQaCtrl,
-    (oid, bs) => `<button class="lab-btn ok" onclick="labQaAcceptOrder('${escAttr(oid)}')" ${_labQaLinesClean(oid).length ? '' : 'disabled'}>✓ Accept all OK → order</button>`, 'Nothing at QA');
+    (oid, bs) => `<button class="lab-btn ok" onclick="labQaAcceptOrder('${escAttr(oid)}')" ${_labQaLinesClean(oid).length ? '' : 'disabled'}>✓ Accept all OK → order</button>`, labHandover.length ? '' : 'Nothing at QA');
+  const el = document.getElementById('lab-body-qa');
+  if (el && labHandover.length) el.insertAdjacentHTML('beforeend', _labHandoverHtml());
+}
+// v13.121: stock batches QA accepted that the Stock Controller has not received yet — QA (the supervisor) follows the handover
+function _waitMin(ts) { return ts ? Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000)) : 0; }
+function _waitText(m) { return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
+const HANDOVER_LATE_MIN = 30;
+function _labHandoverHtml() {
+  return `<div class="lab-sec" style="margin-top:12px">⏳ Waiting for Stock Controller <span class="lab-cnt">${labHandover.length}</span></div>` +
+    labHandover.map(b => { const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; return `<div class="lab-card ho-card" style="opacity:.85;${late ? 'border-color:var(--red)' : ''}">
+      <div class="lab-row"><div class="lab-name">${escAttr(_labBatchName(b))} <span class="lab-chip">for stock</span></div><div class="lab-need">${b.qty_qa_ok}<small>accepted</small></div></div>
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}</span>${b.qa_email ? `<span>${escAttr(b.qa_email)}</span>` : ''}
+        <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span></div>
+    </div>`; }).join('');
 }
 async function labQaAccept(batchId) {
   const b = labBatches.find(x => x.id === batchId); if (!b) return;
@@ -7192,13 +7211,13 @@ async function labQaAccept(batchId) {
   if (ok === 0 && !_labQaRejAll[batchId]) { toast('Tap + for every good vial — or "✕ reject all"', true); return; }
   if (ok === 0 && !reason) { toast('Pick the reject reason', true); return; }
   if (rej > 0 && !reason) { toast('Pick a reject reason for the ' + rej + ' not counted OK', true); return; }
-  const what = b.order_item_id ? 'the order (' + escAttr(_labBatchName(b)) + ')' : 'HUB stock';
+  const what = b.order_item_id ? 'the order (' + escAttr(_labBatchName(b)) + ')' : 'the Stock Controller (it goes into HUB after the Stock Controller receives it)';   // v13.121
   const back = (rej && b.order_item_id) ? ' The rejected ' + rej + ' will go back to the Mixer for a remake.' : '';
   if (!confirm('Batch ' + b.batch_no + ': accept ' + ok + ' OK' + (rej ? ', reject ' + rej + ' (' + reason + ')' : '') + ' → ' + what + '?' + back)) return;
   const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: batchId, p_qty_ok: ok, p_qty_rejected: rej, p_reason: reason || null });
   if (error) { toast('✅ ' + _labErr(error), true); return; }
   delete _labQaTally[batchId]; delete _labQaRejAll[batchId];
-  toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : 'stock'));
+  toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : (ok ? 'waiting for the Stock Controller' : 'all rejected')));   // v13.121
   await loadLab(true);
 }
 async function labQaAcceptOrder(orderId) {   // accept every line counted fully OK; lines with rejects stay for a per-line Accept with a reason
@@ -7248,6 +7267,10 @@ async function _refreshHubStock() {
   } catch (e) { console.log('_refreshHubStock failed:', e); }
 }
 async function loadStorage() {
+  if (['admin', 'stock'].includes(currentRole)) {   // v13.121: lab batches waiting to be received
+    const { data: ho, error: hoErr } = await sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true });
+    labHandover = hoErr ? [] : (ho || []); _rcvBadge();
+  }
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
   const { data: inv } = await sb.from('storage_inventory').select('*');
@@ -7288,7 +7311,92 @@ function _putAwayHtml() {
       <button class="lab-btn primary" onclick="stockPlaceLot(${l.id})">Placed</button>
     </div>`; }).join('')}</div>`;
 }
-function renderPutAway() { const el = document.getElementById('wh-putaway'); if (el) el.innerHTML = _putAwayHtml(); }
+// ── v13.121: 📥 Receive from lab — the Stock Controller counts a QA-accepted stock batch (must equal QA's number), puts it
+// in a fridge (or splits it) and receives it into HUB (stock_receive_batch). A different count → Mismatch → back to QA.
+// The admin receives only as the last resort ("both Stock Controllers are unavailable" — logged). ─────────────────────
+let _rcvRows = {};   // batchId → number of fridge rows shown
+function _receiveHtml() {
+  if (!['admin', 'stock'].includes(currentRole) || !labHandover.length) return '';
+  const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
+  return `<div class="putaway rcv"><div class="lab-sec">📥 Receive from lab <span class="lab-cnt">${labHandover.length}</span>
+      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">count the vials — the number must match QA</span></div>
+    ${labHandover.map(b => {
+      const p = _prodById(b.product_id); const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; const rows = Math.max(1, _rcvRows[b.id] || 1);
+      return `<div class="pa-row rcv-row" data-batch="${b.id}" style="flex-wrap:wrap;${late ? 'border-left:3px solid var(--red);padding-left:8px' : ''}">
+        <div class="pa-main"><b>${p ? escAttr(p.name) : '#' + b.product_id}</b><span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>QA</small></span>
+          <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}${b.qa_email ? ' · ' + escAttr(b.qa_email) : ''}</span>
+            <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span>${b.mismatch_qty != null ? `<span style="color:var(--yellow)">earlier mismatch: counted ${b.mismatch_qty}</span>` : ''}</div></div>
+        <label style="font-size:10px;color:var(--muted);font-family:var(--mono)">COUNTED<input type="number" id="rcv-cnt-${b.id}" min="0" step="1" value="${b.qty_qa_ok}" style="width:64px;margin-left:4px"></label>
+        <div style="display:flex;flex-direction:column;gap:4px">${Array.from({ length: rows }, (_, i) => `<div style="display:flex;gap:4px">
+          <select id="rcv-pl-${b.id}-${i}"><option value="">— fridge —</option>${fr}</select>
+          <input type="number" id="rcv-q-${b.id}-${i}" min="1" step="1" value="${rows === 1 ? b.qty_qa_ok : ''}" style="width:56px" title="How many go into this fridge"></div>`).join('')}
+          <button class="lab-btn" onclick="rcvAddFridge(${b.id})" style="font-size:11px;padding:3px 8px">+ fridge</button></div>
+        <button class="lab-btn primary" onclick="receiveLabBatch(${b.id})">Receive</button>
+        <button class="lab-btn danger" onclick="mismatchLabBatch(${b.id})" title="The number on the shelf is not QA's number — send the batch back to QA">Mismatch</button>
+      </div>`; }).join('')}</div>`;
+}
+function rcvAddFridge(batchId) { _rcvRows[batchId] = Math.max(1, _rcvRows[batchId] || 1) + 1; renderStorage(); }
+async function receiveLabBatch(batchId) {
+  const b = labHandover.find(x => x.id === batchId); if (!b) return;
+  const cnt = parseInt(document.getElementById('rcv-cnt-' + batchId)?.value, 10);
+  if (!Number.isInteger(cnt) || cnt < 0) { toast('Type the number of vials you counted', true); return; }
+  if (cnt !== b.qty_qa_ok) { toast('You counted ' + cnt + ', QA accepted ' + b.qty_qa_ok + ' — count again, or press Mismatch', true); return; }
+  const rows = Math.max(1, _rcvRows[batchId] || 1), places = [];
+  for (let i = 0; i < rows; i++) {
+    const pl = document.getElementById('rcv-pl-' + batchId + '-' + i)?.value || '';
+    const q = parseInt(document.getElementById('rcv-q-' + batchId + '-' + i)?.value, 10);
+    if (!pl && !q) continue;
+    if (!pl) { toast('Pick the fridge', true); return; }
+    if (!Number.isInteger(q) || q <= 0) { toast('How many go into ' + pl + '?', true); return; }
+    places.push({ place: pl, qty: q });
+  }
+  if (!places.length) { toast('Pick the fridge', true); return; }
+  const sum = places.reduce((s, x) => s + x.qty, 0);
+  if (sum !== cnt) { toast('The fridges add up to ' + sum + ', not ' + cnt, true); return; }
+  let reason = null;
+  if (currentRole !== 'stock') {
+    if (!confirm('Admin — last resort only.\n\nBoth Stock Controllers are unavailable, and you have counted the ' + cnt + ' vials of batch ' + b.batch_no + ' yourself?\n\nThis is recorded in the logs.')) return;
+    reason = 'Both Stock Controllers are unavailable';
+  } else if (!confirm('Receive batch ' + b.batch_no + ': ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?')) return;
+  const { error } = await sb.rpc('stock_receive_batch', { p_batch_id: batchId, p_qty: cnt, p_places: places, p_admin_reason: reason });
+  if (error) { toast('Receive: ' + (error.message || 'error'), true); return; }
+  delete _rcvRows[batchId];
+  toast('📥 ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' received → ' + places.map(x => x.place).join(', '));
+  await loadStorage(); renderStorage();
+}
+async function mismatchLabBatch(batchId) {
+  const b = labHandover.find(x => x.id === batchId); if (!b) return;
+  const cnt = parseInt(document.getElementById('rcv-cnt-' + batchId)?.value, 10);
+  if (!Number.isInteger(cnt) || cnt < 0) { toast('Type the number of vials you counted', true); return; }
+  if (cnt === b.qty_qa_ok) { toast('Your count matches QA (' + cnt + ') — press Receive', true); return; }
+  if (!confirm('Batch ' + b.batch_no + ': you counted ' + cnt + ', QA accepted ' + b.qty_qa_ok + '.\n\nSend it back to QA? Nothing goes into stock until the numbers match.')) return;
+  const { error } = await sb.rpc('stock_receive_mismatch', { p_batch_id: batchId, p_counted: cnt, p_note: null });
+  if (error) { toast('Mismatch: ' + (error.message || 'error'), true); return; }
+  toast('↩ Batch ' + b.batch_no + ' sent back to QA (counted ' + cnt + ', QA ' + b.qty_qa_ok + ')');
+  await loadStorage(); renderStorage();
+}
+// the counter on the Storage tab + a light poll for the Stock Controller / admin (does not redraw while someone is typing)
+function _rcvBadge() {
+  const tab = [...document.querySelectorAll('.tab-btn')].find(t => t.getAttribute('href') === '#storage'); if (!tab) return;
+  let bd = tab.querySelector('.rcv-badge');
+  if (!labHandover.length) { if (bd) bd.remove(); return; }
+  if (!bd) { bd = document.createElement('span'); bd.className = 'rcv-badge'; bd.style.cssText = 'margin-left:5px;padding:0 6px;border-radius:9px;font-size:10px;font-family:var(--mono);color:#fff'; tab.appendChild(bd); }
+  const late = labHandover.some(b => _waitMin(b.qa_at) > HANDOVER_LATE_MIN);
+  bd.style.background = late ? 'var(--red)' : 'var(--accent)'; bd.textContent = '📥 ' + labHandover.length; bd.title = labHandover.length + ' lab batch(es) waiting to be received' + (late ? ' — some for more than ' + HANDOVER_LATE_MIN + ' min' : '');
+}
+let _rcvTimer = null;
+function _rcvStartPoll() {
+  if (_rcvTimer || !['admin', 'stock'].includes(currentRole)) return;
+  _rcvTimer = setInterval(async () => {
+    if (document.hidden) return;
+    const { data, error } = await sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true });
+    if (error) return;
+    const before = labHandover.map(b => b.id).join(','); labHandover = data || []; _rcvBadge();
+    const sv = document.getElementById('view-storage');
+    if (sv && sv.style.display === 'block' && before !== labHandover.map(b => b.id).join(',') && !sv.contains(document.activeElement)) { await loadStorage(); renderStorage(); }
+  }, 60000);
+}
+function renderPutAway() { const el = document.getElementById('wh-putaway'); if (el) el.innerHTML = currentRole === 'warehouse' ? '' : _putAwayHtml(); }   // v13.121: the warehouse no longer puts away — the Stock Controller does (Storage)
 // v13.77: admin edits a lot in place — fridge, made-on date, quantity (a qty change is journaled as an adjustment on that lot)
 let _lotEditId = null;
 function startLotEdit(lotId) { if (!['admin', 'stock'].includes(currentRole)) return; /* v13.112: + Stock Controller */ _lotEditId = lotId; renderStorage(); setTimeout(() => document.getElementById('lot-e-qty-' + lotId)?.focus(), 50); }
@@ -7453,7 +7561,7 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${ledger ? _putAwayHtml() : ''}
+      ${ledger ? _receiveHtml() + _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
