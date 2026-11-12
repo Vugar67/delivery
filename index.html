@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.119"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.120"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1979,7 +1979,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.119';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.120';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4410,7 +4410,7 @@ function renderCart() {
       <div class="shop-cart-item-name" id="cart-name-${i}">
         ${getName(item)}${item.is_custom ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono);background:rgba(255,200,0,.15);padding:1px 5px;border-radius:3px">CUSTOM</span>' : ''}${item.is_custom && Array.isArray(item.ingredients) && item.ingredients.length ? ' <span style="font-size:9px;color:var(--accent2);font-family:var(--mono)" title="Complicated product: ✎ edits the doses only">🧪</span>' : ''}${item.is_custom && item.name_edited ? ' <span style="font-size:9px;color:var(--muted);font-family:var(--mono);border:1px dashed var(--border);padding:1px 5px;border-radius:3px" title="The name was edited (✎) — the Packer prints no label for this line">✎ no label</span>' : ''}
         <br><span style="font-size:10px;color:var(--muted)">${getUnit(item)}</span>
-        ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)">Committed: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">Available: ' + st.available + '</span>'; })() : ''}
+        ${!item.is_custom && item.product ? (() => { const st = getProductStock(item.product.id); if (!st) return ''; const avColor = st.available > 0 ? 'var(--green)' : 'var(--red)'; return '<br><span style="font-size:9px;font-family:var(--mono);color:var(--muted)" title="HUB on hand · reserved by other open orders not packed yet · free = what is left for this order">HUB: ' + st.total + ' &nbsp;·&nbsp; reserved: ' + st.committed + ' &nbsp;·&nbsp; </span><span style="font-size:9px;font-family:var(--mono);color:' + avColor + '">free: ' + st.available + '</span>'; })() : ''}
       </div>
       <div class="shop-cart-item-controls">
         <button class="shop-qty-btn" onclick="updateCartQty(${i}, ${Math.max(0,getQty(item)-1)})">−</button>
@@ -6176,7 +6176,7 @@ async function saveOrder(){
       return prev && Number(prev.quantity) !== Number(n.quantity);
     }).map(n => {
       const prev = _prevMap.get(_keyOf(n));
-      return { product_name: n.product_name, qty_before: prev.quantity, qty_after: n.quantity };
+      return { product_id: n.product_id, product_name: n.product_name, qty_before: prev.quantity, qty_after: n.quantity };   // v13.120: + product_id
     });
     itemDiff = { added, removed, changed };
     _hasItemChange = !!(added.length || removed.length || changed.length);
@@ -6205,23 +6205,36 @@ async function saveOrder(){
     item_changes:    (_logAction === 'UPDATE' && _hasItemChange) ? itemDiff : undefined,
   });
   // ────────────────────────────────────────────────────────────────
-  // Check if status changed to En Route - trigger stock deduction
-  if (payload.delivery_status === 'En Route') {
-    const prevOrder = orders.find(x => x.id === orderId);
-    const wasAlreadyEnRoute = prevOrder?.delivery_status === 'En Route';
-    if (!wasAlreadyEnRoute) {
-      closeModal('order-modal');
-      await loadOrders();
-      renderTable();
-      toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
-      await _labRecomputeQuiet();   // v13.74
-      await openStockDeduction(orderId);
-      return;
-    }
-  }
+  // v13.120: the order was already packed (its stock written off) and its product lines changed → write off what was
+  // added since packing; what was removed is NOT returned automatically (flagged for the Stock Controller).
+  // (The pre-v13.74 "Stock Deduction" window on En Route is gone — it wrote storage_inventory past the journal.)
+  const _po = editId ? orders.find(x => x.id === editId) : null;
   toast(_logAction === 'UPDATE' ? 'Order updated' : 'Order created');
+  if (_po && _po.stock_out_at && _hasItemChange) await _stockPackDelta(orderId, payload.order_num || _po.order_num, itemDiff);   // after "Order updated" so its message stays on screen
   await _labRecomputeQuiet();   // v13.74: confirmed/items changed → lab statuses + reservations
   closeModal('order-modal');await loadOrders();renderTable();
+}
+
+// v13.120: an already packed order changed its lines. stock_pack_out (add_pack_delta.sql) then writes off only
+// "ordered − already written off" per product (orders packed after the migration). Decreases are not returned:
+// the vial comes back to the shelf only if the warehouse takes it out of the bag — logged as stock_return_pending.
+async function _stockPackDelta(orderId, orderNum, diff) {
+  try {
+    const { data, error } = await sb.rpc('stock_pack_out', { p_order_id: orderId });
+    if (error) { console.log('stock_pack_out (delta) error:', error); toast('⚠️ Order saved, but the added items were NOT written off stock: ' + (error.message || '') + ' — tell the admin', true); }
+    else if (Number(data) > 0) {
+      logEvent('UPDATE', 'order', orderId, { order_num: orderNum, action: 'stock_pack_out_delta', lines: Number(data) });
+      toast('📦 Packed order changed — ' + Number(data) + ' added line' + (Number(data) === 1 ? '' : 's') + ' written off HUB stock');
+    }
+  } catch (e) { console.log('stock_pack_out (delta) failed:', e); }
+  const d = diff || {};
+  const back = [];
+  (d.removed || []).filter(r => r.product_id).forEach(r => back.push({ product_id: r.product_id, product_name: r.product_name, qty: Number(r.quantity) || 0 }));
+  (d.changed || []).filter(c => c.product_id && Number(c.qty_after) < Number(c.qty_before)).forEach(c => back.push({ product_id: c.product_id, product_name: c.product_name, qty: Number(c.qty_before) - Number(c.qty_after) }));
+  if (back.length) {
+    logEvent('UPDATE', 'order', orderId, { order_num: orderNum, action: 'stock_return_pending', items: back });
+    alert('↩ ' + orderNum + ' was already packed.\n\nRemoved items are NOT returned to stock automatically:\n' + back.map(b => '• ' + b.product_name + ' ×' + b.qty).join('\n') + '\n\nTake them out of the bag and tell the Stock Controller when they are back on the shelf.');
+  }
 }
 
 // v13.74: ask the DB to redistribute HUB stock over confirmed orders (Processing in Lab ↔ Ready in Lab).
@@ -7839,11 +7852,12 @@ function skipStockDeduction() {
 // ── AVAILABILITY HINT IN CART ────────────────────────────────────
 
 function getCommittedQty(productId) {
-  // Count qty in orders with status before En Route (Roaming, Ready for Pick-up, Picking, etc.)
-  const preShipStatuses = ['Not Confirmed', 'Ready for Pick-up', 'In the Warehouse', 'Processing in Lab'];
+  // v13.120: "reserved" = open orders that still wait for this product: not packed yet (no stock_out_at — packing
+  // writes the stock off, so a packed order is already out of the HUB figure), not this order itself.
+  const preShipStatuses = ['Not Confirmed', 'Processing in Lab', 'Ready in Lab', 'In the Warehouse'];
   let committed = 0;
   orders.forEach(o => {
-    if (!preShipStatuses.includes(o.delivery_status)) return;
+    if (!preShipStatuses.includes(o.delivery_status) || o.stock_out_at || o.deleted || (editId && o.id === editId)) return;
     const items = orderItems[o.id] || [];
     items.forEach(i => {
       if (String(i.product_id) === String(productId)) committed += parseFloat(i.quantity || 0);
@@ -7853,7 +7867,9 @@ function getCommittedQty(productId) {
 }
 
 function getProductStock(productId) {
-  const inv = storageInventory.filter(i => String(i.product_id) === String(productId));
+  // v13.120: HUB (the depot the warehouse packs from and stock_pack_out writes off) — not the old rovers
+  const _hubIds = new Set((storageLocations || []).filter(s => s.type === 'Depot' && s.active !== false).map(s => s.id));
+  const inv = storageInventory.filter(i => String(i.product_id) === String(productId) && (!_hubIds.size || _hubIds.has(i.storage_id)));
   if (!inv.length) return null;
   const committed = getCommittedQty(productId);
   const totalQty = inv.reduce((s, i) => s + parseFloat(i.quantity || 0), 0);
