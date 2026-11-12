@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.120"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.120.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1979,7 +1979,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.120';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.120.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5312,6 +5312,7 @@ async function openNewOrder(){
   resetDeliveryPresets(); // new order: no preset selected, manual field hidden
   renderCart();
   initShop();
+  _refreshHubStock();   // v13.120.1: the cart hint reads HUB as it is NOW, not as it was when the page opened
 
   const modal = document.getElementById('order-modal');
   modal.classList.add('open');
@@ -5424,6 +5425,7 @@ async function editOrder(id){
     return line;
   });
   initShop();
+  _refreshHubStock();   // v13.120.1: the cart hint reads HUB as it is NOW, not as it was when the page opened
   const modal = document.getElementById('order-modal');
   modal.classList.add('open');
   const modalEl = modal.querySelector('.modal');
@@ -7235,6 +7237,16 @@ let storageLocations = [];
 let storageInventory = [];
 let stockLots = [];            // v13.75: open lots (qty_left > 0) — product + made-on date + what is left; FIFO at pack-out
 
+// v13.120.1: re-read on-hand quantities (one small query) and redraw the cart hint — packing / QA done by other people
+// since the page opened is visible as soon as an order form opens.
+async function _refreshHubStock() {
+  try {
+    const { data, error } = await sb.from('storage_inventory').select('*');
+    if (error || !Array.isArray(data)) return;
+    storageInventory = data;
+    if (document.getElementById('order-modal')?.classList.contains('open') && typeof renderCart === 'function') renderCart();
+  } catch (e) { console.log('_refreshHubStock failed:', e); }
+}
 async function loadStorage() {
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
