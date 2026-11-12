@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.121"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.122"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -394,6 +394,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
    save / delete, no cart or field changes; the card can still be opened and read, ⎘ copy stays. Lab: every station
    visible, nothing clickable. Storage: full access (no rule here). */
 .role-stock #new-order-btn{display:none!important}
+#order-modal.items-locked #shop-grid,#order-modal.items-locked #shop-kinds,#order-modal.items-locked #shop-cart-items,#order-modal.items-locked .shop-cart-item-controls{pointer-events:none;opacity:.6}   /* v13.122: packed order — content locked */
+#order-modal.items-locked #custom-item-toggle,#order-modal.items-locked #custom-item-form{display:none!important}
 .role-stock #order-tbody .act-btn.ro-hide{display:none!important}
 .role-stock #order-modal button:not(.ro-keep){display:none!important}
 .role-stock #order-modal [onclick]:not(.ro-keep),.role-stock #order-modal [onchange],.role-stock #order-modal [oninput]{pointer-events:none}
@@ -1979,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.121';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.122';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -4894,14 +4896,14 @@ function renderWarehouseQueue() {
     const qty = items.reduce((s,i) => s + (i.quantity||1), 0);
     return `<div onclick="whCardClick('${o.id}',${dimmed})" style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:${dimmed?'default':'pointer'};opacity:${dimmed?'.5':'1'};transition:.15s">
       <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${pc(o.priority||3)};box-shadow:0 0 6px ${pc(o.priority||3)}"></span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
-        <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.order_num||'—'}</span>
+      <span style="flex:1 0 auto;min-width:0;display:flex;flex-direction:column;gap:1px">
+        <span class="wh-num" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap">${o.order_num||'—'}</span>
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap" title="Created (UAE time)">🕐 ${toUAEDateTime(o.created_at).slice(5)}${!dimmed && LAB_TRANSITION ? (o.delivery_status === 'Ready in Lab' ? ' <span style="color:var(--green)" title="Lab: all items covered by stock">· lab ✓</span>' : ' <span style="color:var(--yellow)" title="Lab: not all items covered yet">· lab …</span>') : ''}</span>
       </span>
       ${sched ? `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">${_schedChip(o)}<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${escHtml(o.emirate || '—')}</span></span>` : ''}
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0" title="items in order">📦 ${qty}</span>
-      <button onclick="event.stopPropagation();whCopyBlock('${o.id}',this)" title="Copy order info" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">⧉</button>
-      <button class="wh-print" onclick="event.stopPropagation();whPrintLabel('${o.id}',this)" title="Print the 3 × 2 in label (order info + QR)" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:4px 7px;color:var(--accent);font-size:14px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">🖨</button>
+      <button onclick="event.stopPropagation();whCopyBlock('${o.id}',this)" title="Copy order info" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:3px 5px;color:var(--accent);font-size:13px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">⧉</button>
+      <button class="wh-print" onclick="event.stopPropagation();whPrintLabel('${o.id}',this)" title="Print the 3 × 2 in label (order info + QR)" style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:3px 5px;color:var(--accent);font-size:13px;line-height:1;flex-shrink:0;transition:.15s" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(245,166,35,.14)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'">🖨</button>
     </div>`;
   };
 
@@ -4911,7 +4913,7 @@ function renderWarehouseQueue() {
   const cols = present.map(em => {
     const a = byActive(active.filter(o => emKey(o)===em));
     const p = byNum(parked.filter(o => emKey(o)===em));
-    return `<div style="flex:0 0 232px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column">
+    return `<div style="flex:1 1 232px;min-width:232px;max-width:340px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <span style="font-weight:700;font-size:14px;color:var(--text)">${em}</span>
         <span style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 9px">${a.length}${p.length?(' + '+p.length):''}</span>
@@ -4927,7 +4929,7 @@ function renderWarehouseQueue() {
   // v13.119: 🗓 Scheduled — by delivery date, then priority; packed ones under the line, as in the emirate columns
   const bySched = a => a.slice().sort((x, y) => String(x.sched_date).localeCompare(String(y.sched_date)) || String(x.sched_from || '').localeCompare(String(y.sched_from || '')) || ((x.priority || 3) - (y.priority || 3)) || (onum(x) - onum(y)));
   const sA = bySched(schedA), sP = bySched(schedP);
-  const schedCol = (sA.length || sP.length) ? `<div class="wh-sched-col" style="flex:0 0 262px;background:var(--surface2);border:1px dashed rgba(96,165,250,.6);border-radius:12px;padding:10px;display:flex;flex-direction:column">
+  const schedCol = (sA.length || sP.length) ? `<div class="wh-sched-col" style="flex:1 1 262px;min-width:262px;max-width:360px;background:var(--surface2);border:1px dashed rgba(96,165,250,.6);border-radius:12px;padding:10px;display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <span style="font-weight:700;font-size:14px;color:var(--blue)">🗓 Scheduled</span>
         <span style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 9px">${sA.length}${sP.length ? (' + ' + sP.length + ' packed') : ''}</span>
@@ -5309,6 +5311,7 @@ async function openNewOrder(){
   document.getElementById('f-priority').value='3';
   document.getElementById('f-delivery-charge').value='0';
   {const _di=document.getElementById('f-discount');if(_di)_di.value='0';} // v13.51: fresh order — no discount
+  _orderItemsLock(null);   // v13.122
   _vatReDefault(); // v13.53: fresh order — VAT checkbox set by rules from current Emirate/Payment
   resetDeliveryPresets(); // new order: no preset selected, manual field hidden
   renderCart();
@@ -5431,11 +5434,33 @@ async function editOrder(id){
   modal.classList.add('open');
   const modalEl = modal.querySelector('.modal');
   if(modalEl) modalEl.scrollTop = 0;
+  _orderItemsLock(o);   // v13.122: packed → content locked
   if (currentRole === 'stock') _orderModalViewOnly();   // v13.112
 }
 // v13.112: Stock Controller opens the order card to READ it. The CSS (.role-stock #order-modal …) hides every button but
 // Cancel and switches the mouse off on the fields; this disables the fields themselves so the keyboard cannot change
 // them either. Nothing here is persisted anyway: saveOrder() refuses and the DB policies refuse.
+// v13.122 (Vugar 12.11.2026): a packed order (stock_out_at set — Ready for Pick-up / En Route / Delivered) keeps its
+// content: lines, quantities, prices, seller are locked for every role (the DB refuses too — add_packed_lock.sql).
+// Address, phone, date, payment, notes stay editable. A change of content or a cancel = the admin runs unpack_order.sql.
+function _isPackedOrder(o) { return !!(o && o.stock_out_at); }
+function _orderItemsLock(o) {
+  const modal = document.getElementById('order-modal'); if (!modal) return;
+  const on = _isPackedOrder(o);
+  modal.classList.toggle('items-locked', on);
+  let bn = document.getElementById('packed-lock-note');
+  if (!on) { if (bn) bn.remove(); const sn0 = document.getElementById('f-seller-name'); if (sn0 && currentRole !== 'stock') sn0.disabled = false; return; }
+  if (!bn) {
+    bn = document.createElement('div'); bn.id = 'packed-lock-note';
+    bn.style.cssText = 'margin:0 0 10px;padding:9px 12px;border:1px solid var(--yellow);border-radius:8px;background:rgba(250,204,21,.10);color:var(--yellow);font-size:12px;line-height:1.45';
+    const anchor = document.getElementById('shop-cart') || document.getElementById('shop-grid');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bn, anchor); else modal.querySelector('.modal')?.prepend(bn);
+  }
+  bn.innerHTML = '🔒 <b>Packed ' + (o.stock_out_at ? toUAEDateTime(o.stock_out_at).slice(5) : '') + '</b> — items, quantities, prices and seller are locked. Address, phone, date, payment and notes can still be changed.<br>To change the items or cancel the order, ask the admin (unpack).';
+  const sn = document.getElementById('f-seller-name'); if (sn) sn.disabled = true;
+  const sc = document.getElementById('seller-clear-btn'); if (sc) sc.style.display = 'none';
+}
+
 function _orderModalViewOnly() {
   document.querySelectorAll('#order-modal input, #order-modal select, #order-modal textarea').forEach(el => {
     if (el.id === 'shop-search') return;   // searching the product list is reading
@@ -6023,6 +6048,9 @@ async function saveOrder(){
     const existingOrder = orders.find(x => x.id === editId);
     payload.order_num = existingOrder?.order_num || get('f-num');
   }
+  // v13.122: a packed order keeps its seller (items are not written at all — see below)
+  const _packedSave = editId ? _isPackedOrder(orders.find(x => x.id === editId)) : false;
+  if (_packedSave) payload.seller_name = orders.find(x => x.id === editId)?.seller_name ?? payload.seller_name;
   // v13.119: the order is with a driver (En Route) and its delivery date moves to a later day → offer to take it back:
   // Ready for Pick-up, driver removed (the same reset as ↩ Failed) — it then waits in "🗓 Scheduled" for its day.
   let _schedBack = null;
@@ -6112,7 +6140,7 @@ async function saveOrder(){
       custom_components: isDifferent ? item.customComponents : null,
     };
   });
-  const { error: _itemsErr } = await sb.rpc('replace_order_items', { p_order_id: orderId, p_items: items });
+  const { error: _itemsErr } = _packedSave ? { error: null } : await sb.rpc('replace_order_items', { p_order_id: orderId, p_items: items });   // v13.122: packed → items untouched (the DB refuses anyway)
   if (_itemsErr) {
     console.log('Items save error:', _itemsErr);
     const _m = String(_itemsErr.message || _itemsErr.details || '');   // v13.79.2: say why — e.g. "Lab is working on … — cancel that batch first"
@@ -6132,8 +6160,10 @@ async function saveOrder(){
     return i.product?.product_type === 'Custom' || isDifferent;
   });
   const hasRegular = (cart||[]).some(i => !i.is_custom && i.product?.product_type !== 'Custom');
-  const contentType = hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular';
-  const subtotal = (cart||[]).reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product?.price||0))*(item.qty||0)), 0);
+  const contentType = _packedSave ? (orders.find(x => x.id === orderId)?.content_type || (hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular')) : (hasCustom && hasRegular ? 'Mixed' : hasCustom ? 'Custom' : 'Regular');
+  const subtotal = _packedSave   // v13.122: packed → the stored lines are the truth, whatever the cart shows
+    ? (orderItems[orderId] || []).reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.quantity) || 0), 0)
+    : (cart||[]).reduce((s,item) => s + (item.is_custom ? item.price*item.quantity : (item.customPrice!==undefined ? parseFloat(item.customPrice) : parseFloat(item.product?.price||0))*(item.qty||0)), 0);
   const deliveryCharge = parseFloat(document.getElementById('f-delivery-charge').value) || 0;
   const discountVal = parseFloat(document.getElementById('f-discount')?.value) || 0;
   const total = subtotal + deliveryCharge - discountVal;   // net — same formula as the invoice window (VAT lives on the printed invoice only)
@@ -6157,7 +6187,7 @@ async function saveOrder(){
     price:        i.is_custom ? i.price : (i.customPrice !== undefined ? i.customPrice : i.product.price)
   }));
   let itemDiff = null, _hasItemChange = false;
-  if (editId) {
+  if (editId && !_packedSave) {   // v13.122: packed → items were not written, nothing to diff
     const _keyOf = i => i.product_id ? ('id:'+i.product_id) : ('nm:'+(i.product_name||''));
     // v13.71.5: the same product may be on several lines (Split) — the diff is per PRODUCT with
     // quantities summed over its lines, so a split never shows up as a phantom add/remove.
@@ -6247,6 +6277,7 @@ async function _labRecomputeQuiet() {
 }
 
 async function deleteOrder(id){
+  if (_isPackedOrder(orders.find(x => x.id === id))) { toast('🔒 This order is packed — it cannot be deleted. Ask the admin to unpack it first.', true); return; }   // v13.122
   if(!confirm('Delete this order?'))return;
   const o = orders.find(x=>x.id===id);
   const now = new Date().toISOString();
@@ -6263,6 +6294,7 @@ function deleteOrderWithPassword(){
   const id = editId;
   if(!id){toast('No order selected',true);return;}
   const o = orders.find(x=>x.id===id);
+  if (_isPackedOrder(o)) { toast('🔒 ' + (o.order_num || 'This order') + ' is packed — it cannot be deleted. Ask the admin to unpack it first.', true); return; }   // v13.122
   const existing = document.getElementById('delete-confirm-modal');
   if(existing) existing.remove();
   const modal = document.createElement('div');
