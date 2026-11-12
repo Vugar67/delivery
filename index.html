@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.122"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.123"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1981,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.122';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.123';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5087,6 +5087,15 @@ async function openWarehouseOrder(orderId) {
   if (freshItems) orderItems[orderId] = freshItems;
   const items = orderItems[o.id] || [];
   const allProds = window._allProducts || products;
+  // v13.123: per-order lines (custom / PREMIX) — where the Stock Controller put the vials
+  let _rcvByItem = {};
+  try {
+    const ids = items.filter(i => !i.product_id || (allProds.find(p => p.id === i.product_id) || {}).made_to_order).map(i => i.id);
+    if (ids.length) { const { data: rb } = await sb.from('lab_batches').select('order_item_id,batch_no,received_places,received_by').in('order_item_id', ids).eq('stage', 'done');
+      (rb || []).forEach(r => { if (r.received_places) (_rcvByItem[r.order_item_id] = _rcvByItem[r.order_item_id] || []).push(r); }); }
+  } catch (e) { /* the hint is a convenience */ }
+  const _rcvHint = item => { const rs = _rcvByItem[item.id]; if (!rs || !rs.length) return '';
+    return `<div class="fifo-hint">take from ${rs.map(r => (r.received_places || []).map(x => `<b>${escAttr(x.place)}</b> ${x.qty}`).join(' + ') + ` <span style="opacity:.7">batch ${escAttr(r.batch_no)}${r.received_by ? ' · received by ' + escAttr(String(r.received_by).split('@')[0]) : ''}</span>`).join(' → ')}</div>`; };
 
   const rows = items.map(item => {
     const prod = allProds.find(p => p.id === item.product_id);
@@ -5096,7 +5105,7 @@ async function openWarehouseOrder(orderId) {
       <td style="padding:12px 8px;font-size:13px;color:var(--text);font-weight:500">
         ${item.product_name}
         ${barcode ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">▪ ${barcode}</div>` : ''}
-        ${item.product_id && prod && !prod.made_to_order ? _fifoHint(item.product_id, item.quantity || 1) : ''}
+        ${item.product_id && prod && !prod.made_to_order ? _fifoHint(item.product_id, item.quantity || 1) : _rcvHint(item)}
       </td>
       <td style="padding:12px 8px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">${item.quantity || 1}</td>
     </tr>`;
@@ -6578,6 +6587,7 @@ function _labProductName(pid) {
   const d = labDemand.find(x => String(x.product_id) === String(pid)); if (d) return d.name;
   const p = (window._allProducts || products || []).find(x => String(x.id) === String(pid)); return p ? p.name : ('#' + pid);
 }
+function _labWhere(b) { return b.stage === 'packing' ? 'at Packer' : b.stage === 'handover' ? 'at Stock Controller' : 'at QA'; }   // v13.123
 function _labBatchName(b) { return b.order_item_id ? (b.custom_name || 'custom item') : _labProductName(b.product_id); }
 function _labBatchUrgency(b) {   // priority of the most urgent waiting order behind this batch
   if (b.order_item_id) { const c = labCustom.find(x => x.order_item_id === b.order_item_id); return c ? c.priority : null; }
@@ -6672,17 +6682,16 @@ async function loadLab(manual) {
     const reqs = [
       sb.from('lab_demand_v').select('*'),
       sb.from('lab_order_lines_v').select('*'),   // v13.78: all lab lines of orders in lab statuses (incl. done) + stock_items
-      sb.from('lab_batches').select('*').in('stage', ['mixing', 'packing', 'qa']).order('created_at', { ascending: true }),
+      sb.from('lab_batches').select('*').in('stage', ['mixing', 'packing', 'qa', 'handover']).order('created_at', { ascending: true }),   // v13.123: + handover (a per-order line waiting for the Stock Controller is not "new" for the Mixer)
     ];
     if (stage === 'all') reqs.push(sb.from('lab_batches').select('*').in('stage', ['done', 'cancelled']).order('updated_at', { ascending: false }).limit(40));
-    const _hoReq = (stage === 'all' || stage === 'qa') ? sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true }) : null;   // v13.121
     const res = await Promise.all(reqs);
-    if (_hoReq) { const h = await _hoReq; labHandover = h.error ? [] : (h.data || []); }
     const bad = res.find(r => r.error);
     if (bad) { if (manual) toast('Lab: ' + _labErr(bad.error), true); return; }
     labDemand  = res[0].data || [];
     labCustom  = (res[1].data || []).map(c => ({ ...c, custom_name: c.custom_name || c.line_name }));   // v13.78: line_name → custom_name alias
     labBatches = res[2].data || [];
+    labHandover = labBatches.filter(b => b.stage === 'handover').sort((a, b) => String(a.qa_at || '').localeCompare(String(b.qa_at || '')));   // v13.121 / v13.123
     if (res[3]) labHistory = res[3].data || [];
     await _loadLabOrderMeta();   // v13.111: created / updated stamps for the sort and the cards (failure → no stamps, list still renders)
     await _loadLabOrphans();     // v13.117: the order of batches whose order already left the lab
@@ -6810,7 +6819,7 @@ function renderLabMixer() {
     const remake = (!c.done && accepted > 0) ? `<span class="lab-chip" title="QA rejected part of an earlier batch — make the rest">accepted ${accepted} of ${qty} · remake ${left}</span>` : '';
     let right;
     if (st === 'done') right = `<span class="lab-chip ok">✓ done</span>`;
-    else if (st === 'handed') right = `<span class="lab-chip ok">${b.stage === 'packing' ? 'at Packer' : 'at QA'} · ${escAttr(b.batch_no)}</span><span class="lab-meta" style="margin:0">${b.qty_mixed} made</span>`;
+    else if (st === 'handed') right = `<span class="lab-chip ok">${_labWhere(b)} · ${escAttr(b.batch_no)}</span><span class="lab-meta" style="margin:0">${b.qty_mixed} made</span>`;
     else {
       const made = b ? b.qty_mixed : 0, cap = b ? _labCap(b) : left, capped = cap != null && made >= cap;
       const cid = b ? b.id : ('i' + c.order_item_id);
@@ -6849,7 +6858,7 @@ function renderLabMixer() {
     ...needRows.map(d => { const m = _labDemandSince(d); return { prio: d.top_priority ?? 9, created: m ? m.created_at : '9999', amt: num(d.need), html: demandCard(d, false) }; }),
     ...actionable.map(lines => { const m = _labMetaFor(lines[0].order_id); return { prio: lines[0].priority ?? 9, created: m ? m.created_at : '9999', amt: lines.reduce((t, c) => t + (c.done ? 0 : _labItemLeft(c)), 0), html: orderCard(lines) }; }),
   ].sort((a, b) => (a.prio - b.prio) || String(a.created).localeCompare(String(b.created)) || (b.amt - a.amt));
-  const handedLine = lines => `<div class="lab-meta" style="padding:4px 2px;opacity:.75"><span><b>${escAttr(lines[0].order_num)}</b></span>${lines.filter(c => lineState(c) === 'handed').map(c => { const b = liveOf(c); return `<span>${escAttr(c.custom_name)} <span class="lab-chip ok">${b.stage === 'packing' ? 'at Packer' : 'at QA'} · ${escAttr(b.batch_no)}</span> ${b.qty_mixed} made</span>`; }).join('')}${lines.some(c => c.done) ? `<span>${lines.filter(c => c.done).length} done</span>` : ''}</div>`;
+  const handedLine = lines => `<div class="lab-meta" style="padding:4px 2px;opacity:.75"><span><b>${escAttr(lines[0].order_num)}</b></span>${lines.filter(c => lineState(c) === 'handed').map(c => { const b = liveOf(c); return `<span>${escAttr(c.custom_name)} <span class="lab-chip ok">${_labWhere(b)} · ${escAttr(b.batch_no)}</span> ${b.qty_mixed} made</span>`; }).join('')}${lines.some(c => c.done) ? `<span>${lines.filter(c => c.done).length} done</span>` : ''}</div>`;
   const openIds = new Set(Object.keys(openBy));
   const pickerOpts = labDemand.filter(d => !d.no_stock_ahead && !openIds.has(String(d.product_id))).sort((a, b) => a.name.localeCompare(b.name));
   let html = '';
@@ -6967,6 +6976,7 @@ function _labLineStatus(c) {   // where a line of an order is right now (for row
   if (b.stage === 'mixing') return `<span class="lab-chip">at Mixer · ${b.qty_mixed} made</span>`;
   if (b.stage === 'packing') return `<span class="lab-chip ok">at Packer · ${escAttr(b.batch_no)}</span>`;
   if (b.stage === 'qa') return `<span class="lab-chip ok">at QA · ${escAttr(b.batch_no)}</span>`;
+  if (b.stage === 'handover') return `<span class="lab-chip ok">at Stock Controller · ${escAttr(b.batch_no)}</span>`;   // v13.123
   return '';
 }
 function _labStationOrderCards(stage, lineCtrl, cardAction) {
@@ -7189,7 +7199,7 @@ function _labQaShowRej(b, ok) { return b.qty_packed - ok > 0 && (ok > 0 || _labQ
 function labQaRejectAll(batchId) { _labQaRejAll[batchId] = true; renderLabQA(); }
 function _labQaCtrl(b) {
   const ok = Math.min(_labQaTally[b.id] || 0, b.qty_packed), rej = b.qty_packed - ok, showRej = _labQaShowRej(b, ok);
-  const mm = (!b.order_item_id && b.mismatch_qty != null) ? `<div class="ho-mismatch" style="margin:0 0 8px;padding:7px 10px;border:1px solid var(--red);border-radius:8px;background:rgba(248,113,113,.12);color:var(--red);font-size:12px">⚠ Sent back by the Stock Controller: <b>counted ${b.mismatch_qty}</b>, QA accepted <b>${b.qty_qa_ok ?? '?'}</b>${b.mismatch_by ? ' · ' + escAttr(b.mismatch_by) : ''}${b.mismatch_at ? ' · ' + _labWhen(b.mismatch_at) : ''}.<br>Find the missing vial and accept again — or count again: the vials that are not there go as rejected, with a reason.</div>` : '';   // v13.121
+  const mm = (b.mismatch_qty != null) ? `<div class="ho-mismatch" style="margin:0 0 8px;padding:7px 10px;border:1px solid var(--red);border-radius:8px;background:rgba(248,113,113,.12);color:var(--red);font-size:12px">⚠ Sent back by the Stock Controller: <b>counted ${b.mismatch_qty}</b>, QA accepted <b>${b.qty_qa_ok ?? '?'}</b>${b.mismatch_by ? ' · ' + escAttr(b.mismatch_by) : ''}${b.mismatch_at ? ' · ' + _labWhen(b.mismatch_at) : ''}.<br>Find the missing vial and accept again — or count again: the vials that are not there go as rejected, with a reason.</div>` : '';   // v13.121
   return mm + `<div class="lab-tally sm" style="margin:0">
       <button class="lab-tap minus" onclick="labQaTap(${b.id}, -1)" ${ok <= 0 ? 'disabled' : ''} title="Undo one">−</button>
       <div class="lab-count${ok >= b.qty_packed ? ' capped' : ''}" id="lab-qa-count-${b.id}">${ok} <span>/ ${b.qty_packed}</span><small>OK</small></div>
@@ -7231,7 +7241,7 @@ const HANDOVER_LATE_MIN = 30;
 function _labHandoverHtml() {
   return `<div class="lab-sec" style="margin-top:12px">⏳ Waiting for Stock Controller <span class="lab-cnt">${labHandover.length}</span></div>` +
     labHandover.map(b => { const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; return `<div class="lab-card ho-card" style="opacity:.85;${late ? 'border-color:var(--red)' : ''}">
-      <div class="lab-row"><div class="lab-name">${escAttr(_labBatchName(b))} <span class="lab-chip">for stock</span></div><div class="lab-need">${b.qty_qa_ok}<small>accepted</small></div></div>
+      <div class="lab-row"><div class="lab-name">${escAttr(_labBatchName(b))} ${b.order_item_id || !b.product_id ? `<span class="lab-chip custom">for ${escAttr(_labItemOf(b)?.order_num || 'order')}</span>` : '<span class="lab-chip">for stock</span>'}</div><div class="lab-need">${b.qty_qa_ok}<small>accepted</small></div></div>
       <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}</span>${b.qa_email ? `<span>${escAttr(b.qa_email)}</span>` : ''}
         <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span></div>
     </div>`; }).join('');
@@ -7243,13 +7253,13 @@ async function labQaAccept(batchId) {
   if (ok === 0 && !_labQaRejAll[batchId]) { toast('Tap + for every good vial — or "✕ reject all"', true); return; }
   if (ok === 0 && !reason) { toast('Pick the reject reason', true); return; }
   if (rej > 0 && !reason) { toast('Pick a reject reason for the ' + rej + ' not counted OK', true); return; }
-  const what = b.order_item_id ? 'the order (' + escAttr(_labBatchName(b)) + ')' : 'the Stock Controller (it goes into HUB after the Stock Controller receives it)';   // v13.121
+  const what = b.order_item_id ? 'the Stock Controller for the order (' + escAttr(_labBatchName(b)) + ' — the line is done after the Stock Controller receives it)' : 'the Stock Controller (it goes into HUB after the Stock Controller receives it)';   // v13.121 · v13.123
   const back = (rej && b.order_item_id) ? ' The rejected ' + rej + ' will go back to the Mixer for a remake.' : '';
   if (!confirm('Batch ' + b.batch_no + ': accept ' + ok + ' OK' + (rej ? ', reject ' + rej + ' (' + reason + ')' : '') + ' → ' + what + '?' + back)) return;
   const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: batchId, p_qty_ok: ok, p_qty_rejected: rej, p_reason: reason || null });
   if (error) { toast('✅ ' + _labErr(error), true); return; }
   delete _labQaTally[batchId]; delete _labQaRejAll[batchId];
-  toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (b.order_item_id ? 'order' : (ok ? 'waiting for the Stock Controller' : 'all rejected')));   // v13.121
+  toast('✅ Batch ' + b.batch_no + ' accepted: ' + ok + ' → ' + (ok ? 'waiting for the Stock Controller' : (b.order_item_id ? 'all rejected — back to the Mixer' : 'all rejected')));   // v13.121 · v13.123
   await loadLab(true);
 }
 async function labQaAcceptOrder(orderId) {   // accept every line counted fully OK; lines with rejects stay for a per-line Accept with a reason
@@ -7258,10 +7268,10 @@ async function labQaAcceptOrder(orderId) {   // accept every line counted fully 
   const total = labBatches.filter(b => b.stage === 'qa' && b.order_item_id && (_labItemOf(b)?.order_id || b.order_id) === orderId).length;
   const rest = total - clean.length;
   const c0 = _labItemOf(clean[0]);
-  if (!confirm('Accept ' + clean.length + ' of ' + total + ' line' + (total === 1 ? '' : 's') + ' of ' + (c0 ? c0.order_num : 'this order') + ' (all OK) → order?' + (rest ? ' ' + rest + ' line' + (rest === 1 ? '' : 's') + ' not fully counted stay here.' : ''))) return;
+  if (!confirm('Accept ' + clean.length + ' of ' + total + ' line' + (total === 1 ? '' : 's') + ' of ' + (c0 ? c0.order_num : 'this order') + ' (all OK) → the Stock Controller (the lines are done after the Stock Controller receives them)?' + (rest ? ' ' + rest + ' line' + (rest === 1 ? '' : 's') + ' not fully counted stay here.' : ''))) return;
   let failed = 0;
   for (const b of clean) { const { error } = await sb.rpc('lab_qa_accept', { p_batch_id: b.id, p_qty_ok: b.qty_packed, p_qty_rejected: 0, p_reason: null }); if (error) { failed++; toast('✅ ' + _labErr(error), true); } else delete _labQaTally[b.id]; }
-  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' accepted');
+  if (!failed) toast('✅ ' + (c0 ? c0.order_num : 'Order') + ': ' + clean.length + ' line' + (clean.length === 1 ? '' : 's') + ' accepted → waiting for the Stock Controller');   // v13.123
   await loadLab(true);
 }
 
@@ -7302,6 +7312,7 @@ async function loadStorage() {
   if (['admin', 'stock'].includes(currentRole)) {   // v13.121: lab batches waiting to be received
     const { data: ho, error: hoErr } = await sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true });
     labHandover = hoErr ? [] : (ho || []); _rcvBadge();
+    await _rcvLoadOrders();   // v13.123: which order a per-order batch belongs to
   }
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
@@ -7347,6 +7358,18 @@ function _putAwayHtml() {
 // in a fridge (or splits it) and receives it into HUB (stock_receive_batch). A different count → Mismatch → back to QA.
 // The admin receives only as the last resort ("both Stock Controllers are unavailable" — logged). ─────────────────────
 let _rcvRows = {};   // batchId → number of fridge rows shown
+let _rcvOrder = {};  // v13.123: batchId → { order_num, client_name } for per-order batches
+function _rcvPerOrder(b) { const p = _prodById(b.product_id); return !!(b.order_item_id || !b.product_id || (p && p.made_to_order)); }
+async function _rcvLoadOrders() {
+  try {
+    const po = labHandover.filter(_rcvPerOrder); const map = {};
+    const ids = [...new Set(po.map(b => b.order_item_id).filter(Boolean))];
+    if (ids.length) { const { data } = await sb.from('lab_order_lines_v').select('order_item_id,order_num,client_name').in('order_item_id', ids);
+      (data || []).forEach(r => po.filter(b => b.order_item_id === r.order_item_id).forEach(b => map[b.id] = { order_num: r.order_num, client_name: r.client_name })); }
+    po.filter(b => !map[b.id] && b.order_id).forEach(b => { const o = orders.find(x => x.id === b.order_id); if (o) map[b.id] = { order_num: o.order_num, client_name: o.client_name }; });
+    _rcvOrder = map;
+  } catch (e) { /* the row still renders without the order number */ }
+}
 function _receiveHtml() {
   if (!['admin', 'stock'].includes(currentRole) || !labHandover.length) return '';
   const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
@@ -7354,8 +7377,10 @@ function _receiveHtml() {
       <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">count the vials — the number must match QA</span></div>
     ${labHandover.map(b => {
       const p = _prodById(b.product_id); const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; const rows = Math.max(1, _rcvRows[b.id] || 1);
+      const per = _rcvPerOrder(b), ro = _rcvOrder[b.id];   // v13.123: per-order batch — not stock, only "where it lies"
+      const nm = per ? (b.custom_name || (p ? p.name : 'custom item')) : (p ? p.name : '#' + b.product_id);
       return `<div class="pa-row rcv-row" data-batch="${b.id}" style="flex-wrap:wrap;${late ? 'border-left:3px solid var(--red);padding-left:8px' : ''}">
-        <div class="pa-main"><b>${p ? escAttr(p.name) : '#' + b.product_id}</b><span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>QA</small></span>
+        <div class="pa-main"><b>${escAttr(nm)}</b> ${per ? `<span class="lab-chip custom" title="Made for this order — it is not added to HUB stock; the warehouse will see which fridge it is in">for ${escAttr(ro?.order_num || 'order')}${ro?.client_name ? ' · ' + escAttr(ro.client_name) : ''}</span>` : '<span class="lab-chip">for stock</span>'}<span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>QA</small></span>
           <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}${b.qa_email ? ' · ' + escAttr(b.qa_email) : ''}</span>
             <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span>${b.mismatch_qty != null ? `<span style="color:var(--yellow)">earlier mismatch: counted ${b.mismatch_qty}</span>` : ''}</div></div>
         <label style="font-size:10px;color:var(--muted);font-family:var(--mono)">COUNTED<input type="number" id="rcv-cnt-${b.id}" min="0" step="1" value="${b.qty_qa_ok}" style="width:64px;margin-left:4px"></label>
@@ -7389,11 +7414,11 @@ async function receiveLabBatch(batchId) {
   if (currentRole !== 'stock') {
     if (!confirm('Admin — last resort only.\n\nBoth Stock Controllers are unavailable, and you have counted the ' + cnt + ' vials of batch ' + b.batch_no + ' yourself?\n\nThis is recorded in the logs.')) return;
     reason = 'Both Stock Controllers are unavailable';
-  } else if (!confirm('Receive batch ' + b.batch_no + ': ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?')) return;
+  } else if (!confirm('Receive batch ' + b.batch_no + ': ' + cnt + ' × ' + (_rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?')) return;
   const { error } = await sb.rpc('stock_receive_batch', { p_batch_id: batchId, p_qty: cnt, p_places: places, p_admin_reason: reason });
   if (error) { toast('Receive: ' + (error.message || 'error'), true); return; }
   delete _rcvRows[batchId];
-  toast('📥 ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' received → ' + places.map(x => x.place).join(', '));
+  toast('📥 ' + cnt + ' × ' + (_rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' received → ' + places.map(x => x.place).join(', '));
   await loadStorage(); renderStorage();
 }
 async function mismatchLabBatch(batchId) {
