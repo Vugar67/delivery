@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.123"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.124"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1981,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.123';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.124';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -6646,6 +6646,7 @@ function _labSnapshot() {
       const c = labCustom.find(x => x.order_item_id === b.order_item_id);
       b._cap = c ? _labItemLeft(c) : null; b._target = b._cap; return;      // v13.74.1: qty still to make (line qty − QA-accepted)
     }
+    if (b.requested_qty != null) { b._cap = b.requested_qty; b._target = b.requested_qty; return; }   // v13.124: the Stock Controller's order
     const d = labDemand.find(x => String(x.product_id) === String(b.product_id));
     const need = d ? (parseFloat(d.need) || 0) : 0, topup = d ? (parseFloat(d.topup) || 0) : 0;
     b._cap = (d && d.no_stock_ahead) ? Math.max(0, Math.ceil(need + b.qty_mixed)) : null;
@@ -6854,25 +6855,32 @@ function renderLabMixer() {
   // v13.111 (Vugar 08.11): ONE list — stock rows and per-order cards together: urgency first, then the ORDER'S CREATION
   // time (oldest first; a stock row takes the oldest waiting order behind it), then amount. Editing an order does not
   // move it (updated_at is not a key); the card shows "✎ updated" instead. Unknown stamp sorts last.
+  // v13.124 (13.11.2026): stock batches are ORDERED by the Stock Controller — the Mixer makes what is ordered. Every open
+  // stock batch (a request, or an older batch opened before v13.124) is a card with its target; no demand rows / top-up / picker.
+  const reqCard = b => `<div class="lab-card open lab-req" data-batch="${b.id}">
+      <div class="lab-row">
+        <div class="lab-name">${escAttr(_labProductName(b.product_id))} <span class="lab-chip">for stock${b.requested_by ? ' · ordered by ' + escAttr(String(b.requested_by).split('@')[0]) : ''}</span></div>
+        ${b.requested_qty != null ? `<div class="lab-need">${b.requested_qty}<small>ordered</small></div>` : ''}
+      </div>
+      ${b.request_note ? `<div class="lab-meta"><span>📝 ${escAttr(b.request_note)}</span></div>` : ''}
+      ${_labTallyHtml(b)}
+    </div>`;
+  const reqs = labBatches.filter(b => b.stage === 'mixing' && b.product_id && !b.order_item_id)
+    .sort((a, b) => String(a.requested_at || a.created_at).localeCompare(String(b.requested_at || b.created_at)));
   const needList = [
-    ...needRows.map(d => { const m = _labDemandSince(d); return { prio: d.top_priority ?? 9, created: m ? m.created_at : '9999', amt: num(d.need), html: demandCard(d, false) }; }),
     ...actionable.map(lines => { const m = _labMetaFor(lines[0].order_id); return { prio: lines[0].priority ?? 9, created: m ? m.created_at : '9999', amt: lines.reduce((t, c) => t + (c.done ? 0 : _labItemLeft(c)), 0), html: orderCard(lines) }; }),
   ].sort((a, b) => (a.prio - b.prio) || String(a.created).localeCompare(String(b.created)) || (b.amt - a.amt));
   const handedLine = lines => `<div class="lab-meta" style="padding:4px 2px;opacity:.75"><span><b>${escAttr(lines[0].order_num)}</b></span>${lines.filter(c => lineState(c) === 'handed').map(c => { const b = liveOf(c); return `<span>${escAttr(c.custom_name)} <span class="lab-chip ok">${_labWhere(b)} · ${escAttr(b.batch_no)}</span> ${b.qty_mixed} made</span>`; }).join('')}${lines.some(c => c.done) ? `<span>${lines.filter(c => c.done).length} done</span>` : ''}</div>`;
   const openIds = new Set(Object.keys(openBy));
   const pickerOpts = labDemand.filter(d => !d.no_stock_ahead && !openIds.has(String(d.product_id))).sort((a, b) => a.name.localeCompare(b.name));
   let html = '';
-  html += `<div class="lab-sec">Orders need <span class="lab-cnt">${needList.length}</span></div>`;
-  html += needList.length ? needList.map(x => x.html).join('') : '<div class="lab-empty">Nothing waiting — all confirmed orders are covered</div>';
-  if (topupRows.length) html += `<div class="lab-sec">Top up to minimum <span class="lab-cnt">${topupRows.length}</span></div>` + topupRows.map(d => demandCard(d, true)).join('');
-  html += `<div class="lab-sec">Start a batch for stock</div>
-    <div class="lab-pick">
-      <select id="lab-pick-product"><option value="">— product —</option>${pickerOpts.map(d => `<option value="${d.product_id}">${escAttr(d.name)} (free ${num(d.free)})</option>`).join('')}</select>
-      <button class="lab-btn" onclick="labOpenPicked()">Open batch</button>
-    </div>`;
+  html += `<div class="lab-sec">Orders — per-order lines <span class="lab-cnt">${needList.length}</span></div>`;
+  html += needList.length ? needList.map(x => x.html).join('') : '<div class="lab-empty">No custom / PREMIX lines waiting</div>';
+  html += `<div class="lab-sec">Ordered by the Stock Controller <span class="lab-cnt">${reqs.length}</span></div>`;   // v13.124
+  html += reqs.length ? reqs.map(reqCard).join('') : '<div class="lab-empty">Nothing ordered for stock right now</div>';
   if (handedOrders.length) html += `<div class="lab-sec" id="lab-handed">Handed over — at Packer / QA <span class="lab-cnt">${handedOrders.length}</span></div>` + handedOrders.map(handedLine).join('');
   el.innerHTML = html;
-  const cnt = document.getElementById('lab-cnt-mixer'); if (cnt) cnt.textContent = needList.length;
+  const cnt = document.getElementById('lab-cnt-mixer'); if (cnt) cnt.textContent = needList.length + reqs.length;
 }
 function _labRenderCount(batchId) {
   const b = labBatches.find(x => x.id === batchId); const el = document.getElementById('lab-count-' + batchId);
@@ -7313,6 +7321,7 @@ async function loadStorage() {
     const { data: ho, error: hoErr } = await sb.from('lab_batches').select('*').eq('stage', 'handover').order('qa_at', { ascending: true });
     labHandover = hoErr ? [] : (ho || []); _rcvBadge();
     await _rcvLoadOrders();   // v13.123: which order a per-order batch belongs to
+    await _sdLoad();          // v13.124: what to order from the lab + requests in progress
   }
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
@@ -7391,6 +7400,78 @@ function _receiveHtml() {
         <button class="lab-btn primary" onclick="receiveLabBatch(${b.id})">Receive</button>
         <button class="lab-btn danger" onclick="mismatchLabBatch(${b.id})" title="The number on the shelf is not QA's number — send the batch back to QA">Mismatch</button>
       </div>`; }).join('')}</div>`;
+}
+// ── v13.124: 🧪 Order from lab — the Stock Controller decides what the lab makes for stock (lab_request_stock) ─────
+let _sdDemand = [], _sdReqs = [];
+async function _sdLoad() {
+  try {
+    const [d, r] = await Promise.all([
+      sb.from('lab_demand_v').select('*'),
+      sb.from('lab_batches').select('*').gt('requested_qty', 0).in('stage', ['mixing', 'packing', 'qa', 'handover']).order('requested_at', { ascending: true }),
+    ]);
+    _sdDemand = d.error ? [] : (d.data || []); _sdReqs = r.error ? [] : (r.data || []);
+  } catch (e) { _sdDemand = []; _sdReqs = []; }
+}
+function _labOrderHtml() {
+  if (!['admin', 'stock'].includes(currentRole)) return '';
+  const num = v => parseFloat(v) || 0;
+  const need = _sdDemand.filter(d => num(d.need) > 0).sort((a, b) => num(b.need) - num(a.need));
+  const top = _sdDemand.filter(d => num(d.need) <= 0 && num(d.topup) > 0).sort((a, b) => num(b.topup) - num(a.topup));
+  const sugg = (d, kind) => { const q = Math.ceil(kind === 'need' ? num(d.need) : num(d.topup));
+    return `<div class="pa-row sd-row" data-product="${d.product_id}" style="flex-wrap:wrap">
+      <div class="pa-main"><b>${escAttr(d.name)}</b> <span class="lab-chip" style="${kind === 'need' ? 'color:var(--red);border-color:rgba(248,113,113,.5)' : ''}">${kind === 'need' ? 'orders need ' + q : 'below minimum'}</span>
+        <div class="lab-meta"><span>free in HUB <b>${num(d.free)}</b></span>${num(d.min_stock) > 0 ? `<span>min <b>${num(d.min_stock)}</b></span>` : ''}${num(d.in_pipeline) > 0 ? `<span>in the lab <b>${num(d.in_pipeline)}</b></span>` : ''}${kind === 'need' && d.order_nums ? `<span>for ${escAttr(_labOrderNums(d.order_nums))}</span>` : ''}${d.no_stock_ahead ? '<span>no stock ahead</span>' : ''}</div></div>
+      <input type="number" id="sd-q-${d.product_id}" min="1" step="1" value="${q}" style="width:64px" title="How many to order from the lab">
+      <button class="lab-btn primary" onclick="labRequestStock(${d.product_id}, 'sd-q-${d.product_id}')">🧪 Order</button>
+    </div>`; };
+  const where = b => b.stage === 'mixing' ? `at Mixer · ${b.qty_mixed} made` : _labWhere(b) === 'at Stock Controller' ? 'waiting for you — 📥 Receive' : _labWhere(b);
+  const prodOpts = (window._allProducts || products).filter(p => p.active !== false && p.lab_made !== false && !p.made_to_order).sort((a, b) => a.name.localeCompare(b.name))
+    .map(p => `<option value="${p.id}">${escAttr(p.name)}</option>`).join('');
+  return `<div class="putaway sd"><div class="lab-sec">🧪 Order from lab
+      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">you decide what the lab makes for stock — the Mixer makes it, you receive it</span></div>
+    ${need.length ? `<div class="lab-meta" style="margin:6px 0 2px"><b style="color:var(--red)">Orders are waiting for these (${need.length})</b></div>` + need.map(d => sugg(d, 'need')).join('') : ''}
+    ${top.length ? `<div class="lab-meta" style="margin:8px 0 2px"><b>Below minimum (${top.length})</b></div>` + top.map(d => sugg(d, 'top')).join('') : ''}
+    <div class="pa-row" style="flex-wrap:wrap;margin-top:6px">
+      <div class="pa-main"><b>Any product</b></div>
+      <select id="sd-any-p"><option value="">— product —</option>${prodOpts}</select>
+      <input type="number" id="sd-any-q" min="1" step="1" placeholder="qty" style="width:64px">
+      <input type="text" id="sd-any-note" placeholder="note (optional)" maxlength="120" style="width:160px">
+      <button class="lab-btn primary" onclick="labRequestStock(document.getElementById('sd-any-p').value, 'sd-any-q', 'sd-any-note')">🧪 Order</button>
+    </div>
+    ${_sdReqs.length ? `<div class="lab-meta" style="margin:10px 0 2px"><b>Ordered — in the lab now (${_sdReqs.length})</b></div>` + _sdReqs.map(b => `<div class="pa-row sd-req" data-batch="${b.id}">
+      <div class="pa-main"><b>${escAttr(_labProductName(b.product_id))}</b><span class="lab-need" style="font-size:16px">${b.requested_qty}<small>ordered</small></span>
+        <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>${escAttr(where(b))}</span><span>by ${escAttr(String(b.requested_by || '?').split('@')[0])} · ${_labWhen(b.requested_at)}</span>${b.request_note ? `<span>📝 ${escAttr(b.request_note)}</span>` : ''}</div></div>
+      ${b.stage === 'mixing' && !b.qty_mixed ? `<button class="lab-btn danger" onclick="labCancelRequest(${b.id})" title="The Mixer has not started — cancel the order">✕ Cancel</button>` : ''}
+    </div>`).join('') : ''}
+  </div>`;
+}
+async function labRequestStock(productId, qtyId, noteId) {
+  const pid = parseInt(productId, 10); if (!pid) { toast('Pick the product', true); return; }
+  const q = parseInt(document.getElementById(qtyId)?.value, 10);
+  if (!Number.isInteger(q) || q <= 0) { toast('How many should the lab make?', true); return; }
+  const note = noteId ? (document.getElementById(noteId)?.value || '').trim() : '';
+  const name = _prodById(pid)?.name || ('#' + pid);
+  if (!confirm('Order from the lab: ' + q + ' × ' + name + (note ? ' (' + note + ')' : '') + '?\n\nThe Mixer sees it at once; after QA it comes back to you in 📥 Receive from lab.')) return;
+  const { data, error } = await sb.rpc('lab_request_stock', { p_product_id: pid, p_qty: q, p_note: note || null });
+  if (error) { toast('Order from lab: ' + (error.message || 'error'), true); return; }
+  toast('🧪 Ordered from the lab: ' + q + ' × ' + name + (data && data.requested_qty && data.requested_qty !== q ? ' (added to the open batch — target ' + data.requested_qty + ')' : ''));
+  await loadStorage(); renderStorage();
+}
+async function labCancelRequest(batchId) {
+  const b = _sdReqs.find(x => x.id === batchId); if (!b) return;
+  if (!confirm('Cancel the order ' + b.batch_no + ' (' + b.requested_qty + ' × ' + _labProductName(b.product_id) + ')? The Mixer has not started it.')) return;
+  const { error } = await sb.rpc('lab_cancel_batch', { p_batch_id: batchId, p_reason: null });
+  if (error) { toast('Cancel: ' + (error.message || 'error'), true); return; }
+  toast('✕ Order ' + b.batch_no + ' cancelled'); await loadStorage(); renderStorage();
+}
+async function stockSetMin(productId, val) {   // v13.124: the Stock Controller sets Min stock
+  const v = String(val).trim() === '' ? 0 : Number(val);
+  if (!Number.isInteger(v) || v < 0) { toast('Min stock: a whole number, 0 or more', true); renderStorage(); return; }
+  const { error } = await sb.rpc('stock_set_min', { p_product_id: productId, p_min: v });
+  if (error) { toast('Min stock: ' + (error.message || 'error'), true); renderStorage(); return; }
+  [products, window._allProducts || []].forEach(list => { const p = list.find(x => x.id === productId); if (p) p.min_stock = v; });
+  toast('Min stock of ' + (_prodById(productId)?.name || '') + ' → ' + v);
+  await _sdLoad(); renderStorage();
 }
 function rcvAddFridge(batchId) { _rcvRows[batchId] = Math.max(1, _rcvRows[batchId] || 1) + 1; renderStorage(); }
 async function receiveLabBatch(batchId) {
@@ -7597,7 +7678,7 @@ function renderStorage() {
       </tr>`).join('') : (q !== 0 ? `<tr class="lot-row"><td></td><td colspan="5" style="padding:3px 8px 3px 22px;font-size:10.5px;color:var(--yellow);font-family:var(--mono)">↳ no lots — recount, or add with a date and fridge</td><td></td></tr>` : '');
       return `<tr class="prod-row"${rowTitle}>
         <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
-        <td style="padding:7px 8px 3px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}<span style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:8px">${escAttr(p?.category||'')}${minS > 0 ? ' · min ' + minS : ''}</span></td>
+        <td style="padding:7px 8px 3px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}<span style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:8px">${escAttr(p?.category||'')}${(['admin', 'stock'].includes(currentRole) && p && p.lab_made !== false && !p.made_to_order) ? ` · min <input type="number" class="min-in" min="0" step="1" value="${minS}" onchange="stockSetMin(${p.id}, this.value)" title="Min stock — below it the product is suggested in 🧪 Order from lab" style="width:46px;padding:1px 4px;font-size:10px;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text)">` : (minS > 0 ? ' · min ' + minS : '')}</span></td>
         <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">${lots.length > 1 ? lots.length + ' lots' : ''}</td>
         <td style="padding:7px 8px 3px;font-size:10px;color:var(--accent);font-family:var(--mono)">total</td>
         <td style="padding:5px 8px 3px;text-align:center">${qtyInput}</td>
@@ -7618,7 +7699,7 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${ledger ? _receiveHtml() + _putAwayHtml() : ''}
+      ${ledger ? _labOrderHtml() + _receiveHtml() + _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
