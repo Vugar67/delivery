@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.125"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.126"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1981,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.125';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.126';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7322,6 +7322,7 @@ async function loadStorage() {
     labHandover = hoErr ? [] : (ho || []); _rcvBadge();
     await _rcvLoadOrders();   // v13.123: which order a per-order batch belongs to
     await _sdLoad();          // v13.124: what to order from the lab + requests in progress
+    await _fcLoad();          // v13.126: custom items whose order was cancelled — lie in a fridge, not in HUB stock
   }
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
@@ -7478,6 +7479,46 @@ async function stockSetMin(productId, val) {   // v13.124: the Stock Controller 
   [products, window._allProducts || []].forEach(list => { const p = list.find(x => x.id === productId); if (p) p.min_stock = v; });
   toast('Min stock of ' + (_prodById(productId)?.name || '') + ' → ' + v);
   await _sdLoad(); renderStorage();
+}
+// ── v13.126 (14.11.2026): 🧪 Custom without an order — per-order items (custom / PREMIX / made-to-order) the Stock Controller
+// received into a fridge, whose order was then cancelled (return_order_to_stock.sql, delete in the app) or whose line was removed.
+// They have no stock counter, so Storage lists them from free_custom_v until the Stock Controller closes them: "Used in order"
+// (which order took it) or "Scrap" (why). Closing is logged (free_custom_closed).
+let _freeCustom = [];
+async function _fcLoad() {
+  try { const { data, error } = await sb.from('free_custom_v').select('*').order('free_since', { ascending: true }); _freeCustom = error ? [] : (data || []); }
+  catch (e) { _freeCustom = []; }
+}
+function _fcPlaces(f) { return (Array.isArray(f.received_places) ? f.received_places : []).map(x => `<b>${escAttr(x.place)}</b> ${x.qty}`).join(', ') || '<span style="color:var(--yellow)">fridge unknown</span>'; }
+function _freeCustomHtml() {
+  if (!['admin', 'stock'].includes(currentRole) || !_freeCustom.length) return '';
+  return `<div class="putaway fc"><div class="lab-sec">🧪 Custom without an order <span class="lab-cnt">${_freeCustom.length}</span>
+      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">made for an order that was cancelled — lies in a fridge, not in HUB stock. If another order takes it, press "Used in order"</span></div>
+    ${_freeCustom.map(f => `<div class="pa-row fc-row" data-batch="${f.batch_id}" style="flex-wrap:wrap">
+      <div class="pa-main"><b>${escAttr(f.name)}</b> <span class="lab-chip custom" title="${escAttr(f.why)}${f.deleted_reason ? ' · ' + escAttr(f.deleted_reason) : ''}">${f.why === 'line removed from the order' ? 'line removed from ' : 'was for '}${escAttr(f.order_num || 'order')}${f.client_name ? ' · ' + escAttr(f.client_name) : ''}</span><span class="lab-need" style="font-size:18px">${f.qty}<small>in ${(Array.isArray(f.received_places) ? f.received_places : []).map(x => escAttr(x.place)).join(', ') || 'fridge'}</small></span>
+        <div class="lab-meta"><span>${_fcPlaces(f)}</span><span>batch <b>${escAttr(f.batch_no)}</b></span>${f.made_on ? `<span>made ${_lotDate(f.made_on)}</span>` : ''}<span>received ${_labWhen(f.received_at)}${f.received_by ? ' · ' + escAttr(String(f.received_by).split('@')[0]) : ''}</span>
+          <span>${f.why === 'line removed from the order' ? 'line removed' : 'cancelled'}${f.deleted_at ? ' ' + _labWhen(f.deleted_at) : ''}${f.deleted_reason ? ' · ' + escAttr(f.deleted_reason) : ''}</span></div></div>
+      <input type="text" id="fc-ord-${f.batch_id}" placeholder="ORD-…" maxlength="20" style="width:110px" title="The order that takes this item">
+      <button class="lab-btn primary" onclick="freeCustomUsed(${f.batch_id})" title="Another order took this item — close it with that order number">Used in order</button>
+      <button class="lab-btn danger" onclick="freeCustomScrap(${f.batch_id})" title="Thrown away / expired — close it with a reason">Scrap</button>
+    </div>`).join('')}</div>`;
+}
+async function freeCustomUsed(batchId) {
+  const f = _freeCustom.find(x => x.batch_id === batchId); if (!f) return;
+  const ord = (document.getElementById('fc-ord-' + batchId)?.value || '').trim().toUpperCase();
+  if (!/^ORD-\d{4,}$/.test(ord)) { toast('Type the order that takes it, like ORD-125300', true); return; }
+  if (!confirm(f.name + ' (' + f.qty + ' × from ' + (f.order_num || 'a cancelled order') + ', ' + f.batch_no + ') went into ' + ord + '?\n\nIt disappears from this list; the logs keep who/when/where.')) return;
+  const { error } = await sb.rpc('free_custom_close', { p_batch_id: batchId, p_how: 'used', p_note: ord });
+  if (error) { toast('Used in order: ' + (error.message || 'error'), true); return; }
+  toast('✓ ' + f.name + ' → ' + ord); await loadStorage(); renderStorage();
+}
+async function freeCustomScrap(batchId) {
+  const f = _freeCustom.find(x => x.batch_id === batchId); if (!f) return;
+  const why = (prompt('Scrap ' + f.name + ' (' + f.qty + ' × from ' + (f.order_num || 'a cancelled order') + ', ' + f.batch_no + ')?\n\nWhy? (expired, damaged, …) — recorded in the logs', '') || '').trim();
+  if (!why) { toast('Scrap: the reason is required', true); return; }
+  const { error } = await sb.rpc('free_custom_close', { p_batch_id: batchId, p_how: 'scrapped', p_note: why });
+  if (error) { toast('Scrap: ' + (error.message || 'error'), true); return; }
+  toast('🗑 ' + f.name + ' scrapped: ' + why); await loadStorage(); renderStorage();
 }
 function rcvAddFridge(batchId) { _rcvRows[batchId] = Math.max(1, _rcvRows[batchId] || 1) + 1; renderStorage(); }
 async function receiveLabBatch(batchId) {
@@ -7719,7 +7760,7 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${ledger ? _labOrderHtml() + _receiveHtml() + _putAwayHtml() : ''}
+      ${ledger ? _labOrderHtml() + _receiveHtml() + _freeCustomHtml() + _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
