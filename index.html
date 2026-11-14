@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.124"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.125"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1981,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.124';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.125';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7249,8 +7249,8 @@ const HANDOVER_LATE_MIN = 30;
 function _labHandoverHtml() {
   return `<div class="lab-sec" style="margin-top:12px">⏳ Waiting for Stock Controller <span class="lab-cnt">${labHandover.length}</span></div>` +
     labHandover.map(b => { const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; return `<div class="lab-card ho-card" style="opacity:.85;${late ? 'border-color:var(--red)' : ''}">
-      <div class="lab-row"><div class="lab-name">${escAttr(_labBatchName(b))} ${b.order_item_id || !b.product_id ? `<span class="lab-chip custom">for ${escAttr(_labItemOf(b)?.order_num || 'order')}</span>` : '<span class="lab-chip">for stock</span>'}</div><div class="lab-need">${b.qty_qa_ok}<small>accepted</small></div></div>
-      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}</span>${b.qa_email ? `<span>${escAttr(b.qa_email)}</span>` : ''}
+      <div class="lab-row"><div class="lab-name">${escAttr(_labBatchName(b))} ${b.return_order_num ? _rcvReturnChip(b) : b.order_item_id || !b.product_id ? `<span class="lab-chip custom">for ${escAttr(_labItemOf(b)?.order_num || 'order')}</span>` : '<span class="lab-chip">for stock</span>'}</div><div class="lab-need">${b.qty_qa_ok}<small>${b.return_order_num ? 'returned' : 'accepted'}</small></div></div>
+      <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span>${b.return_order_num ? `<span>returned ${_labWhen(b.qa_at)}</span>` : `<span>QA ${_labWhen(b.qa_at)}</span>${b.qa_email ? `<span>${escAttr(b.qa_email)}</span>` : ''}`}
         <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span></div>
     </div>`; }).join('');
 }
@@ -7369,6 +7369,11 @@ function _putAwayHtml() {
 let _rcvRows = {};   // batchId → number of fridge rows shown
 let _rcvOrder = {};  // v13.123: batchId → { order_num, client_name } for per-order batches
 function _rcvPerOrder(b) { const p = _prodById(b.product_id); return !!(b.order_item_id || !b.product_id || (p && p.made_to_order)); }
+// v13.125 (14.11.2026): RETURN batches — vials of a wrong order that the admin cancelled (return_order_to_stock.sql /
+// admin_order_return_to_stock) come back to HUB through the same 📥 Receive: count → fridge → Receive. Fewer than returned
+// is allowed (the shortage is logged); nothing came back → Mismatch with 0 closes the batch.
+function _rcvIsReturn(b) { return !!(b && b.return_order_num); }
+function _rcvReturnChip(b) { return `<span class="lab-chip" style="color:var(--yellow);border-color:rgba(250,204,21,.5)" title="These vials were written off at packing of ${escAttr(b.return_order_num)}; the admin cancelled that order — the vials go back into HUB stock (lot source: return, made-on kept)">↩ return from ${escAttr(b.return_order_num)}${b.return_reason ? ' · ' + escAttr(b.return_reason) : ''}</span>`; }
 async function _rcvLoadOrders() {
   try {
     const po = labHandover.filter(_rcvPerOrder); const map = {};
@@ -7383,14 +7388,15 @@ function _receiveHtml() {
   if (!['admin', 'stock'].includes(currentRole) || !labHandover.length) return '';
   const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
   return `<div class="putaway rcv"><div class="lab-sec">📥 Receive from lab <span class="lab-cnt">${labHandover.length}</span>
-      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">count the vials — the number must match QA</span></div>
+      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">count the vials — the number must match QA${labHandover.some(_rcvIsReturn) ? ' · ↩ returns: fewer than returned is allowed' : ''}</span></div>
     ${labHandover.map(b => {
       const p = _prodById(b.product_id); const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; const rows = Math.max(1, _rcvRows[b.id] || 1);
-      const per = _rcvPerOrder(b), ro = _rcvOrder[b.id];   // v13.123: per-order batch — not stock, only "where it lies"
+      const ret = _rcvIsReturn(b);   // v13.125: return batch of a cancelled order
+      const per = !ret && _rcvPerOrder(b), ro = _rcvOrder[b.id];   // v13.123: per-order batch — not stock, only "where it lies"
       const nm = per ? (b.custom_name || (p ? p.name : 'custom item')) : (p ? p.name : '#' + b.product_id);
-      return `<div class="pa-row rcv-row" data-batch="${b.id}" style="flex-wrap:wrap;${late ? 'border-left:3px solid var(--red);padding-left:8px' : ''}">
-        <div class="pa-main"><b>${escAttr(nm)}</b> ${per ? `<span class="lab-chip custom" title="Made for this order — it is not added to HUB stock; the warehouse will see which fridge it is in">for ${escAttr(ro?.order_num || 'order')}${ro?.client_name ? ' · ' + escAttr(ro.client_name) : ''}</span>` : '<span class="lab-chip">for stock</span>'}<span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>QA</small></span>
-          <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>QA ${_labWhen(b.qa_at)}${b.qa_email ? ' · ' + escAttr(b.qa_email) : ''}</span>
+      return `<div class="pa-row rcv-row${ret ? ' rcv-ret' : ''}" data-batch="${b.id}" style="flex-wrap:wrap;${late ? 'border-left:3px solid var(--red);padding-left:8px' : ''}">
+        <div class="pa-main"><b>${escAttr(nm)}</b> ${ret ? _rcvReturnChip(b) : per ? `<span class="lab-chip custom" title="Made for this order — it is not added to HUB stock; the warehouse will see which fridge it is in">for ${escAttr(ro?.order_num || 'order')}${ro?.client_name ? ' · ' + escAttr(ro.client_name) : ''}</span>` : '<span class="lab-chip">for stock</span>'}<span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>${ret ? 'returned' : 'QA'}</small></span>
+          <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>${ret ? 'returned ' + _labWhen(b.qa_at) + (b.return_by ? ' · by ' + escAttr(String(b.return_by).split('@')[0]) : '') + (b.return_made_on ? ' · made ' + escAttr(b.return_made_on) : '') : 'QA ' + _labWhen(b.qa_at) + (b.qa_email ? ' · ' + escAttr(b.qa_email) : '')}</span>
             <span style="color:${late ? 'var(--red)' : 'var(--muted)'}">waiting ${_waitText(m)}${late ? ' ⚠' : ''}</span>${b.mismatch_qty != null ? `<span style="color:var(--yellow)">earlier mismatch: counted ${b.mismatch_qty}</span>` : ''}</div></div>
         <label style="font-size:10px;color:var(--muted);font-family:var(--mono)">COUNTED<input type="number" id="rcv-cnt-${b.id}" min="0" step="1" value="${b.qty_qa_ok}" style="width:64px;margin-left:4px"></label>
         <div style="display:flex;flex-direction:column;gap:4px">${Array.from({ length: rows }, (_, i) => `<div style="display:flex;gap:4px">
@@ -7398,7 +7404,7 @@ function _receiveHtml() {
           <input type="number" id="rcv-q-${b.id}-${i}" min="1" step="1" value="${rows === 1 ? b.qty_qa_ok : ''}" style="width:56px" title="How many go into this fridge"></div>`).join('')}
           <button class="lab-btn" onclick="rcvAddFridge(${b.id})" style="font-size:11px;padding:3px 8px">+ fridge</button></div>
         <button class="lab-btn primary" onclick="receiveLabBatch(${b.id})">Receive</button>
-        <button class="lab-btn danger" onclick="mismatchLabBatch(${b.id})" title="The number on the shelf is not QA's number — send the batch back to QA">Mismatch</button>
+        <button class="lab-btn danger" onclick="mismatchLabBatch(${b.id})" title="${ret ? 'Nothing came back from ' + escAttr(b.return_order_num) + ' — type 0 in COUNTED and press Mismatch: the batch closes with 0' : 'The number on the shelf is not QA\'s number — send the batch back to QA'}">Mismatch</button>
       </div>`; }).join('')}</div>`;
 }
 // ── v13.124: 🧪 Order from lab — the Stock Controller decides what the lab makes for stock (lab_request_stock) ─────
@@ -7478,7 +7484,10 @@ async function receiveLabBatch(batchId) {
   const b = labHandover.find(x => x.id === batchId); if (!b) return;
   const cnt = parseInt(document.getElementById('rcv-cnt-' + batchId)?.value, 10);
   if (!Number.isInteger(cnt) || cnt < 0) { toast('Type the number of vials you counted', true); return; }
-  if (cnt !== b.qty_qa_ok) { toast('You counted ' + cnt + ', QA accepted ' + b.qty_qa_ok + ' — count again, or press Mismatch', true); return; }
+  const ret = _rcvIsReturn(b);   // v13.125: a return may come back short — 1…returned; 0 → Mismatch
+  if (ret && cnt === 0) { toast('Nothing came back from ' + b.return_order_num + '? Press Mismatch with 0', true); return; }
+  if (ret && cnt > b.qty_qa_ok) { toast('You counted ' + cnt + ', but only ' + b.qty_qa_ok + ' were returned from ' + b.return_order_num + ' — count again', true); return; }
+  if (!ret && cnt !== b.qty_qa_ok) { toast('You counted ' + cnt + ', QA accepted ' + b.qty_qa_ok + ' — count again, or press Mismatch', true); return; }
   const rows = Math.max(1, _rcvRows[batchId] || 1), places = [];
   for (let i = 0; i < rows; i++) {
     const pl = document.getElementById('rcv-pl-' + batchId + '-' + i)?.value || '';
@@ -7495,17 +7504,28 @@ async function receiveLabBatch(batchId) {
   if (currentRole !== 'stock') {
     if (!confirm('Admin — last resort only.\n\nBoth Stock Controllers are unavailable, and you have counted the ' + cnt + ' vials of batch ' + b.batch_no + ' yourself?\n\nThis is recorded in the logs.')) return;
     reason = 'Both Stock Controllers are unavailable';
+  } else if (ret) {
+    const short = b.qty_qa_ok - cnt;
+    if (!confirm('Return from ' + b.return_order_num + ' (' + b.batch_no + '): ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' back into HUB → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?' + (short ? '\n\n' + short + ' of ' + b.qty_qa_ok + ' did not come back — this is recorded in the logs.' : ''))) return;
   } else if (!confirm('Receive batch ' + b.batch_no + ': ' + cnt + ' × ' + (_rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?')) return;
   const { error } = await sb.rpc('stock_receive_batch', { p_batch_id: batchId, p_qty: cnt, p_places: places, p_admin_reason: reason });
   if (error) { toast('Receive: ' + (error.message || 'error'), true); return; }
   delete _rcvRows[batchId];
-  toast('📥 ' + cnt + ' × ' + (_rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' received → ' + places.map(x => x.place).join(', '));
+  toast('📥 ' + cnt + ' × ' + (ret ? (_prodById(b.product_id)?.name || '') + ' returned from ' + b.return_order_num : _rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' received → ' + places.map(x => x.place).join(', ') + (ret && cnt < b.qty_qa_ok ? ' · ' + (b.qty_qa_ok - cnt) + ' missing (logged)' : ''));
   await loadStorage(); renderStorage();
 }
 async function mismatchLabBatch(batchId) {
   const b = labHandover.find(x => x.id === batchId); if (!b) return;
   const cnt = parseInt(document.getElementById('rcv-cnt-' + batchId)?.value, 10);
   if (!Number.isInteger(cnt) || cnt < 0) { toast('Type the number of vials you counted', true); return; }
+  if (_rcvIsReturn(b)) {   // v13.125: a return has no QA to go back to — Mismatch only closes it with 0
+    if (cnt !== 0) { toast('Return from ' + b.return_order_num + ': type the number you have (' + cnt + ') in COUNTED and press Receive — fewer than ' + b.qty_qa_ok + ' is allowed. Mismatch is only for 0', true); return; }
+    if (!confirm('Nothing came back from ' + b.return_order_num + ' (' + b.batch_no + ', ' + b.qty_qa_ok + ' × ' + (_prodById(b.product_id)?.name || '') + ')?\n\nThe batch closes with 0 — nothing goes into stock. This is recorded in the logs.')) return;
+    const { error } = await sb.rpc('stock_receive_mismatch', { p_batch_id: batchId, p_counted: 0, p_note: null });
+    if (error) { toast('Mismatch: ' + (error.message || 'error'), true); return; }
+    toast('↩ ' + b.batch_no + ' closed with 0 — nothing came back from ' + b.return_order_num);
+    await loadStorage(); renderStorage(); return;
+  }
   if (cnt === b.qty_qa_ok) { toast('Your count matches QA (' + cnt + ') — press Receive', true); return; }
   if (!confirm('Batch ' + b.batch_no + ': you counted ' + cnt + ', QA accepted ' + b.qty_qa_ok + '.\n\nSend it back to QA? Nothing goes into stock until the numbers match.')) return;
   const { error } = await sb.rpc('stock_receive_mismatch', { p_batch_id: batchId, p_counted: cnt, p_note: null });
