@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.126.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.127"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1981,7 +1981,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.126.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.127';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7374,7 +7374,10 @@ function _rcvPerOrder(b) { const p = _prodById(b.product_id); return !!(b.order_
 // admin_order_return_to_stock) come back to HUB through the same 📥 Receive: count → fridge → Receive. Fewer than returned
 // is allowed (the shortage is logged); nothing came back → Mismatch with 0 closes the batch.
 function _rcvIsReturn(b) { return !!(b && b.return_order_num); }
-function _rcvReturnChip(b) { return `<span class="lab-chip" style="color:var(--yellow);border-color:rgba(250,204,21,.5)" title="These vials were written off at packing of ${escAttr(b.return_order_num)}; the admin cancelled that order — the vials go back into HUB stock (lot source: return, made-on kept)">↩ return from ${escAttr(b.return_order_num)}${b.return_reason ? ' · ' + escAttr(b.return_reason) : ''}</span>`; }
+// v13.127: a return may be a CUSTOM item of a packed order (add_custom_return) — no product, no stock: it only gets a fridge
+function _rcvRetCustom(b) { return _rcvIsReturn(b) && !!(b.order_item_id || !b.product_id); }
+function _rcvName(b) { return _rcvRetCustom(b) ? (b.custom_name || _prodById(b.product_id)?.name || 'custom item') : (_prodById(b.product_id)?.name || (b.custom_name || '#' + b.product_id)); }
+function _rcvReturnChip(b) { return `<span class="lab-chip" style="color:var(--yellow);border-color:rgba(250,204,21,.5)" title="${_rcvRetCustom(b) ? 'This custom item was in the bag of ' + escAttr(b.return_order_num) + '; the admin cancelled that order — count it when the bag is back and put it into a fridge (it is not HUB stock; it then shows in Custom without an order)' : 'These vials were written off at packing of ' + escAttr(b.return_order_num) + '; the admin cancelled that order — the vials go back into HUB stock (lot source: return, made-on kept)'}">↩ return from ${escAttr(b.return_order_num)}${_rcvRetCustom(b) ? ' · custom' : ''}${b.return_reason ? ' · ' + escAttr(b.return_reason) : ''}</span>`; }
 async function _rcvLoadOrders() {
   try {
     const po = labHandover.filter(_rcvPerOrder); const map = {};
@@ -7394,7 +7397,7 @@ function _receiveHtml() {
       const p = _prodById(b.product_id); const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; const rows = Math.max(1, _rcvRows[b.id] || 1);
       const ret = _rcvIsReturn(b);   // v13.125: return batch of a cancelled order
       const per = !ret && _rcvPerOrder(b), ro = _rcvOrder[b.id];   // v13.123: per-order batch — not stock, only "where it lies"
-      const nm = per ? (b.custom_name || (p ? p.name : 'custom item')) : (p ? p.name : '#' + b.product_id);
+      const nm = ret ? _rcvName(b) : per ? (b.custom_name || (p ? p.name : 'custom item')) : (p ? p.name : '#' + b.product_id);   // v13.127: custom returns
       return `<div class="pa-row rcv-row${ret ? ' rcv-ret' : ''}" data-batch="${b.id}" style="flex-wrap:wrap;${late ? 'border-left:3px solid var(--red);padding-left:8px' : ''}">
         <div class="pa-main"><b>${escAttr(nm)}</b> ${ret ? _rcvReturnChip(b) : per ? `<span class="lab-chip custom" title="Made for this order — it is not added to HUB stock; the warehouse will see which fridge it is in">for ${escAttr(ro?.order_num || 'order')}${ro?.client_name ? ' · ' + escAttr(ro.client_name) : ''}</span>` : '<span class="lab-chip">for stock</span>'}<span class="lab-need" style="font-size:18px">${b.qty_qa_ok}<small>${ret ? 'returned' : 'QA'}</small></span>
           <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>${ret ? 'returned ' + _labWhen(b.qa_at) + (b.return_by ? ' · by ' + escAttr(String(b.return_by).split('@')[0]) : '') + (b.return_made_on ? ' · made ' + escAttr(b.return_made_on) : '') : 'QA ' + _labWhen(b.qa_at) + (b.qa_email ? ' · ' + escAttr(b.qa_email) : '')}</span>
@@ -7440,6 +7443,7 @@ function _labOrderHtml() {
     ${top.length ? `<div class="lab-meta" style="margin:8px 0 2px"><b>Below minimum (${top.length})</b></div>` + top.map(d => sugg(d, 'top')).join('') : ''}
     <div class="pa-row" style="flex-wrap:wrap;margin-top:6px">
       <div class="pa-main"><b>Any product</b></div>
+      <input type="text" id="sd-any-s" placeholder="🔍 find" maxlength="40" style="width:110px" title="Type part of the name — the list below keeps only the matches" oninput="selFilter('sd-any-p', this.value)">
       <select id="sd-any-p"><option value="">— product —</option>${prodOpts}</select>
       <input type="number" id="sd-any-q" min="1" step="1" placeholder="qty" style="width:64px">
       <input type="text" id="sd-any-note" placeholder="note (optional)" maxlength="120" style="width:160px">
@@ -7532,6 +7536,23 @@ async function freeCustomScrap(batchId) {
   if (error) { toast('Scrap: ' + (error.message || 'error'), true); return; }
   toast('🗑 ' + f.name + ' scrapped: ' + why); await loadStorage(); renderStorage();
 }
+// v13.127 (Vugar 14.11.2026): a system <select> cannot be searched — with 200+ products the "— product —" lists in Storage
+// (🧪 Order from lab · Any product, + Add, Recount) get a "🔍 find" box: it hides the options that do not contain the typed
+// text (all words must match, any order). One match left → it is selected; the selected option disappears → selection cleared.
+function selFilter(selId, q) {
+  const sel = document.getElementById(selId); if (!sel) return 0;
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  let shown = 0, last = null;
+  for (const o of sel.options) {
+    if (!o.value) { o.hidden = false; continue; }
+    const t = o.text.toLowerCase();
+    const hit = words.every(w => t.includes(w));
+    o.hidden = !hit; if (hit) { shown++; last = o; }
+  }
+  if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
+  if (shown === 1 && words.length) sel.value = last.value;
+  return shown;
+}
 function rcvAddFridge(batchId) { _rcvRows[batchId] = Math.max(1, _rcvRows[batchId] || 1) + 1; renderStorage(); }
 async function receiveLabBatch(batchId) {
   const b = labHandover.find(x => x.id === batchId); if (!b) return;
@@ -7559,12 +7580,12 @@ async function receiveLabBatch(batchId) {
     reason = 'Both Stock Controllers are unavailable';
   } else if (ret) {
     const short = b.qty_qa_ok - cnt;
-    if (!confirm('Return from ' + b.return_order_num + ' (' + b.batch_no + '): ' + cnt + ' × ' + (_prodById(b.product_id)?.name || '') + ' back into HUB → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?' + (short ? '\n\n' + short + ' of ' + b.qty_qa_ok + ' did not come back — this is recorded in the logs.' : ''))) return;
+    if (!confirm('Return from ' + b.return_order_num + ' (' + b.batch_no + '): ' + cnt + ' × ' + _rcvName(b) + (_rcvRetCustom(b) ? ' (custom — not HUB stock, only the fridge is recorded) → ' : ' back into HUB → ') + places.map(x => x.place + ' ' + x.qty).join(', ') + '?' + (short ? '\n\n' + short + ' of ' + b.qty_qa_ok + ' did not come back — this is recorded in the logs.' : ''))) return;
   } else if (!confirm('Receive batch ' + b.batch_no + ': ' + cnt + ' × ' + (_rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' → ' + places.map(x => x.place + ' ' + x.qty).join(', ') + '?')) return;
   const { error } = await sb.rpc('stock_receive_batch', { p_batch_id: batchId, p_qty: cnt, p_places: places, p_admin_reason: reason });
   if (error) { toast('Receive: ' + (error.message || 'error'), true); return; }
   delete _rcvRows[batchId];
-  toast('📥 ' + cnt + ' × ' + (ret ? (_prodById(b.product_id)?.name || '') + ' returned from ' + b.return_order_num : _rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' received → ' + places.map(x => x.place).join(', ') + (ret && cnt < b.qty_qa_ok ? ' · ' + (b.qty_qa_ok - cnt) + ' missing (logged)' : ''));
+  toast('📥 ' + cnt + ' × ' + (ret ? _rcvName(b) + ' returned from ' + b.return_order_num + (_rcvRetCustom(b) ? ' (see Custom without an order)' : '') : _rcvPerOrder(b) ? (b.custom_name || _prodById(b.product_id)?.name || '') + ' for ' + (_rcvOrder[b.id]?.order_num || 'the order') : (_prodById(b.product_id)?.name || '')) + ' received → ' + places.map(x => x.place).join(', ') + (ret && cnt < b.qty_qa_ok ? ' · ' + (b.qty_qa_ok - cnt) + ' missing (logged)' : ''));
   await loadStorage(); renderStorage();
 }
 async function mismatchLabBatch(batchId) {
@@ -7573,7 +7594,7 @@ async function mismatchLabBatch(batchId) {
   if (!Number.isInteger(cnt) || cnt < 0) { toast('Type the number of vials you counted', true); return; }
   if (_rcvIsReturn(b)) {   // v13.125: a return has no QA to go back to — Mismatch only closes it with 0
     if (cnt !== 0) { toast('Return from ' + b.return_order_num + ': type the number you have (' + cnt + ') in COUNTED and press Receive — fewer than ' + b.qty_qa_ok + ' is allowed. Mismatch is only for 0', true); return; }
-    if (!confirm('Nothing came back from ' + b.return_order_num + ' (' + b.batch_no + ', ' + b.qty_qa_ok + ' × ' + (_prodById(b.product_id)?.name || '') + ')?\n\nThe batch closes with 0 — nothing goes into stock. This is recorded in the logs.')) return;
+    if (!confirm('Nothing came back from ' + b.return_order_num + ' (' + b.batch_no + ', ' + b.qty_qa_ok + ' × ' + _rcvName(b) + ')?\n\nThe batch closes with 0 — nothing goes into stock. This is recorded in the logs.')) return;
     const { error } = await sb.rpc('stock_receive_mismatch', { p_batch_id: batchId, p_counted: 0, p_note: null });
     if (error) { toast('Mismatch: ' + (error.message || 'error'), true); return; }
     toast('↩ ' + b.batch_no + ' closed with 0 — nothing came back from ' + b.return_order_num);
@@ -7786,6 +7807,8 @@ function renderStorage() {
         <tbody>${invRows || `<tr><td colspan="${ledger ? 7 : 6}" style="padding:14px;text-align:center;color:var(--muted);font-size:12px">${_f.active && invAll.length ? `No products match the filter (${invAll.length} hidden)` : 'No items — add below'}</td></tr>`}</tbody>
       </table>
       <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center;background:var(--surface2)">
+        <input type="text" id="inv-add-find-${s.id}" placeholder="🔍 find" maxlength="40" title="Type part of the name — the list keeps only the matches" oninput="selFilter('inv-add-prod-${s.id}', this.value)"
+          style="width:96px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
         <select id="inv-add-prod-${s.id}" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none">
           <option value="">+ Select product...</option>${prodOpts}
         </select>
@@ -7802,6 +7825,8 @@ function renderStorage() {
       </div>
       ${ledger ? `<div style="padding:6px 12px 8px;border-top:1px dashed var(--border);display:flex;gap:6px;align-items:center;justify-content:flex-end;background:var(--surface);opacity:.8">
         <span style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-right:auto">RECOUNT — sets the product's total; the difference goes to the journal</span>
+        <input type="text" id="inv-cnt-find-${s.id}" placeholder="🔍 find" maxlength="40" title="Type part of the name — the list keeps only the matches" oninput="selFilter('inv-cnt-prod-${s.id}', this.value)"
+          style="width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none">
         <select id="inv-cnt-prod-${s.id}" style="width:260px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none">
           <option value="">product…</option>${prodOpts}
         </select>
