@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.129"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.130"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -464,6 +464,11 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lot-row .lot-e{background:var(--surface2);border:1px solid var(--accent);border-radius:5px;padding:3px 6px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none}
 .lot-edit-btn{opacity:.55}.lot-row:hover .lot-edit-btn{opacity:1}
 .lab-note{margin:6px 0 8px;padding:6px 10px;border:1px solid rgba(250,204,21,.45);border-radius:8px;background:rgba(250,204,21,.08);color:var(--text);font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-word}   /* v13.129 */
+.sc-sec{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 6px;font-size:13px;color:var(--text)}   /* v13.130 */
+.sc-sec .sc-hint{font-size:11px;color:var(--muted);font-weight:400}
+.sc-sec .sc-arr{font-family:var(--mono);color:var(--muted);width:12px}
+.sc-part{border-top:2px solid var(--border)}
+.sc-mine .sc-sec.has b{color:var(--accent)} .sc-ret .sc-sec.has b{color:var(--yellow)}
 .putaway{margin:0 0 10px;padding:0 12px 6px;border-bottom:1px solid var(--border)}   /* v13.76: lots waiting for a fridge */
 #wh-putaway .putaway{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px 12px 8px;margin-bottom:12px}
 .pa-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--border)}
@@ -1982,7 +1987,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.129';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.130';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -7396,12 +7401,7 @@ async function _rcvLoadOrders() {
     _rcvOrder = map;
   } catch (e) { /* the row still renders without the order number */ }
 }
-function _receiveHtml() {
-  if (!['admin', 'stock'].includes(currentRole) || !labHandover.length) return '';
-  const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
-  return `<div class="putaway rcv"><div class="lab-sec">📥 Receive from lab <span class="lab-cnt">${labHandover.length}</span>
-      <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">count the vials — the number must match QA${labHandover.some(_rcvIsReturn) ? ' · ↩ returns: fewer than returned is allowed' : ''}</span></div>
-    ${labHandover.map(b => {
+function _rcvRowHtml(b, fr) {
       const p = _prodById(b.product_id); const m = _waitMin(b.qa_at), late = m > HANDOVER_LATE_MIN; const rows = Math.max(1, _rcvRows[b.id] || 1);
       const ret = _rcvIsReturn(b);   // v13.125: return batch of a cancelled order
       const per = !ret && _rcvPerOrder(b), ro = _rcvOrder[b.id];   // v13.123: per-order batch — not stock, only "where it lies"
@@ -7417,8 +7417,44 @@ function _receiveHtml() {
           <button class="lab-btn" onclick="rcvAddFridge(${b.id})" style="font-size:11px;padding:3px 8px">+ fridge</button></div>
         <button class="lab-btn primary" onclick="receiveLabBatch(${b.id})">Receive</button>
         <button class="lab-btn danger" onclick="mismatchLabBatch(${b.id})" title="${ret ? 'Nothing came back from ' + escAttr(b.return_order_num) + ' — type 0 in COUNTED and press Mismatch: the batch closes with 0' : 'The number on the shelf is not QA\'s number — send the batch back to QA'}">Mismatch</button>
-      </div>`; }).join('')}</div>`;
+      </div>`; }
+// v13.130: the rows of a Receive list (sections 1–3 of the Stock Controller's Storage)
+function _receiveRows(list) {
+  const fr = (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}">${escAttr(f.value)}</option>`).join('');
+  return list.map(b => _rcvRowHtml(b, fr)).join('');
 }
+function _receiveHtml() {   // pre-v13.130 single list — kept for reference, not used in the HUB card
+  if (!['admin', 'stock'].includes(currentRole) || !labHandover.length) return '';
+  return `<div class="putaway rcv">${_receiveRows(labHandover)}</div>`;
+}
+// ── v13.130 (Vugar 17.11.2026): the Stock Controller's Storage in four parts, each item in exactly one of them:
+//   1 · My orders — ready        what the Stock Controller ordered, QA confirmed, not received yet
+//   2 · Lab — ready, not received QA confirmed, not ordered by the Stock Controller (custom / PREMIX for orders, older stock batches)
+//   3 · Returns                   returns of cancelled orders waiting to be received + custom without an order
+//   4 · In stock                  what is really on the shelves (the HUB table, put-away on top)
+// Orders still at Mixer / Packer / QA stay in the short list of 🧪 Order from lab (✕ Cancel while the Mixer has not started).
+let _scCollapsed = (() => { try { return JSON.parse(localStorage.getItem('mycrm_sc_collapsed') || '{}') || {}; } catch (e) { return {}; } })();
+function scToggle(key) { _scCollapsed[key] = !_scCollapsed[key]; try { localStorage.setItem('mycrm_sc_collapsed', JSON.stringify(_scCollapsed)); } catch (e) {} renderStorage(); }
+function _scHead(key, title, hint, count, collapsible = true) {
+  const closed = collapsible && !!_scCollapsed[key];
+  return `<div class="sc-sec${count ? ' has' : ''}" data-sec="${key}" ${collapsible ? `onclick="scToggle('${key}')" style="cursor:pointer"` : ''}>
+      ${collapsible ? `<span class="sc-arr">${closed ? '▸' : '▾'}</span>` : ''}<b>${title}</b> <span class="lab-cnt">${count}</span>
+      <span class="sc-hint">${hint}</span></div>`;
+}
+function _scSectionsHtml() {
+  if (!['admin', 'stock'].includes(currentRole)) return '';
+  const mine = labHandover.filter(b => !_rcvIsReturn(b) && b.requested_by);
+  const lab = labHandover.filter(b => !_rcvIsReturn(b) && !b.requested_by);
+  const ret = labHandover.filter(_rcvIsReturn);
+  const sec = (key, title, hint, list, extraHtml = '', extraCount = 0) => {
+    const n = list.length + extraCount;
+    return `<div class="putaway sc-part sc-${key}">${_scHead(key, title, hint, n)}${_scCollapsed[key] ? '' : (n ? _receiveRows(list) + extraHtml : '<div class="lab-empty" style="padding:6px 0">Nothing here</div>')}</div>`;
+  };
+  return sec('mine', '1 · My orders — ready to receive', 'what you ordered — QA confirmed it: count, fridge, Receive', mine)
+       + sec('lab', '2 · Lab — ready, not received', 'QA confirmed — custom / PREMIX for orders and stock batches you did not order', lab)
+       + sec('ret', '3 · Returns', 'from cancelled orders — count what came back (fewer than returned is allowed) · custom without an order', ret, _freeCustomHtml(), _freeCustom.length);
+}
+
 // ── v13.124: 🧪 Order from lab — the Stock Controller decides what the lab makes for stock (lab_request_stock) ─────
 let _sdDemand = [], _sdReqs = [];
 async function _sdLoad() {
@@ -7457,11 +7493,11 @@ function _labOrderHtml() {
       <input type="text" id="sd-any-note" placeholder="note (optional)" maxlength="120" style="width:160px">
       <button class="lab-btn primary" onclick="labRequestStock(document.getElementById('sd-any-p').value, 'sd-any-q', 'sd-any-note')">🧪 Order</button>
     </div>
-    ${_sdReqs.length ? `<div class="lab-meta" style="margin:10px 0 2px"><b>Ordered — in the lab now (${_sdReqs.length})</b></div>` + _sdReqs.map(b => `<div class="pa-row sd-req" data-batch="${b.id}">
+    ${(() => { const inLab = _sdReqs.filter(b => b.stage !== 'handover'); return inLab.length ? `<div class="lab-meta" style="margin:10px 0 2px"><b>Ordered — still in the lab (${inLab.length})</b> <span>at Mixer / Packer / QA · ✕ Cancel while the Mixer has not started · ready ones are in 1 · My orders</span></div>` + inLab.map(b => `<div class="pa-row sd-req" data-batch="${b.id}">
       <div class="pa-main"><b>${escAttr(_labProductName(b.product_id))}</b><span class="lab-need" style="font-size:16px">${b.requested_qty}<small>ordered</small></span>
         <div class="lab-meta"><span>batch <b>${escAttr(b.batch_no)}</b></span><span>${escAttr(where(b))}</span><span>by ${escAttr(String(b.requested_by || '?').split('@')[0])} · ${_labWhen(b.requested_at)}</span>${b.request_note ? `<span>📝 ${escAttr(b.request_note)}</span>` : ''}</div></div>
       ${b.stage === 'mixing' && !b.qty_mixed ? `<button class="lab-btn danger" onclick="labCancelRequest(${b.id})" title="The Mixer has not started — cancel the order">✕ Cancel</button>` : ''}
-    </div>`).join('') : ''}
+    </div>`).join('') : ''; })()}
   </div>`;
 }
 async function labRequestStock(productId, qtyId, noteId) {
@@ -7470,7 +7506,7 @@ async function labRequestStock(productId, qtyId, noteId) {
   if (!Number.isInteger(q) || q <= 0) { toast('How many should the lab make?', true); return; }
   const note = noteId ? (document.getElementById(noteId)?.value || '').trim() : '';
   const name = _prodById(pid)?.name || ('#' + pid);
-  if (!confirm('Order from the lab: ' + q + ' × ' + name + (note ? ' (' + note + ')' : '') + '?\n\nThe Mixer sees it at once; after QA it comes back to you in 📥 Receive from lab.')) return;
+  if (!confirm('Order from the lab: ' + q + ' × ' + name + (note ? ' (' + note + ')' : '') + '?\n\nThe Mixer sees it at once; after QA it comes back to you in 1 · My orders — ready to receive.')) return;
   const { data, error } = await sb.rpc('lab_request_stock', { p_product_id: pid, p_qty: q, p_note: note || null });
   if (error) { toast('Order from lab: ' + (error.message || 'error'), true); return; }
   toast('🧪 Ordered from the lab: ' + q + ' × ' + name + (data && data.requested_qty && data.requested_qty !== q ? ' (added to the open batch — target ' + data.requested_qty + ')' : ''));
@@ -7801,7 +7837,7 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${ledger ? _labOrderHtml() + _receiveHtml() + _freeCustomHtml() + _putAwayHtml() : ''}
+      ${ledger ? _labOrderHtml() + _scSectionsHtml() + (['admin', 'stock'].includes(currentRole) ? `<div class="putaway sc-part sc-stock">${_scHead('stock', '4 · In stock', 'what is really on the shelves — HUB, by lot and fridge', invAll.filter(i => (parseFloat(i.quantity) || 0) !== 0).length, false)}</div>` : '') + _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
