@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.130.1"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.131"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -17,7 +17,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3248;
-  --accent:#f5a623;--accent2:#e8854a;--text:#f0f2ff;--muted:#8b91b0;
+  --accent:#f5a623;--accent2:#e8854a;--text:#f0f2ff;--muted:#8b91b0;--head:#ffffff;
   --green:#4ade80;--red:#f87171;--blue:#60a5fa;--yellow:#fbbf24;
   --radius:10px;--font:'Syne',sans-serif;--mono:'DM Mono',monospace;
 }
@@ -43,7 +43,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 /* ── LIGHT THEME (v13.62) — per-user, toggled in the header, saved in localStorage ── */
 body.theme-light{
   --bg:#FBF0D9;--surface:#FFF9EC;--surface2:#F1E3C4;--border:#D9C69C;
-  --accent:#9E5E00;--accent2:#A8481F;--text:#2B2416;--muted:#75674A;
+  --accent:#9E5E00;--accent2:#A8481F;--text:#2B2416;--muted:#75674A;--head:#1A150C;
   --green:#1A7A3C;--red:#B42323;--blue:#1D4ED8;--yellow:#8A6400;
 }
 body.theme-light .mycrm-logo{background-image:url("data:image/png;base64,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")}
@@ -440,7 +440,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lab-col-head{padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:8px}
 .lab-cnt{color:var(--accent);font-weight:700}
 .lab-col-body{padding:8px}
-.lab-sec{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;padding:8px 6px 4px;display:flex;align-items:center;gap:8px}
+.lab-sec{font-family:var(--mono);font-size:12px;color:var(--head);text-transform:uppercase;letter-spacing:.07em;padding:8px 6px 4px;display:flex;align-items:center;gap:8px}   /* v13.131: white, +2 px (Vugar 18.11) */
 .lab-sec:not(:first-child){margin-top:6px;border-top:1px dashed var(--border);padding-top:10px}
 .lab-empty{padding:22px 10px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
 .lab-card{border:1px solid var(--border);background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:6px}
@@ -464,11 +464,15 @@ select option{background:#1a1d27;color:#f0f2ff}
 .lot-row .lot-e{background:var(--surface2);border:1px solid var(--accent);border-radius:5px;padding:3px 6px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none}
 .lot-edit-btn{opacity:.55}.lot-row:hover .lot-edit-btn{opacity:1}
 .lab-note{margin:6px 0 8px;padding:6px 10px;border:1px solid rgba(250,204,21,.45);border-radius:8px;background:rgba(250,204,21,.08);color:var(--text);font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-word}   /* v13.129 */
-.sc-sec{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 6px;font-size:13px;color:var(--text)}   /* v13.130 */
+.sc-sec{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 6px;font-size:15px;color:var(--head)}   /* v13.130 · v13.131: white, +2 px */
+.sc-sec b{color:var(--head)}
 .sc-sec .sc-hint{font-size:11px;color:var(--muted);font-weight:400}
 .sc-sec .sc-arr{font-family:var(--mono);color:var(--muted);width:12px}
 .sc-part{border-top:2px solid var(--border)}
-.sc-mine .sc-sec.has b{color:var(--accent)} .sc-ret .sc-sec.has b{color:var(--yellow)}
+.sc-mine .sc-sec.has .lab-cnt{color:var(--accent)} .sc-ret .sc-sec.has .lab-cnt{color:var(--yellow)}
+.sc-sub{margin:0 0 6px;border-top:1px dashed var(--border)}   /* v13.131: the two blocks of "On the shelves" */
+.sc-sub .sc-sec{font-size:13px;padding:6px 0 4px}
+.cfo-row .lab-chip.custom{color:var(--blue);border-color:rgba(96,165,250,.5)}
 .putaway{margin:0 0 10px;padding:0 12px 6px;border-bottom:1px solid var(--border)}   /* v13.76: lots waiting for a fridge */
 #wh-putaway .putaway{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px 12px 8px;margin-bottom:12px}
 .pa-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed var(--border)}
@@ -1073,6 +1077,9 @@ select option{background:#1a1d27;color:#f0f2ff}
           <option value="zero">Zero</option>
           <option value="neg">Negative</option>
           <option value="low">Below minimum</option>
+        </select>
+        <select id="stor-fridge-filter" onchange="renderStorage()" title="By fridge — keeps the products and items that lie in this fridge (v13.131)" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none">
+          <option value="">All fridges</option>
         </select>
         <button type="button" class="btn btn-ghost" id="stor-filter-clear" onclick="storageFiltersClear()" style="display:none;font-size:12px;padding:6px 12px">✕ Clear</button>
         <span id="stor-filter-count" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:auto"></span>
@@ -1987,7 +1994,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.130.1';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.131';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -2251,7 +2258,10 @@ async function pollIncrementalOrders() {
   const since = _lastFetchAt;
   if (!since) return; // safety: skip if initial load hasn't run yet
 
-  const url = SUPABASE_URL + '/rest/v1/orders?select=*&deleted=is.null&updated_at=gt.' +
+  // v13.130.2 (20.11.2026): deleted rows are fetched too — a delete on another tab (or by the admin's return script) sets
+  // deleted + updated_at, and the row must DISAPPEAR here; with the old "deleted=is.null" filter it never arrived and every
+  // open tab kept showing the order (ORD-125528: James deleted it, Aysel's and Vugar's tabs still listed it).
+  const url = SUPABASE_URL + '/rest/v1/orders?select=*&updated_at=gt.' +
     encodeURIComponent(since) + '&order=updated_at.asc&limit=500';
   const res = await fetch(url, {
     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _authToken }
@@ -2266,9 +2276,15 @@ async function pollIncrementalOrders() {
     if (o.updated_at > newLastFetch) newLastFetch = o.updated_at;
   });
 
-  // Merge changed orders into the local array
+  // Merge changed orders into the local array; deleted ones are removed (v13.130.2)
+  const removed = [];
   changed.forEach(incoming => {
     const idx = orders.findIndex(x => x.id === incoming.id);
+    if (incoming.deleted) {
+      if (idx >= 0) { orders.splice(idx, 1); removed.push(incoming); }
+      delete orderItems[incoming.id]; _histOrders.delete(incoming.id);
+      return;
+    }
     if (idx >= 0) {
       orders[idx] = incoming; // update existing
     } else {
@@ -2277,7 +2293,7 @@ async function pollIncrementalOrders() {
   });
 
   // Reload order_items only for the changed order IDs
-  const changedIds = changed.map(o => o.id);
+  const changedIds = changed.filter(o => !o.deleted).map(o => o.id);
   const BATCH = 200;
   for (let i = 0; i < changedIds.length; i += BATCH) {
     const batch = changedIds.slice(i, i + BATCH);
@@ -7352,6 +7368,7 @@ async function loadStorage() {
     await _rcvLoadOrders();   // v13.123: which order a per-order batch belongs to
     await _sdLoad();          // v13.124: what to order from the lab + requests in progress
     await _fcLoad();          // v13.126: custom items whose order was cancelled — lie in a fridge, not in HUB stock
+    await _cfoLoad();         // v13.131: custom items of live orders already in a fridge — "For orders — in fridges"
   }
   const { data: locs } = await sb.from('storage_locations').select('*').order('name');
   storageLocations = locs || [];
@@ -7549,6 +7566,30 @@ async function stockSetMin(productId, val) {   // v13.124: the Stock Controller 
 // They have no stock counter, so Storage lists them from free_custom_v until the Stock Controller closes them: "Used in order"
 // (which order took it) or "Scrap" (why). Closing is logged (free_custom_closed).
 let _freeCustom = [];
+// ── v13.131 (Vugar 22.11.2026): "For orders — in fridges" — custom / PREMIX items of LIVE orders the Stock Controller already
+// received into a fridge (custom_for_orders_v). Not stock (no counter, they leave with the order when the warehouse packs it),
+// but they lie on the shelves — the Stock Controller must see what is really there. Read-only. Stock Controller + admin.
+let _cfo = [];
+async function _cfoLoad() {
+  try { const { data, error } = await sb.from('custom_for_orders_v').select('*').order('received_at', { ascending: true }); _cfo = error ? [] : (data || []); }
+  catch (e) { _cfo = []; }
+}
+function _cfoFiltered() {
+  const f = _storageFilters();
+  if (f.cat || f.kind || f.stock) return [];
+  const base = _cfo.filter(x => _placesMatch(f, x));
+  if (!f.q) return base;
+  return base.filter(x => [x.name, x.order_num, x.client_name, x.batch_no, ...(Array.isArray(x.received_places) ? x.received_places.map(p => p.place) : [])].filter(Boolean).join(' ').toLowerCase().includes(f.q));
+}
+function _cfoHtml() {
+  if (!['admin', 'stock'].includes(currentRole)) return '';
+  const f = _storageFilters(), rows = _cfoFiltered();
+  const head = _scHead('cfo', 'For orders — in fridges', 'custom / PREMIX made for live orders, received into a fridge — not stock, they leave with the order when it is packed', f.active && _cfo.length ? rows.length + ' of ' + _cfo.length : _cfo.length, false);
+  return `<div class="sc-sub sc-cfo">${head}${!_cfo.length ? '<div class="lab-empty" style="padding:4px 0 8px">Nothing on the shelves for orders</div>' : !rows.length ? `<div class="lab-empty" style="padding:4px 0 8px">No item matches the filter (${_cfo.length} hidden)</div>` : rows.map(x => `<div class="pa-row cfo-row" data-batch="${x.batch_id}" style="flex-wrap:wrap">
+      <div class="pa-main"><b>${escAttr(x.name)}</b> <span class="lab-chip custom" title="Made for this order — not HUB stock; the warehouse takes it from this fridge at packing">for ${escAttr(x.order_num)}${x.client_name ? ' · ' + escAttr(x.client_name) : ''}</span><span class="lab-need" style="font-size:18px">${x.qty}<small>in ${(Array.isArray(x.received_places) ? x.received_places : []).map(p => escAttr(p.place)).join(', ') || 'fridge'}</small></span>
+        <div class="lab-meta"><span>${_fcPlaces(x)}</span><span>batch <b>${escAttr(x.batch_no)}</b></span>${x.made_on ? `<span>made ${_lotDate(x.made_on)}</span>` : ''}<span>received ${_labWhen(x.received_at)}${x.received_by ? ' · ' + escAttr(String(x.received_by).split('@')[0]) : ''}</span><span>order: ${escAttr(x.delivery_status || '?')}</span></div></div>
+    </div>`).join('')}</div>`;
+}
 async function _fcLoad() {
   try { const { data, error } = await sb.from('free_custom_v').select('*').order('free_since', { ascending: true }); _freeCustom = error ? [] : (data || []); }
   catch (e) { _freeCustom = []; }
@@ -7559,8 +7600,9 @@ function _fcPlaces(f) { return (Array.isArray(f.received_places) ? f.received_pl
 function _freeCustomFiltered() {
   const f = _storageFilters();
   if (f.cat || f.kind || f.stock) return [];
-  if (!f.q) return _freeCustom;
-  return _freeCustom.filter(x => [x.name, x.order_num, x.client_name, x.batch_no, x.deleted_reason, ...(Array.isArray(x.received_places) ? x.received_places.map(p => p.place) : [])]
+  const base = _freeCustom.filter(x => _placesMatch(f, x));   // v13.131: fridge filter
+  if (!f.q) return base;
+  return base.filter(x => [x.name, x.order_num, x.client_name, x.batch_no, x.deleted_reason, ...(Array.isArray(x.received_places) ? x.received_places.map(p => p.place) : [])]
     .filter(Boolean).join(' ').toLowerCase().includes(f.q));
 }
 function _freeCustomHtml() {
@@ -7569,7 +7611,7 @@ function _freeCustomHtml() {
   if (!rows.length && (f.cat || f.kind || f.stock)) return '';
   return `<div class="putaway fc"><div class="lab-sec">🧪 Custom without an order <span class="lab-cnt">${f.active ? rows.length + ' of ' + _freeCustom.length : _freeCustom.length}</span>
       <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">made for an order that was cancelled — lies in a fridge, not in HUB stock. If another order takes it, press "Used in order"</span></div>
-    ${!rows.length ? `<div class="lab-empty">No custom item matches "${escAttr(f.q)}"</div>` : ''}
+    ${!rows.length ? `<div class="lab-empty">${f.q ? `No custom item matches "${escAttr(f.q)}"` : `No custom item in ${escAttr(f.fridge)}`}</div>` : ''}
     ${rows.map(f => `<div class="pa-row fc-row" data-batch="${f.batch_id}" style="flex-wrap:wrap">
       <div class="pa-main"><b>${escAttr(f.name)}</b> <span class="lab-chip custom" title="${escAttr(f.why)}${f.deleted_reason ? ' · ' + escAttr(f.deleted_reason) : ''}">${f.why === 'line removed from the order' ? 'line removed from ' : 'was for '}${escAttr(f.order_num || 'order')}${f.client_name ? ' · ' + escAttr(f.client_name) : ''}</span><span class="lab-need" style="font-size:18px">${f.qty}<small>in ${(Array.isArray(f.received_places) ? f.received_places : []).map(x => escAttr(x.place)).join(', ') || 'fridge'}</small></span>
         <div class="lab-meta"><span>${_fcPlaces(f)}</span><span>batch <b>${escAttr(f.batch_no)}</b></span>${f.made_on ? `<span>made ${_lotDate(f.made_on)}</span>` : ''}<span>received ${_labWhen(f.received_at)}${f.received_by ? ' · ' + escAttr(String(f.received_by).split('@')[0]) : ''}</span>
@@ -7742,7 +7784,8 @@ function _storageFilters() {
   const cat = (document.getElementById('stor-cat-filter')?.value || '').trim().toUpperCase();
   const kind = document.getElementById('stor-kind-filter')?.value || '';
   const stock = document.getElementById('stor-stock-filter')?.value || '';
-  return { q, cat, kind, stock, active: !!(q || cat || kind || stock) };
+  const fridge = document.getElementById('stor-fridge-filter')?.value || '';   // v13.131
+  return { q, cat, kind, stock, fridge, active: !!(q || cat || kind || stock || fridge) };
 }
 function _storageRowMatches(f, i, p) {
   if (!f.active) return true;
@@ -7757,8 +7800,11 @@ function _storageRowMatches(f, i, p) {
   if (f.stock === 'zero' && qn !== 0) return false;
   if (f.stock === 'neg' && !(qn < 0)) return false;
   if (f.stock === 'low' && !(minS > 0 && qn < minS)) return false;
+  if (f.fridge && !stockLots.some(l => l.product_id === i.product_id && l.storage_id === i.storage_id && l.place === f.fridge && parseFloat(l.qty_left) > 0)) return false;   // v13.131
   return true;
 }
+// v13.131: the fridge filter — a per-order / free custom item matches when one of its received_places is that fridge
+function _placesMatch(f, x) { return !f.fridge || (Array.isArray(x.received_places) ? x.received_places : []).some(p => p.place === f.fridge); }
 function _storageFillFilterOptions() {
   const catEl = document.getElementById('stor-cat-filter'), kindEl = document.getElementById('stor-kind-filter');
   if (catEl) {
@@ -7766,13 +7812,18 @@ function _storageFillFilterOptions() {
     const cats = [...new Set(storageInventory.map(i => ((products.find(p => p.id === i.product_id) || (window._allProducts || []).find(p => p.id === i.product_id))?.category || '').trim().toUpperCase()).filter(Boolean))].sort();
     catEl.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${escAttr(c)}" ${cur === c ? 'selected' : ''}>${escHtml(c)}</option>`).join('');
   }
+  const frEl = document.getElementById('stor-fridge-filter');   // v13.131
+  if (frEl) {
+    const cur = frEl.value;
+    frEl.innerHTML = '<option value="">All fridges</option>' + (refs.fridges || []).map(r => `<option value="${escAttr(r.value)}" ${cur === r.value ? 'selected' : ''}>${escHtml(r.value)}</option>`).join('');
+  }
   if (kindEl) {
     const cur = kindEl.value;
     kindEl.innerHTML = '<option value="">All Kinds</option>' + (refs.productType || []).map(r => `<option value="${escAttr(r.value)}" ${cur === r.value ? 'selected' : ''}>${escHtml(r.value)}</option>`).join('');
   }
 }
 function storageFiltersClear() {
-  ['stor-search', 'stor-cat-filter', 'stor-kind-filter', 'stor-stock-filter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['stor-search', 'stor-cat-filter', 'stor-kind-filter', 'stor-stock-filter', 'stor-fridge-filter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderStorage();
   document.getElementById('stor-search')?.focus();
 }
@@ -7810,7 +7861,8 @@ function renderStorage() {
         <td style="padding:6px 8px;white-space:nowrap">${actions}</td>
       </tr>`;
       // v13.76.1: HUB — a product header row (total) + one row per lot (fridge · made-on · qty)
-      const lots = _lotsSorted(i.product_id, s.id);
+      const lotsAll = _lotsSorted(i.product_id, s.id), lots = _f.fridge ? lotsAll.filter(l => l.place === _f.fridge) : lotsAll;   // v13.131: fridge filter → only that fridge's lots
+      const inFridge = _f.fridge ? lots.reduce((a, l) => a + (parseFloat(l.qty_left) || 0), 0) : null;
       const fridgeOpts = sel => `<option value="">— no fridge —</option>` + (refs.fridges || []).map(f => `<option value="${escAttr(f.value)}" ${f.value === sel ? 'selected' : ''}>${escAttr(f.value)}</option>`).join('');
       const today = toUAEDate(new Date().toISOString());
       const lotRows = lots.length ? lots.map(l => _lotEditId === l.id ? `<tr class="lot-row editing" data-lot="${l.id}">
@@ -7833,7 +7885,7 @@ function renderStorage() {
       return `<tr class="prod-row"${rowTitle}>
         <td style="padding:7px 8px 3px;color:var(--muted);font-family:var(--mono);font-size:11px">${idx+1}</td>
         <td style="padding:7px 8px 3px;font-size:12px;font-weight:600">${p ? escAttr(p.name) : '—'}${flags}<span style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:8px">${escAttr(p?.category||'')}${(['admin', 'stock'].includes(currentRole) && p && p.lab_made !== false && !p.made_to_order) ? ` · min <input type="number" class="min-in" min="0" step="1" value="${minS}" onchange="stockSetMin(${p.id}, this.value)" title="Min stock — below it the product is suggested in 🧪 Order from lab" style="width:46px;padding:1px 4px;font-size:10px;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text)">` : (minS > 0 ? ' · min ' + minS : '')}</span></td>
-        <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">${lots.length > 1 ? lots.length + ' lots' : ''}</td>
+        <td style="padding:7px 8px 3px;font-size:10px;color:var(--muted);font-family:var(--mono)">${_f.fridge ? `<b style="color:var(--text)">${escAttr(_f.fridge)}</b> ${inFridge}${lotsAll.length > lots.length ? ` <span title="other fridges">+${lotsAll.length - lots.length} lot(s) elsewhere</span>` : ''}` : (lots.length > 1 ? lots.length + ' lots' : '')}</td>
         <td style="padding:7px 8px 3px;font-size:10px;color:var(--accent);font-family:var(--mono)">total</td>
         <td style="padding:5px 8px 3px;text-align:center">${qtyInput}</td>
         <td style="padding:7px 8px 3px;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)">${escAttr(p?.unit||'—')}</td>
@@ -7853,7 +7905,8 @@ function renderStorage() {
           <button class="act-btn del" onclick="deleteStorage(${s.id})">✕</button>
         </div>
       </div>
-      ${ledger ? _labOrderHtml() + _scSectionsHtml() + (['admin', 'stock'].includes(currentRole) ? `<div class="putaway sc-part sc-stock">${_scHead('stock', '4 · In stock', 'what is really on the shelves — HUB, by lot and fridge', invAll.filter(i => (parseFloat(i.quantity) || 0) !== 0).length, false)}</div>` : '') + _putAwayHtml() : ''}
+      ${ledger ? _labOrderHtml() + _scSectionsHtml() + (['admin', 'stock'].includes(currentRole) ? `<div class="putaway sc-part sc-stock">${_scHead('stock', '4 · On the shelves', 'what is really in HUB: stock (counted, written off at packing) and items for orders (in a fridge, leave with the order)', invAll.filter(i => (parseFloat(i.quantity) || 0) !== 0).length + _cfo.length, false)}
+        <div class="sc-sub sc-stock-sub">${_scHead('stock-a', 'Stock', 'HUB by lot and fridge' + (_f.fridge ? ' · showing ' + escAttr(_f.fridge) : ''), _f.active ? inv.length + ' of ' + invAll.length : invAll.filter(i => (parseFloat(i.quantity) || 0) !== 0).length, false)}</div></div>` : '') + _putAwayHtml() : ''}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="border-bottom:1px solid var(--border)">
           <th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);font-family:var(--mono)">#</th>
@@ -7894,6 +7947,7 @@ function renderStorage() {
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px;outline:none;text-align:center">
         <button class="btn btn-ghost btn-sm" onclick="countInventoryInline('${s.id}')" title="Set the counted total — the difference goes to the journal (reason: count)">Count</button>
       </div>` : ''}
+      ${ledger ? `<div class="putaway" style="border-top:2px solid var(--border)">${_cfoHtml()}</div>` : ''}
     </div>`;
   };
   const depotsEl = document.getElementById('storage-depots');
