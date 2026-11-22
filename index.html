@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.131"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.132"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1994,7 +1994,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.131';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.132';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -5459,7 +5459,7 @@ async function editOrder(id){
   cart=items.map(item=>{
     // Custom item — no product_id or product not found
     if (!item.product_id) {
-      return { product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true,
+      return { line_id: item.id || null, product_id: null, product_name: item.product_name, price: parseFloat(item.price), quantity: parseFloat(item.quantity), unit: item.unit||'pcs', is_custom: true,   /* v13.132: line_id — the save keeps the line (its batch, lab_done_at) */
                custom_product_id: item.custom_product_id || null, label_kind: item.label_kind || null, name_edited: item.name_edited === true,   // v13.83: label facts round-trip
                ingredients: Array.isArray(item.ingredients) && item.ingredients.length ? item.ingredients : null };   // v13.86
     }
@@ -5467,7 +5467,7 @@ async function editOrder(id){
     const savedPrice = parseFloat(item.price);
     const originalPrice = parseFloat(p.price);
     const customPrice = (savedPrice !== originalPrice) ? savedPrice : undefined;
-    const line = {product:p,qty:parseFloat(item.quantity),customPrice};
+    const line = {line_id: item.id || null, product:p,qty:parseFloat(item.quantity),customPrice};   // v13.132: line_id — the save keeps the line
     // v13.71.6: a saved name that is neither the catalog name nor the seller alias = a manual edit → keep it
     const _alias = window._selectedSellerId ? getAlias(window._selectedSellerId, p.id) : null;   // v13.90: seller resolved by name above
     const _savedName = String(item.product_name || '').trim();
@@ -6164,7 +6164,7 @@ async function saveOrder(){
     const qty = item.is_custom ? (item.quantity||0) : (item.qty||0);
     return qty > 0;
   }).map(item=> {
-    if (item.is_custom) return {order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null,
+    if (item.is_custom) return {id:item.line_id||null, order_id:orderId, product_id:null, product_name:item.product_name, unit:item.unit||'pcs', price:item.price, quantity:item.quantity, item_type:'Custom', custom_components:null,   /* v13.132: id → replace_order_items updates the line in place */
                                 custom_product_id:item.custom_product_id||null, label_kind:item.label_kind||null, name_edited:item.name_edited===true,   // v13.83 (migration add_lab_14)
                                 ingredients:Array.isArray(item.ingredients)&&item.ingredients.length?item.ingredients:null};   // v13.86 (migration add_lab_16)
     const alias = _sId ? getAlias(_sId, item.product.id) : null;
@@ -6177,6 +6177,7 @@ async function saveOrder(){
     );
     const itemType = (item.product.product_type === 'Custom' || isDifferent) ? 'Custom' : 'Regular';
     return {
+      id: item.line_id || null,   // v13.132: replace_order_items (fix_replace_order_items.sql) updates the line in place — its id, lab_done_at and batches survive the save
       order_id: orderId,
       product_id: item.product.id,
       product_name: item.nameOverride || alias || item.product.name,   // v13.71.6: manual line name wins
