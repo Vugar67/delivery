@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MyCRM">
 <meta name="theme-color" content="#13151f">
-<meta name="mycrm-version" content="v13.133"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
+<meta name="mycrm-version" content="v13.134"><!-- v13.95: bump together with APP_VERSION — open tabs compare this with the file on the site every 5 min -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22DELIVR%20Order%20Control%22%2C%22short_name%22%3A%22DELIVR%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2313151f%22%2C%22theme_color%22%3A%22%2313151f%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAA1BMVEUTFSnFGGQYAAAAI0lEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAeAMBxAABma31AAAAAElFTkSuQmCC%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>MyCRM / Order Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1994,7 +1994,7 @@ select option{background:#1a1d27;color:#f0f2ff}
 // ============================================================
 // Supabase REST client (no eval, no external libs)
 // ============================================================
-const APP_VERSION = 'v13.133';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
+const APP_VERSION = 'v13.134';   // keep <meta name="mycrm-version"> in <head> in sync — the version check compares the site's meta with this page's meta
 
 // ── THEME (v13.62): personal light/dark, saved per browser ──────────
 function applyTheme(t) {
@@ -12636,7 +12636,8 @@ async function openTripsPanel(day, tab, to) {
             <button type="button" id="trip-prev" class="btn btn-ghost" style="padding:4px 10px" title="Previous day">‹</button>
             <button type="button" id="trip-next" class="btn btn-ghost" style="padding:4px 10px" title="Next day">›</button>
             <button type="button" id="trip-today" class="btn btn-ghost" style="padding:4px 10px;font-size:11px">Today</button>
-            <button type="button" id="trip-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" title="Done trips of the period: Driver · Kind · Emirate · District · Person">⬇ Excel</button>
+            <button type="button" id="trip-xlsx" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" title="Done trips of the period, one row per trip, in the order they were marked done: Done date · Driver · Service · Emirate · District · Person">⬇ Excel</button>
+            <button type="button" id="trip-xlsx-stops" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" title="Done trips of the period, ONE ROW PER DESTINATION, by the day the trip was planned for (not the day it was closed): Trip date · Time · Driver · Service · Stop · Emirate · District · Person · Done at (v13.134)">⬇ Excel by stop</button>
             <button type="button" id="trip-new" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:6px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">+ Trip</button>
           </span>
           <button type="button" id="trip-refresh" class="btn btn-ghost" style="padding:4px 10px" title="Refresh">↻</button>
@@ -12657,6 +12658,7 @@ async function openTripsPanel(day, tab, to) {
     ov.querySelector('#trip-from').onchange = ev => { if (ev.target.value) openTripsPanel(ev.target.value, null, ov.querySelector('#trip-to').value || ev.target.value); };
     ov.querySelector('#trip-to').onchange = ev => { if (ev.target.value) openTripsPanel(ov.querySelector('#trip-from').value || ev.target.value, null, ev.target.value); };
     ov.querySelector('#trip-xlsx').onclick = exportTrips;
+    ov.querySelector('#trip-xlsx-stops').onclick = exportTripStops;   // v13.134
     ov.querySelector('#trip-new').onclick = () => tripEditDialog(null);
     ov.querySelectorAll('.trip-tab').forEach(b => b.onclick = () => { _tripLibEdit = null; openTripsPanel(_tripDay, b.getAttribute('data-tab')); });
   }
@@ -12787,6 +12789,42 @@ async function exportTrips() {
   const fn = (_tripFrom === _tripTo ? 'trips_' + _tripFrom : 'trips_' + _tripFrom + '_' + _tripTo) + '.xlsx';
   XL.writeFile(wb, fn);
   logEvent('EXPORT', 'report', 'trips', { action: 'trips_export', from: _tripFrom, to: _tripTo, rows: rows.length });
+  toast('⬇ ' + fn);
+}
+
+// v13.134 (Aysel, 25.11.2026): ⬇ Excel by stop — the second report, the first one stays as it is.
+//   • one row per DESTINATION (a trip with 4 stops = 4 rows), not one row per trip;
+//   • the date is the day the trip was planned for (trip_date), not the moment it was closed — a pick-up planned for
+//     24.11 and closed after midnight stays on 24.11, and an edit never moves it; rows sorted by that date, time, driver.
+//   Done trips only, like the first report; "Done at" is the last column for reference.
+function _tripStopRows(trips, stops) {
+  const locEm = {}; _tripLocs.forEach(l => { locEm[l.id] = l.emirate || ''; });
+  const rows = [];
+  trips.filter(t => t.status === 'done')
+    .slice().sort((a, b) => String(a.trip_date).localeCompare(String(b.trip_date)) || String(a.trip_time || '').localeCompare(String(b.trip_time || '')) || String(a.driver_name).localeCompare(String(b.driver_name)) || (a.id - b.id))
+    .forEach(t => {
+      const ts = stops.filter(s => s.trip_id === t.id).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+      const base = [_lotDate(t.trip_date), t.trip_time ? String(t.trip_time).slice(0, 5) : '', t.driver_name || '', (TRIP_KINDS[t.kind] || {}).label || t.kind || ''];
+      if (!ts.length) { rows.push([...base, '', '', '', '', _ddDateTime(t.done_at)]); return; }   /* a trip without destinations still shows */
+      ts.forEach((s, i) => rows.push([...base, ts.length > 1 ? (i + 1) + ' of ' + ts.length : '1', s.location_id != null ? (locEm[s.location_id] || '') : '', s.place_name || '',
+        String(s.staff_names || '').split(',').map(x => x.trim()).filter(Boolean).join(', '), _ddDateTime(t.done_at)]));
+    });
+  return rows;
+}
+async function exportTripStops() {
+  if (!TRIP_ROLES.includes(currentRole)) { toast('🔒 Trips — dispatchers and admins only', true); return; }
+  if (_tripTab !== 'trips' || !_tripListed) { toast('Open the Trips tab first', true); return; }
+  const rows = _tripStopRows(_tripListed.filter(t => t.trip_date >= _tripFrom && t.trip_date <= _tripTo), _tripListedStops || []);
+  if (!rows.length) { toast('No done trips in this period', true); return; }
+  const XL = await _loadXLSX();
+  const aoa = [['Trip date', 'Time', 'Driver', 'Service', 'Stop', 'Emirate', 'District', 'Person', 'Done at'], ...rows];
+  const ws = XL.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 12 }, { wch: 7 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 16 }, { wch: 30 }, { wch: 36 }, { wch: 17 }];
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, 'Trips by stop');
+  const fn = (_tripFrom === _tripTo ? 'trips_stops_' + _tripFrom : 'trips_stops_' + _tripFrom + '_' + _tripTo) + '.xlsx';
+  XL.writeFile(wb, fn);
+  logEvent('EXPORT', 'report', 'trips', { action: 'trips_stops_export', from: _tripFrom, to: _tripTo, rows: rows.length });
   toast('⬇ ' + fn);
 }
 
